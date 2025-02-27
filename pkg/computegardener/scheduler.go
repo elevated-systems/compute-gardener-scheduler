@@ -96,27 +96,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldPod := oldObj.(*v1.Pod)
 				newPod := newObj.(*v1.Pod)
-
-				// Enhanced logging for debugging
-				klog.V(2).InfoS("Pod update received",
-					"pod", newPod.Name,
-					"namespace", newPod.Namespace,
-					"oldPhase", oldPod.Status.Phase,
-					"newPhase", newPod.Status.Phase)
-
-				// Log detailed container states
-				for i, status := range newPod.Status.ContainerStatuses {
-					klog.V(2).InfoS("Container status",
-						"pod", newPod.Name,
-						"container", status.Name,
-						"index", i,
-						"ready", status.Ready,
-						"started", status.Started,
-						"restartCount", status.RestartCount,
-						"state", describeContainerState(status.State))
-				}
 
 				// Check for completion or failure
 				isCompleted := false
