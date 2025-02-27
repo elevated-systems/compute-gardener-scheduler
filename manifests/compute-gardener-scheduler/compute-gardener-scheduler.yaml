@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compute-gardener-scheduler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compute-gardener-scheduler-metrics-reader
+rules:
+- apiGroups:
+  - "metrics.k8s.io"
+  resources:
+  - nodes
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-scheduler-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-scheduler
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: compute-gardener-scheduler-metrics-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-scheduler-as-kube-scheduler
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-scheduler
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: system:kube-scheduler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-scheduler-as-volume-scheduler
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-scheduler
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: system:volume-scheduler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: compute-gardener-scheduler-extension-apiserver-authentication-reader
+  namespace: kube-system
+roleRef:
+  kind: Role
+  name: extension-apiserver-authentication-reader
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-scheduler
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: compute-gardener-scheduler-secrets
+  namespace: kube-system
+type: Opaque
+data:
+  electricity-map-api-key: WU9VUl9FTEVDVFJJQ0lUWV9NQVBfQVBJX0tFWQ== # Base64 encoded "YOUR_ELECTRICITY_MAP_API_KEY"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compute-gardener-scheduler-config
+  namespace: kube-system
+data:
+  compute-gardener-scheduler-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    profiles:
+      - schedulerName: compute-gardener-scheduler
+        plugins:
+          preFilter:
+            enabled:
+              - name: ComputeGardenerScheduler
+          postBind:
+            enabled:
+              - name: ComputeGardenerScheduler
+    leaderElection:
+      leaderElect: false 
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compute-gardener-pricing-schedules
+  namespace: kube-system
+data:
+  schedules.yaml: |
+    # Time-of-use pricing schedule configuration
+    # Format: day-of-week start-time end-time
+    # day-of-week: 0-6 (Sunday=0)
+    # time format: HH:MM in 24-hour format
+    schedules:
+      # Monday-Friday peak pricing periods (4pm-9pm)
+      - dayOfWeek: "1-5"
+        startTime: "16:00"
+        endTime: "21:00"
+        peakRate: 0.30
+        offPeakRate: 0.10
+      # Weekend peak pricing periods (1pm-7pm)
+      - dayOfWeek: "0,6" 
+        startTime: "13:00"
+        endTime: "19:00"
+        peakRate: 0.30
+        offPeakRate: 0.10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: scheduler
+    tier: control-plane
+  name: compute-gardener-scheduler
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: scheduler
+        tier: control-plane
+        version: second
+    spec:
+      serviceAccountName: compute-gardener-scheduler
+      containers:
+      - command:
+        - /bin/kube-scheduler
+        - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
+        image: docker.io/dmasselink/compute-gardener-scheduler:v20250223-
+        imagePullPolicy: Always
+        env:
+        - name: ELECTRICITY_MAP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: compute-gardener-scheduler-secrets
+              key: electricity-map-api-key
+        - name: CARBON_INTENSITY_THRESHOLD
+          value: "200.0"
+        - name: MAX_SCHEDULING_DELAY
+          value: "24h"
+        - name: PRICING_ENABLED
+          value: "false"
+        - name: PRICING_PROVIDER
+          value: "tou"
+        - name: PRICING_SCHEDULES_PATH
+          value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 10259
+            scheme: HTTPS
+          initialDelaySeconds: 15
+        name: compute-gardener-kube-scheduler
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 10259
+            scheme: HTTPS
+        resources:
+          requests:
+            cpu: '200m'
+            memory: '256Mi'
+          limits:
+            cpu: '500m'
+            memory: '512Mi'
+        securityContext:
+          privileged: false
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/kubernetes/compute-gardener-scheduler
+          - name: pricing-schedules-volume
+            mountPath: /etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml
+            subPath: schedules.yaml
+      hostNetwork: false
+      hostPID: false
+      volumes:
+        - name: config-volume
+          configMap:
+            name: compute-gardener-scheduler-config
+        - name: pricing-schedules-volume
+          configMap:
+            name: compute-gardener-pricing-schedules

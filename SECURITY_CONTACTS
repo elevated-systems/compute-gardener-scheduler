@@ -1,0 +1,23 @@
+# Security Contacts
+
+# Defined below are the security contacts for this repo.
+# They are the contact point for security-related issues and vulnerabilities.
+#
+# As this project is derived from a Kubernetes project, we maintain similar 
+# security practices while adapting them for our specific needs.
+
+# DO NOT REPORT SECURITY VULNERABILITIES THROUGH PUBLIC GITHUB ISSUES.
+# Instead, please report them via:
+# 1. Email to the contacts below
+# 2. GitHub's security advisory feature: https://github.com/elevated-systems/compute-gardener-scheduler/security/advisories/new
+
+# Security Contacts
+davemasselink
+
+# Response Time
+# Security contacts commit to responding to security reports within 3 business days.
+
+# Embargo Policy
+# Security contacts agree to coordinate disclosure of vulnerabilities to ensure
+# responsible handling of sensitive issues. Details of any security issues will
+# remain private until patches are available.

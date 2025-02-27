@@ -1,0 +1,5 @@
+# This file follows the Kubernetes OWNERS convention: https://go.k8s.io/owners
+# It defines who has approval rights for this project.
+
+approvers:
+  - davemasselink

@@ -1,0 +1,24 @@
+domain: scheduling.x-k8s.io
+layout:
+- go.kubebuilder.io/v3
+multigroup: true
+projectName: compute-gardener-scheduler
+repo: github.com/elevated-systems/compute-gardener-scheduler
+resources:
+- api:
+    crdVersion: v1
+  controller: true
+  domain: scheduling.x-k8s.io
+  group: scheduling
+  kind: PodGroup
+  path: github.com/elevated-systems/compute-gardener-scheduler/apis/scheduling/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: scheduling.x-k8s.io
+  group: scheduling
+  kind: ElasticQuota
+  path: github.com/elevated-systems/compute-gardener-scheduler/apis/scheduling/v1alpha1
+  version: v1alpha1
+version: "3"
