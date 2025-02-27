@@ -108,11 +108,7 @@ metadata:
   name: compute-gardener-pricing-schedules
   namespace: kube-system
 data:
-  schedules.yaml: |
-    # Time-of-use pricing schedule configuration
-    # Format: day-of-week start-time end-time
-    # day-of-week: 0-6 (Sunday=0)
-    # time format: HH:MM in 24-hour format
+  pricing-schedules.yaml: |
     schedules:
       # Monday-Friday peak pricing periods (4pm-9pm)
       - dayOfWeek: "1-5"
@@ -153,7 +149,7 @@ spec:
       - command:
         - /bin/kube-scheduler
         - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
-        image: docker.io/dmasselink/compute-gardener-scheduler:v20250223-
+        image: docker.io/dmasselink/compute-gardener-scheduler:v20250227-
         imagePullPolicy: Always
         env:
         - name: ELECTRICITY_MAP_API_KEY

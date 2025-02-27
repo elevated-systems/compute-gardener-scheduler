@@ -34,8 +34,9 @@ func LoadFromEnv() (*Config, error) {
 			IntensityThreshold: getFloatOrDefault("CARBON_INTENSITY_THRESHOLD", 150.0),
 		},
 		Pricing: PricingConfig{
-			Enabled:  getBoolOrDefault("PRICING_ENABLED", false),
-			Provider: getEnvOrDefault("PRICING_PROVIDER", "tou"),
+			Enabled:   getBoolOrDefault("PRICING_ENABLED", false),
+			Provider:  getEnvOrDefault("PRICING_PROVIDER", "tou"),
+			Schedules: []Schedule{},
 		},
 		Observability: ObservabilityConfig{
 			MetricsEnabled:     getBoolOrDefault("METRICS_ENABLED", true),

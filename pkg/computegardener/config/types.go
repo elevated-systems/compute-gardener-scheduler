@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -134,9 +136,31 @@ func (c *Config) validatePricing() error {
 
 func validateSchedule(schedule Schedule) error {
 	// Validate day of week format
-	for _, day := range schedule.DayOfWeek {
-		if day < '0' || day > '6' {
-			return fmt.Errorf("invalid day of week: %c (must be 0-6)", day)
+	parts := strings.Split(schedule.DayOfWeek, ",")
+	for _, part := range parts {
+		if strings.Contains(part, "-") {
+			// Handle range format (e.g., "1-5")
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) != 2 {
+				return fmt.Errorf("invalid day of week range format: %s", part)
+			}
+			start, err := strconv.Atoi(rangeParts[0])
+			if err != nil || start < 0 || start > 6 {
+				return fmt.Errorf("invalid start day in range: %s (must be 0-6)", rangeParts[0])
+			}
+			end, err := strconv.Atoi(rangeParts[1])
+			if err != nil || end < 0 || end > 6 {
+				return fmt.Errorf("invalid end day in range: %s (must be 0-6)", rangeParts[1])
+			}
+			if start > end {
+				return fmt.Errorf("invalid range: start day %d is greater than end day %d", start, end)
+			}
+		} else {
+			// Handle single day format (e.g., "0")
+			day, err := strconv.Atoi(part)
+			if err != nil || day < 0 || day > 6 {
+				return fmt.Errorf("invalid day of week: %s (must be 0-6)", part)
+			}
 		}
 	}
 
