@@ -73,12 +73,8 @@ type PricingConfig struct {
 
 // ObservabilityConfig holds configuration for monitoring and debugging
 type ObservabilityConfig struct {
-	MetricsEnabled     bool   `yaml:"metricsEnabled"`
-	MetricsPort        int    `yaml:"metricsPort"`
-	HealthCheckEnabled bool   `yaml:"healthCheckEnabled"`
-	HealthCheckPort    int    `yaml:"healthCheckPort"`
-	LogLevel           string `yaml:"logLevel"`
-	EnableTracing      bool   `yaml:"enableTracing"`
+	LogLevel      string `yaml:"logLevel"`
+	EnableTracing bool   `yaml:"enableTracing"`
 }
 
 // Validate performs validation of the configuration

@@ -18,6 +18,10 @@ rules:
   - get
   - list
   - watch
+- nonResourceURLs:
+  - "/metrics"
+  verbs:
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -100,7 +104,7 @@ data:
             enabled:
               - name: ComputeGardenerScheduler
     leaderElection:
-      leaderElect: false 
+      leaderElect: false
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -143,12 +147,19 @@ spec:
         component: scheduler
         tier: control-plane
         version: second
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '10260'
+        prometheus.io/scheme: 'https'
+        prometheus.io/path: '/metrics'
     spec:
       serviceAccountName: compute-gardener-scheduler
       containers:
       - command:
         - /bin/kube-scheduler
         - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
+        - --bind-address=0.0.0.0
+        - --secure-port=10259
         image: docker.io/dmasselink/compute-gardener-scheduler:v20250227-
         imagePullPolicy: Always
         env:

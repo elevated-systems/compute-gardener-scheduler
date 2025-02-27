@@ -3,7 +3,6 @@ package computegardener
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -12,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
@@ -149,23 +147,6 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			},
 		},
 	)
-
-	// Start metrics server (insecure) on a separate mux
-	go func() {
-		metricsPort := fmt.Sprint(":", scheduler.config.Observability.MetricsPort)
-		metricsMux := http.NewServeMux()
-		metricsMux.Handle("/metrics", legacyregistry.Handler())
-
-		metricsServer := &http.Server{
-			Addr:    metricsPort,
-			Handler: metricsMux,
-		}
-
-		klog.InfoS("Starting metrics server", "addr", metricsPort)
-		if err := metricsServer.ListenAndServe(); err != nil {
-			klog.ErrorS(err, "Failed to start metrics server")
-		}
-	}()
 
 	return scheduler, nil
 }

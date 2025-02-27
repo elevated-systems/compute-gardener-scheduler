@@ -53,10 +53,6 @@ NODE_DEFAULT_MAX_POWER=400.0           # Default maximum power consumption in wa
 NODE_POWER_CONFIG_worker1=idle:50,max:300  # Node-specific power settings
 
 # Observability Configuration
-METRICS_ENABLED=true                   # Optional: Enable Prometheus metrics
-METRICS_PORT=10259                     # Optional: Metrics server port
-HEALTH_CHECK_ENABLED=true              # Optional: Enable health checks
-HEALTH_CHECK_PORT=10258               # Optional: Health check server port
 LOG_LEVEL=info                        # Optional: Logging level
 ENABLE_TRACING=false                  # Optional: Enable tracing
 ```
@@ -101,15 +97,34 @@ compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"
 
 ## Metrics
 
-The scheduler exports the following Prometheus metrics:
+The scheduler exports Prometheus metrics through the kube-scheduler's secure endpoints:
 
-- `carbon_intensity_gauge`: Current carbon intensity for the configured region
-- `electricity_rate_gauge`: Current electricity rate based on TOU schedule
-- `scheduling_attempts_total`: Total number of scheduling attempts by result
-- `pod_scheduling_latency_seconds`: Pod scheduling latency histogram
-- `carbon_savings_total`: Estimated carbon savings from delayed scheduling
-- `cost_savings_total`: Estimated cost savings from delayed scheduling
-- `price_based_delays_total`: Number of pods delayed due to pricing thresholds
+- Health checks on port 10259 (HTTPS)
+- Metrics on port 10260 (HTTPS)
+
+The following metrics are available at https://[scheduler-pod]:10260/metrics:
+
+- `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
+- `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
+- `scheduler_compute_gardener_scheduling_attempt_total`: Number of attempts to schedule pods by result
+- `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts
+- `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
+- `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
+- `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes at baseline and completion
+- `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption
+- `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
+- `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
+- `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
+
+All metrics are automatically registered with the kube-scheduler's metrics registry and exposed through its secure metrics endpoint. The scheduler deployment includes Prometheus annotations for automatic service discovery:
+
+```yaml
+annotations:
+  prometheus.io/scrape: 'true'
+  prometheus.io/port: '10260'
+  prometheus.io/scheme: 'https'
+  prometheus.io/path: '/metrics'
+```
 
 ## Architecture
 

@@ -39,12 +39,8 @@ func LoadFromEnv() (*Config, error) {
 			Schedules: []Schedule{},
 		},
 		Observability: ObservabilityConfig{
-			MetricsEnabled:     getBoolOrDefault("METRICS_ENABLED", true),
-			MetricsPort:        getIntOrDefault("METRICS_PORT", 9090),
-			HealthCheckEnabled: getBoolOrDefault("HEALTH_CHECK_ENABLED", true),
-			HealthCheckPort:    getIntOrDefault("HEALTH_CHECK_PORT", 8080),
-			LogLevel:           getEnvOrDefault("LOG_LEVEL", "info"),
-			EnableTracing:      getBoolOrDefault("ENABLE_TRACING", false),
+			LogLevel:      getEnvOrDefault("LOG_LEVEL", "info"),
+			EnableTracing: getBoolOrDefault("ENABLE_TRACING", false),
 		},
 		Power: PowerConfig{
 			DefaultIdlePower: getFloatOrDefault("NODE_DEFAULT_IDLE_POWER", 100.0),
