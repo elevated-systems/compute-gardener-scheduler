@@ -16,12 +16,12 @@ GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
 PLATFORMS ?= linux/amd64
 BUILDER ?= docker
 REGISTRY?=docker.io/dmasselink
-RELEASE_VERSION?=$(shell git describe --tags --match "v*")-$(shell git rev-parse --short HEAD)
+RELEASE_VERSION?=$(git tag --sort=-committerdate | head -n 1)-$(shell git rev-parse --short HEAD)
 RELEASE_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 
-VERSION=$(shell echo $(RELEASE_VERSION) | awk -F - '{print $$2}')
+VERSION=$(shell echo $(RELEASE_VERSION)')
 VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 
 .PHONY: all
