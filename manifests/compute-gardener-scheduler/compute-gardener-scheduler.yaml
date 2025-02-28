@@ -100,9 +100,6 @@ data:
           preFilter:
             enabled:
               - name: ComputeGardenerScheduler
-          postBind:
-            enabled:
-              - name: ComputeGardenerScheduler
     leaderElection:
       leaderElect: false
 ---
@@ -149,7 +146,7 @@ spec:
         version: second
       annotations:
         prometheus.io/scrape: 'true'
-        prometheus.io/port: '10260'
+        prometheus.io/port: '10259'
         prometheus.io/scheme: 'https'
         prometheus.io/path: '/metrics'
     spec:
@@ -160,7 +157,10 @@ spec:
         - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
         - --bind-address=0.0.0.0
         - --secure-port=10259
-        image: docker.io/dmasselink/compute-gardener-scheduler:v20250227-
+        - --authentication-skip-lookup=true
+        - --authentication-tolerate-lookup-failure=true
+        - --authorization-always-allow-paths=/metrics
+        image: docker.io/dmasselink/compute-gardener-scheduler:v20250228-
         imagePullPolicy: Always
         env:
         - name: ELECTRICITY_MAP_API_KEY
@@ -178,6 +178,10 @@ spec:
           value: "tou"
         - name: PRICING_SCHEDULES_PATH
           value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
+        ports:
+        - containerPort: 10259
+          name: https
+          protocol: TCP
         livenessProbe:
           httpGet:
             path: /healthz
