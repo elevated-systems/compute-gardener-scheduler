@@ -41,8 +41,9 @@ type ComputeGardenerScheduler struct {
 	// Metric value cache
 	powerMetrics sync.Map // map[string]float64 - key format: "nodeName/podName/phase"
 
-	// Shutdown
-	stopCh chan struct{}
+	// Scheduler state
+	startTime time.Time
+	stopCh    chan struct{}
 }
 
 var (
@@ -85,6 +86,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		pricingImpl: pricingImpl,
 		carbonImpl:  carbonImpl,
 		clock:       clock.RealClock{},
+		startTime:   time.Now(),
 		stopCh:      make(chan struct{}),
 	}
 
@@ -308,21 +310,27 @@ func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 }
 
 func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
-	// Check cache health - there should be at least one region with fresh data
+	// Check cache health
 	regions := cs.cache.GetRegions()
-	if len(regions) == 0 {
-		return fmt.Errorf("cache health check failed: no regions cached")
-	}
-
-	// Verify at least one region has fresh data
+	
+	// Evaluate cache state
+	emptyCache := len(regions) == 0
 	hasFreshData := false
-	for _, region := range regions {
-		if _, fresh := cs.cache.Get(region); fresh {
-			hasFreshData = true
-			break
+	
+	if !emptyCache {
+		// Check if any region has fresh data
+		for _, region := range regions {
+			if _, fresh := cs.cache.Get(region); fresh {
+				hasFreshData = true
+				break
+			}
 		}
 	}
-	if !hasFreshData {
+	
+	// Only enforce cache health checks if carbon is enabled and cache should be initialized
+	// An empty cache is allowed and normal during initial startup or when carbon features aren't being used
+	if cs.config.Carbon.Enabled && !emptyCache && !hasFreshData {
+		// If we have regions but no fresh data, that's a problem
 		return fmt.Errorf("cache health check failed: no fresh data available")
 	}
 

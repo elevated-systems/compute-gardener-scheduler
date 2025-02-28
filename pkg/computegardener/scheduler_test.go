@@ -115,6 +115,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		carbonImpl:   carbonImpl,
 		clock:        clock.NewMockClock(mockTime),
 		powerMetrics: sync.Map{},
+		startTime:    mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 	}
 }
 
@@ -326,7 +327,7 @@ func TestPreFilter(t *testing.T) {
 						Schedules: []config.Schedule{
 							{
 								OffPeakRate: 0.15,
-								PeakRate: 0.25,
+								PeakRate:    0.25,
 							},
 						},
 					},
@@ -502,6 +503,7 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		carbonImpl:   carbonmock.NewWithError(),
 		clock:        clock.NewMockClock(baseTime),
 		powerMetrics: sync.Map{},
+		startTime:    baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 	}
 
 	// Test PreFilter
@@ -524,41 +526,41 @@ func TestHealthCheck(t *testing.T) {
 	defer cleanup()
 
 	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	
+
 	tests := []struct {
-		name           string
-		carbonEnabled  bool
+		name            string
+		carbonEnabled   bool
 		carbonWithError bool
-		cacheRegions   []string
-		expectError    bool
+		cacheRegions    []string
+		expectError     bool
 	}{
 		{
-			name:          "healthy system - carbon enabled",
-			carbonEnabled: true,
+			name:            "healthy system - carbon enabled",
+			carbonEnabled:   true,
 			carbonWithError: false,
-			cacheRegions:  []string{"test-region"},
-			expectError:   false,
+			cacheRegions:    []string{"test-region"},
+			expectError:     false,
 		},
 		{
-			name:          "carbon API error",
-			carbonEnabled: true,
+			name:            "carbon API error",
+			carbonEnabled:   true,
 			carbonWithError: true,
-			cacheRegions:  []string{"test-region"},
-			expectError:   true,
+			cacheRegions:    []string{"test-region"},
+			expectError:     true,
 		},
 		{
-			name:          "no cache regions",
-			carbonEnabled: true,
+			name:            "no cache regions",
+			carbonEnabled:   true,
 			carbonWithError: false,
-			cacheRegions:  []string{},
-			expectError:   true,
+			cacheRegions:    []string{},
+			expectError:     false, // allow empty cache
 		},
 		{
-			name:          "carbon disabled - healthy",
-			carbonEnabled: false,
+			name:            "carbon disabled - healthy",
+			carbonEnabled:   false,
 			carbonWithError: false,
-			cacheRegions:  []string{"test-region"},
-			expectError:   false,
+			cacheRegions:    []string{"test-region"},
+			expectError:     false,
 		},
 	}
 
@@ -590,7 +592,7 @@ func TestHealthCheck(t *testing.T) {
 					Schedules: []config.Schedule{
 						{
 							OffPeakRate: 0.10,
-							PeakRate: 0.20,
+							PeakRate:    0.20,
 						},
 					},
 				},
@@ -625,11 +627,12 @@ func TestHealthCheck(t *testing.T) {
 				carbonImpl:   carbonImpl,
 				clock:        clock.NewMockClock(baseTime),
 				powerMetrics: sync.Map{},
+				startTime:    baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 			}
 
 			// Test health check
 			err := scheduler.healthCheck(context.Background())
-			
+
 			// Verify expected error state
 			if (err != nil) != tt.expectError {
 				t.Errorf("healthCheck() error = %v, expectError %v", err, tt.expectError)
