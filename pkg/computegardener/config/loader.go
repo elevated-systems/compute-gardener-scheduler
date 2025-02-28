@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -15,16 +16,13 @@ import (
 // LoadFromEnv loads configuration from environment variables
 func LoadFromEnv() (*Config, error) {
 	cfg := &Config{
-		API: APIConfig{
-			ElectricityMapKey:    os.Getenv("ELECTRICITY_MAP_API_KEY"),
-			ElectricityMapURL:    getEnvOrDefault("ELECTRICITY_MAP_API_URL", "https://api.electricitymap.org/v3/carbon-intensity/latest?zone="),
-			ElectricityMapRegion: getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
-			Timeout:              getDurationOrDefault("API_TIMEOUT", 10*time.Second),
-			MaxRetries:           getIntOrDefault("API_MAX_RETRIES", 3),
-			RetryDelay:           getDurationOrDefault("API_RETRY_DELAY", 1*time.Second),
-			RateLimit:            getIntOrDefault("API_RATE_LIMIT", 10),
-			CacheTTL:             getDurationOrDefault("CACHE_TTL", 5*time.Minute),
-			MaxCacheAge:          getDurationOrDefault("MAX_CACHE_AGE", 1*time.Hour),
+		Cache: APICacheConfig{
+			Timeout:     getDurationOrDefault("API_TIMEOUT", 10*time.Second),
+			MaxRetries:  getIntOrDefault("API_MAX_RETRIES", 3),
+			RetryDelay:  getDurationOrDefault("API_RETRY_DELAY", 1*time.Second),
+			RateLimit:   getIntOrDefault("API_RATE_LIMIT", 10),
+			CacheTTL:    getDurationOrDefault("CACHE_TTL", 5*time.Minute),
+			MaxCacheAge: getDurationOrDefault("MAX_CACHE_AGE", 1*time.Hour),
 		},
 		Scheduling: SchedulingConfig{
 			MaxSchedulingDelay:  getDurationOrDefault("MAX_SCHEDULING_DELAY", 24*time.Hour),
@@ -32,17 +30,18 @@ func LoadFromEnv() (*Config, error) {
 		},
 		Carbon: CarbonConfig{
 			Enabled:            true,
+			Provider:           "electricity-maps-api",
 			IntensityThreshold: getFloatOrDefault("CARBON_INTENSITY_THRESHOLD", 150.0),
-			DefaultRegion:      getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
+			APIConfig: ElectricityMapsAPIConfig{
+				APIKey: os.Getenv("ELECTRICITY_MAP_API_KEY"),
+				URL:    getEnvOrDefault("ELECTRICITY_MAP_API_URL", "https://api.electricitymap.org/v3/carbon-intensity/latest?zone="),
+				Region: getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
+			},
 		},
 		Pricing: PricingConfig{
 			Enabled:   getBoolOrDefault("PRICING_ENABLED", false),
 			Provider:  getEnvOrDefault("PRICING_PROVIDER", "tou"),
 			Schedules: []Schedule{},
-		},
-		Observability: ObservabilityConfig{
-			LogLevel:      getEnvOrDefault("LOG_LEVEL", "info"),
-			EnableTracing: getBoolOrDefault("ENABLE_TRACING", false),
 		},
 		Power: PowerConfig{
 			DefaultIdlePower: getFloatOrDefault("NODE_DEFAULT_IDLE_POWER", 100.0),
@@ -70,20 +69,37 @@ func LoadFromEnv() (*Config, error) {
 
 // Load creates a new Config from the provided runtime.Object
 func Load(obj runtime.Object) (*Config, error) {
-	// For now, we only support environment variable configuration
-	// In the future, this could be extended to support configuration
-	// from the runtime.Object parameter
-	cfg, err := LoadFromEnv()
-	if err != nil {
-		return nil, err
+	if obj == nil {
+		return LoadFromEnv()
 	}
 
-	klog.V(2).InfoS("Loaded configuration",
-		"electricityMapRegion", cfg.API.ElectricityMapRegion,
-		"carbonIntensityThreshold", cfg.Carbon.IntensityThreshold,
-		"pricingEnabled", cfg.Pricing.Enabled,
-		"defaultIdlePower", cfg.Power.DefaultIdlePower,
-		"defaultMaxPower", cfg.Power.DefaultMaxPower)
+	// Use reflection to find the Config field
+	val := reflect.ValueOf(obj)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	// Look for a Config field
+	var cfg *Config
+	if val.Kind() == reflect.Struct {
+		for i := 0; i < val.NumField(); i++ {
+			field := val.Field(i)
+			if field.Type() == reflect.TypeOf(Config{}) {
+				configVal := field.Interface().(Config)
+				cfg = &configVal
+				break
+			}
+		}
+	}
+
+	if cfg == nil {
+		return LoadFromEnv()
+	}
+
+	// Validate the configuration
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %v", err)
+	}
 
 	return cfg, nil
 }

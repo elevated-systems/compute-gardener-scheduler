@@ -12,7 +12,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
 	schedulercache "sigs.k8s.io/scheduler-plugins/pkg/computegardener/cache"
@@ -33,12 +32,11 @@ type ComputeGardenerScheduler struct {
 	config *config.Config
 
 	// Components
-	apiClient     *api.Client
-	cache         *schedulercache.Cache
-	pricingImpl   pricing.Implementation
-	carbonImpl    carbon.Implementation
-	clock         clock.Clock
-	metricsClient metricsv1beta1.MetricsV1beta1Interface
+	apiClient   *api.Client
+	cache       *schedulercache.Cache
+	pricingImpl pricing.Implementation
+	carbonImpl  carbon.Implementation
+	clock       clock.Clock
 
 	// Metric value cache
 	powerMetrics sync.Map // map[string]float64 - key format: "nodeName/podName/phase"
@@ -61,19 +59,16 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	// Initialize components
-	apiClient := api.NewClient(cfg.API)
-	dataCache := schedulercache.New(cfg.API.CacheTTL, cfg.API.MaxCacheAge)
+	apiClient := api.NewClient(
+		cfg.Carbon.APIConfig,
+		cfg.Cache,
+	)
+	dataCache := schedulercache.New(cfg.Cache.CacheTTL, cfg.Cache.MaxCacheAge)
 
 	// Initialize pricing implementation if enabled
 	pricingImpl, err := pricing.Factory(cfg.Pricing)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing implementation: %v", err)
-	}
-
-	// Initialize metrics client
-	metricsClient, err := metricsv1beta1.NewForConfig(h.KubeConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metrics client: %v", err)
 	}
 
 	// Initialize carbon implementation if enabled
@@ -83,15 +78,14 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	scheduler := &ComputeGardenerScheduler{
-		handle:        h,
-		config:        cfg,
-		apiClient:     apiClient,
-		cache:         dataCache,
-		pricingImpl:   pricingImpl,
-		carbonImpl:    carbonImpl,
-		clock:         clock.RealClock{},
-		metricsClient: metricsClient,
-		stopCh:        make(chan struct{}),
+		handle:      h,
+		config:      cfg,
+		apiClient:   apiClient,
+		cache:       dataCache,
+		pricingImpl: pricingImpl,
+		carbonImpl:  carbonImpl,
+		clock:       clock.RealClock{},
+		stopCh:      make(chan struct{}),
 	}
 
 	// Start health check worker
@@ -296,9 +290,40 @@ func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 }
 
 func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
-	// let's do something else here to consider health of core scheduler (remove this comment and re-impl)
-	// _, err :=
-	// return err
+	// Check cache health - there should be at least one region with fresh data
+	regions := cs.cache.GetRegions()
+	if len(regions) == 0 {
+		return fmt.Errorf("cache health check failed: no regions cached")
+	}
+
+	// Verify at least one region has fresh data
+	hasFreshData := false
+	for _, region := range regions {
+		if _, fresh := cs.cache.Get(region); fresh {
+			hasFreshData = true
+			break
+		}
+	}
+	if !hasFreshData {
+		return fmt.Errorf("cache health check failed: no fresh data available")
+	}
+
+	// If carbon awareness enabled, verify API health
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+		_, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+		if err != nil {
+			return fmt.Errorf("carbon API health check failed: %v", err)
+		}
+	}
+
+	// If pricing enabled, verify we can get current rate
+	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
+		if rate < 0 {
+			return fmt.Errorf("pricing health check failed: invalid rate returned")
+		}
+	}
+
 	return nil
 }
 

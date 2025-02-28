@@ -36,7 +36,7 @@ func New(cfg *config.CarbonConfig, apiClient *api.Client) Implementation {
 }
 
 func (c *carbonImpl) GetCurrentIntensity(ctx context.Context) (float64, error) {
-	data, err := c.apiClient.GetCarbonIntensity(ctx, c.config.DefaultRegion)
+	data, err := c.apiClient.GetCarbonIntensity(ctx, c.config.APIConfig.Region)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get carbon intensity data: %v", err)
 	}

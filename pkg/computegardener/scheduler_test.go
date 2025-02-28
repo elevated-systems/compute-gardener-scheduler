@@ -1,7 +1,11 @@
 package computegardener
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +27,24 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing/mock"
 )
+
+// mockHTTPClient implements api.HTTPClient for testing
+type mockHTTPClient struct {
+	carbonIntensity float64
+	timestamp       time.Time
+}
+
+func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	data := api.ElectricityData{
+		CarbonIntensity: m.carbonIntensity,
+		Timestamp:       m.timestamp,
+	}
+	jsonData, _ := json.Marshal(data)
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(jsonData)),
+	}, nil
+}
 
 // testConfig wraps config.Config to implement runtime.Object
 type testConfig struct {
@@ -75,16 +97,17 @@ func setupTest(_ *testing.T) func() {
 }
 
 func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64, mockTime time.Time) *ComputeGardenerScheduler {
-	mockClient := api.NewClient(config.APIConfig{
-		ElectricityMapKey:    "mock-key",
-		ElectricityMapRegion: "mock-region",
-		Timeout:              time.Second,
-		RateLimit:            10,
-		ElectricityMapURL:    "http://mock-url/",
-	})
+	mockClient := api.NewClient(
+		cfg.Carbon.APIConfig,
+		cfg.Cache,
+		api.WithHTTPClient(&mockHTTPClient{
+			carbonIntensity: carbonIntensity,
+			timestamp:       mockTime,
+		}),
+	)
 
 	cache := schedulercache.New(time.Minute, time.Hour)
-	cache.Set(cfg.API.ElectricityMapRegion, &api.ElectricityData{
+	cache.Set(cfg.Carbon.APIConfig.Region, &api.ElectricityData{
 		CarbonIntensity: carbonIntensity,
 		Timestamp:       mockTime,
 	})
@@ -119,11 +142,15 @@ func TestNew(t *testing.T) {
 			name: "valid config",
 			obj: &testConfig{
 				Config: config.Config{
-					API: config.APIConfig{
-						ElectricityMapKey: "test-key",
-					},
 					Carbon: config.CarbonConfig{
+						Enabled:            true,
+						Provider:           "electricity-maps-api",
 						IntensityThreshold: 200,
+						APIConfig: config.ElectricityMapsAPIConfig{
+							APIKey: "test-key",
+							Region: "test-region",
+							URL:    "http://mock-url/",
+						},
 					},
 				},
 			},
@@ -228,13 +255,23 @@ func TestPreFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &testConfig{
 				Config: config.Config{
-					API: config.APIConfig{
-						ElectricityMapKey:    "test-key",
-						ElectricityMapRegion: "test-region",
+					Cache: config.APICacheConfig{
+						Timeout:     time.Second,
+						MaxRetries:  3,
+						RetryDelay:  time.Second,
+						RateLimit:   10,
+						CacheTTL:    time.Minute,
+						MaxCacheAge: time.Hour,
 					},
 					Carbon: config.CarbonConfig{
 						Enabled:            tt.carbonEnabled,
+						Provider:           "electricity-maps-api",
 						IntensityThreshold: tt.threshold,
+						APIConfig: config.ElectricityMapsAPIConfig{
+							APIKey: "test-key",
+							Region: "test-region",
+							URL:    "http://mock-url/",
+						},
 					},
 					Scheduling: config.SchedulingConfig{
 						MaxSchedulingDelay: tt.maxDelay,
@@ -307,6 +344,14 @@ func TestCheckPricingConstraints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &testConfig{
 				Config: config.Config{
+					Cache: config.APICacheConfig{
+						Timeout:     time.Second,
+						MaxRetries:  3,
+						RetryDelay:  time.Second,
+						RateLimit:   10,
+						CacheTTL:    time.Minute,
+						MaxCacheAge: time.Hour,
+					},
 					Pricing: config.PricingConfig{
 						Enabled:   true,
 						Provider:  "tou",
@@ -393,8 +438,23 @@ func TestHandlePodCompletion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &testConfig{
 				Config: config.Config{
+					Cache: config.APICacheConfig{
+						Timeout:     time.Second,
+						MaxRetries:  3,
+						RetryDelay:  time.Second,
+						RateLimit:   10,
+						CacheTTL:    time.Minute,
+						MaxCacheAge: time.Hour,
+					},
 					Carbon: config.CarbonConfig{
-						Enabled: tt.carbonEnabled,
+						Enabled:            tt.carbonEnabled,
+						Provider:           "electricity-maps-api",
+						IntensityThreshold: 200,
+						APIConfig: config.ElectricityMapsAPIConfig{
+							APIKey: "test-key",
+							Region: "test-region",
+							URL:    "http://mock-url/",
+						},
 					},
 					Power: config.PowerConfig{
 						DefaultIdlePower: 100,

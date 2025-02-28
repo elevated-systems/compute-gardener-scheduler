@@ -11,10 +11,16 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
 )
 
+// HTTPClient interface allows mocking http.Client in tests
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // Client handles interactions with the electricity data API
 type Client struct {
-	config      config.APIConfig
-	httpClient  *http.Client
+	apiConfig   config.ElectricityMapsAPIConfig
+	cacheConfig config.APICacheConfig
+	httpClient  HTTPClient
 	rateLimiter *time.Ticker
 }
 
@@ -24,21 +30,39 @@ type ElectricityData struct {
 	Timestamp       time.Time `json:"timestamp"`
 }
 
-// NewClient creates a new API client
-func NewClient(cfg config.APIConfig) *Client {
-	return &Client{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: cfg.Timeout,
-		},
-		rateLimiter: time.NewTicker(time.Second / time.Duration(cfg.RateLimit)),
+// ClientOption allows customizing the client
+type ClientOption func(*Client)
+
+// WithHTTPClient allows injecting a custom HTTP client
+func WithHTTPClient(client HTTPClient) ClientOption {
+	return func(c *Client) {
+		c.httpClient = client
 	}
+}
+
+// NewClient creates a new API client
+func NewClient(apiCfg config.ElectricityMapsAPIConfig, cacheCfg config.APICacheConfig, opts ...ClientOption) *Client {
+	client := &Client{
+		apiConfig:   apiCfg,
+		cacheConfig: cacheCfg,
+		httpClient: &http.Client{
+			Timeout: cacheCfg.Timeout,
+		},
+		rateLimiter: time.NewTicker(time.Second / time.Duration(cacheCfg.RateLimit)),
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(client)
+	}
+
+	return client
 }
 
 // GetCarbonIntensity fetches carbon intensity data with retries and circuit breaking
 func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*ElectricityData, error) {
 	var lastErr error
-	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
+	for attempt := 0; attempt <= c.cacheConfig.MaxRetries; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context cancelled: %v", ctx.Err())
@@ -50,7 +74,7 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 			lastErr = err
 			klog.V(2).InfoS("API request failed, retrying",
 				"attempt", attempt+1,
-				"maxRetries", c.config.MaxRetries,
+				"maxRetries", c.cacheConfig.MaxRetries,
 				"error", err)
 
 			// Calculate backoff duration
@@ -77,13 +101,13 @@ func (c *Client) doRequest(ctx context.Context, region string) (*ElectricityData
 	}
 
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.config.ElectricityMapURL+region, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiConfig.URL+region, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
 	// Add headers
-	req.Header.Set("auth-token", c.config.ElectricityMapKey)
+	req.Header.Set("auth-token", c.apiConfig.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -129,7 +153,7 @@ func (c *Client) doRequest(ctx context.Context, region string) (*ElectricityData
 
 func (c *Client) getBackoffDuration(attempt int) time.Duration {
 	// Exponential backoff with jitter
-	backoff := c.config.RetryDelay * time.Duration(1<<uint(attempt))
+	backoff := c.cacheConfig.RetryDelay * time.Duration(1<<uint(attempt))
 	maxBackoff := 1 * time.Minute
 	if backoff > maxBackoff {
 		backoff = maxBackoff

@@ -22,25 +22,28 @@ type NodePower struct {
 
 // Config holds all configuration for the compute-gardener scheduler
 type Config struct {
-	API           APIConfig           `yaml:"api"`
-	Scheduling    SchedulingConfig    `yaml:"scheduling"`
-	Carbon        CarbonConfig        `yaml:"carbon"`
-	Pricing       PricingConfig       `yaml:"pricing"`
-	Observability ObservabilityConfig `yaml:"observability"`
-	Power         PowerConfig         `yaml:"power"`
+	Cache      APICacheConfig   `yaml:"cache"`
+	Scheduling SchedulingConfig `yaml:"scheduling"`
+	Carbon     CarbonConfig     `yaml:"carbon"`
+	Pricing    PricingConfig    `yaml:"pricing"`
+	Power      PowerConfig      `yaml:"power"`
 }
 
-// APIConfig holds configuration for external API interactions
-type APIConfig struct {
-	ElectricityMapKey    string        `yaml:"electricityMapKey"`
-	ElectricityMapURL    string        `yaml:"electricityMapUrl"`
-	ElectricityMapRegion string        `yaml:"electricityMapRegion"`
-	Timeout              time.Duration `yaml:"timeout"`
-	MaxRetries           int           `yaml:"maxRetries"`
-	RetryDelay           time.Duration `yaml:"retryDelay"`
-	RateLimit            int           `yaml:"rateLimit"`
-	CacheTTL             time.Duration `yaml:"cacheTTL"`
-	MaxCacheAge          time.Duration `yaml:"maxCacheAge"`
+// APICacheConfig holds configuration for API caching behavior
+type APICacheConfig struct {
+	Timeout     time.Duration `yaml:"timeout"`
+	MaxRetries  int           `yaml:"maxRetries"`
+	RetryDelay  time.Duration `yaml:"retryDelay"`
+	RateLimit   int           `yaml:"rateLimit"`
+	CacheTTL    time.Duration `yaml:"cacheTTL"`
+	MaxCacheAge time.Duration `yaml:"maxCacheAge"`
+}
+
+// ElectricityMapsAPIConfig holds configuration specific to the Electricity Maps API
+type ElectricityMapsAPIConfig struct {
+	APIKey string `yaml:"apiKey"`
+	URL    string `yaml:"url"`
+	Region string `yaml:"region"`
 }
 
 // SchedulingConfig holds configuration for scheduling behavior
@@ -60,9 +63,10 @@ type Schedule struct {
 
 // CarbonConfig holds configuration for carbon-aware scheduling
 type CarbonConfig struct {
-	Enabled            bool    `yaml:"enabled"`
-	IntensityThreshold float64 `yaml:"carbonIntensityThreshold"`
-	DefaultRegion      string  `yaml:"defaultRegion"`
+	Enabled            bool                     `yaml:"enabled"`
+	Provider           string                   `yaml:"provider"` // e.g. "electricity-maps-api"
+	IntensityThreshold float64                  `yaml:"carbonIntensityThreshold"`
+	APIConfig          ElectricityMapsAPIConfig `yaml:"api"`
 }
 
 // PricingConfig holds configuration for price-aware scheduling
@@ -72,20 +76,15 @@ type PricingConfig struct {
 	Schedules []Schedule `yaml:"schedules"` // Time-based pricing periods with their rates
 }
 
-// ObservabilityConfig holds configuration for monitoring and debugging
-type ObservabilityConfig struct {
-	LogLevel      string `yaml:"logLevel"`
-	EnableTracing bool   `yaml:"enableTracing"`
-}
-
 // Validate performs validation of the configuration
 func (c *Config) Validate() error {
-	if c.API.ElectricityMapKey == "" {
-		return fmt.Errorf("Electricity Map API key is required")
-	}
-
-	if c.Carbon.IntensityThreshold <= 0 {
-		return fmt.Errorf("base carbon intensity threshold must be positive")
+	if c.Carbon.Enabled {
+		if c.Carbon.Provider == "electricity-maps-api" && c.Carbon.APIConfig.APIKey == "" {
+			return fmt.Errorf("Electricity Maps API key is required when provider is electricity-maps-api")
+		}
+		if c.Carbon.IntensityThreshold <= 0 {
+			return fmt.Errorf("base carbon intensity threshold must be positive")
+		}
 	}
 
 	if c.Pricing.Enabled {
