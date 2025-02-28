@@ -76,6 +76,46 @@ subjects:
   name: compute-gardener-scheduler
   namespace: kube-system
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-scheduler-monitor
+  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  endpoints:
+  - port: https 
+    scheme: https
+    path: /metrics
+    interval: 30s
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tlsConfig:
+      insecureSkipVerify: true  # For testing only, consider using proper CA verification in production
+  namespaceSelector:
+    matchNames:
+    - kube-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-scheduler-metrics
+  namespace: kube-system
+  labels:
+    component: scheduler
+    tier: control-plane
+spec:
+  ports:
+  - name: https
+    port: 10259
+    targetPort: 10259
+    protocol: TCP
+  selector:
+    component: scheduler
+    tier: control-plane
+---
 apiVersion: v1
 kind: Secret
 metadata:
