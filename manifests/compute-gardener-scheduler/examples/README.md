@@ -7,7 +7,8 @@ This directory contains example manifests demonstrating various ways to use the 
 1. [basic-pod.yaml](basic-pod.yaml) - Simple pod using the compute-gardener scheduler
 2. [carbon-threshold-pod.yaml](carbon-threshold-pod.yaml) - Pod with custom carbon intensity threshold
 3. [price-aware-pod.yaml](price-aware-pod.yaml) - Pod with price-aware scheduling
-4. [opt-out-pod.yaml](opt-out-pod.yaml) - Pod that opts out of carbon/price-aware scheduling
+4. [price-only-pod.yaml](price-only-pod.yaml) - Pod using only price-aware scheduling (carbon disabled)
+5. [opt-out-pod.yaml](opt-out-pod.yaml) - Pod that opts out of carbon/price-aware scheduling
 
 ## Advanced Examples
 
@@ -146,6 +147,7 @@ compute-gardener-scheduler.kubernetes.io/skip: "false"
 
 2. **Carbon Intensity**
 ```yaml
+compute-gardener-scheduler.kubernetes.io/carbon-enabled: "true"
 compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "200.0"
 ```
 
@@ -174,3 +176,11 @@ annotations:
 annotations:
   compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0"
   compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "1h"
+```
+
+4. **Price-Only Workloads**
+```yaml
+annotations:
+  compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"
+  compute-gardener-scheduler.kubernetes.io/price-threshold: "0.15"
+  compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "6h"

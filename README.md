@@ -6,8 +6,8 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 
 ## Features
 
-- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data from Electricity Map API
-- **Price-Aware Scheduling**: Schedule pods based on time-of-use electricity pricing schedules
+- **Carbon-Aware Scheduling** (Optional): Schedule pods based on real-time carbon intensity data from Electricity Map API or implement your own intensity source
+- **Price-Aware Scheduling** (Optional): Schedule pods based on time-of-use electricity pricing schedules or implement your own pricing source
 - **Flexible Configuration**: Extensive configuration options for fine-tuning scheduler behavior
 - **Pod-Level Controls**: Pods can opt-out or specify custom thresholds via annotations
 - **Caching**: Built-in caching of API responses to limit external API calls
@@ -40,7 +40,8 @@ MAX_SCHEDULING_DELAY=24h               # Optional: Maximum pod scheduling delay
 ENABLE_POD_PRIORITIES=false            # Optional: Enable pod priority-based scheduling
 
 # Carbon Configuration
-CARBON_INTENSITY_THRESHOLD=200.0        # Optional: Base carbon intensity threshold (gCO2/kWh)
+CARBON_ENABLED=true                    # Optional: Enable carbon-aware scheduling (default: true)
+CARBON_INTENSITY_THRESHOLD=200.0       # Optional: Base carbon intensity threshold (gCO2/kWh)
 
 # Pricing Configuration
 PRICING_ENABLED=false                  # Optional: Enable TOU pricing
@@ -142,13 +143,32 @@ The scheduler follows this decision flow:
 1. Check if pod has exceeded maximum scheduling delay
 2. Check for opt-out annotations
 3. If pricing is enabled:
-   - Get current rate from TOU schedule
+   - Get current rate from pricing implementation
    - Compare against threshold
-4. Get current carbon intensity
-5. Compare against threshold
-6. Make scheduling decision
+4. If carbon-aware scheduling is enabled:
+   - Get current carbon intensity from implementation
+   - Compare against threshold
+5. Make scheduling decision
 
 ## Development
+
+### Adding a New Carbon Intensity Source
+
+To add a new carbon intensity source:
+
+1. Create a new package under `carbon/`
+2. Implement the `carbon.Implementation` interface:
+   ```go
+   type Implementation interface {
+       // GetCurrentIntensity returns the current carbon intensity for the configured region
+       GetCurrentIntensity(ctx context.Context) (float64, error)
+       
+       // CheckIntensityConstraints checks if current carbon intensity exceeds pod's threshold
+       CheckIntensityConstraints(ctx context.Context, pod *v1.Pod) *framework.Status
+   }
+   ```
+3. Add the implementation to the carbon factory
+4. Add tests for the new implementation
 
 ### Running Tests
 

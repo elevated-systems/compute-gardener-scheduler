@@ -58,8 +58,9 @@ type Schedule struct {
 	OffPeakRate float64 `yaml:"offPeakRate"` // Rate in $/kWh outside this time period
 }
 
-// PricingConfig holds configuration for price-aware scheduling
+// CarbonConfig holds configuration for carbon-aware scheduling
 type CarbonConfig struct {
+	Enabled            bool    `yaml:"enabled"`
 	IntensityThreshold float64 `yaml:"carbonIntensityThreshold"`
 	DefaultRegion      string  `yaml:"defaultRegion"`
 }

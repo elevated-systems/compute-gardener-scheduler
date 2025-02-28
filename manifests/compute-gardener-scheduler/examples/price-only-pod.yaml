@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: price-only-pod
+  annotations:
+    # Disable carbon-aware scheduling for this pod
+    compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"
+    # Set custom price threshold
+    compute-gardener-scheduler.kubernetes.io/price-threshold: "0.15"
+spec:
+  schedulerName: compute-gardener-scheduler
+  containers:
+  - name: nginx
+    image: nginx:1.14.2
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "250m"
+      limits:
+        memory: "128Mi"
+        cpu: "500m"

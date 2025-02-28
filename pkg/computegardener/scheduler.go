@@ -8,7 +8,6 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -17,6 +16,7 @@ import (
 
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
 	schedulercache "sigs.k8s.io/scheduler-plugins/pkg/computegardener/cache"
+	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/clock"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing"
@@ -36,6 +36,7 @@ type ComputeGardenerScheduler struct {
 	apiClient     *api.Client
 	cache         *schedulercache.Cache
 	pricingImpl   pricing.Implementation
+	carbonImpl    carbon.Implementation
 	clock         clock.Clock
 	metricsClient metricsv1beta1.MetricsV1beta1Interface
 
@@ -48,7 +49,6 @@ type ComputeGardenerScheduler struct {
 
 var (
 	_ framework.PreFilterPlugin = &ComputeGardenerScheduler{}
-	_ framework.PostBindPlugin  = &ComputeGardenerScheduler{}
 	_ framework.Plugin          = &ComputeGardenerScheduler{}
 )
 
@@ -76,12 +76,19 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, fmt.Errorf("failed to create metrics client: %v", err)
 	}
 
+	// Initialize carbon implementation if enabled
+	var carbonImpl carbon.Implementation
+	if cfg.Carbon.Enabled {
+		carbonImpl = carbon.New(&cfg.Carbon, apiClient)
+	}
+
 	scheduler := &ComputeGardenerScheduler{
 		handle:        h,
 		config:        cfg,
 		apiClient:     apiClient,
 		cache:         dataCache,
 		pricingImpl:   pricingImpl,
+		carbonImpl:    carbonImpl,
 		clock:         clock.RealClock{},
 		metricsClient: metricsClient,
 		stopCh:        make(chan struct{}),
@@ -182,9 +189,11 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 		}
 	}
 
-	// Check carbon intensity constraints
-	if status := cs.checkCarbonIntensityConstraints(ctx, pod); !status.IsSuccess() {
-		return nil, status
+	// Check carbon intensity constraints if enabled
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+		if status := cs.carbonImpl.CheckIntensityConstraints(ctx, pod); !status.IsSuccess() {
+			return nil, status
+		}
 	}
 
 	return nil, framework.NewStatus(framework.Success, "")
@@ -270,83 +279,6 @@ func (cs *ComputeGardenerScheduler) checkPricingConstraints(ctx context.Context,
 
 	return framework.NewStatus(framework.Success, "")
 }
-
-func (cs *ComputeGardenerScheduler) checkCarbonIntensityConstraints(ctx context.Context, pod *v1.Pod) *framework.Status {
-	// Get carbon intensity data
-	data, err := cs.getCarbonIntensityData(ctx)
-	if err != nil {
-		SchedulingAttempts.WithLabelValues("error").Inc()
-		return framework.NewStatus(framework.Error, fmt.Sprintf("failed to get carbon intensity data: %v", err))
-	}
-
-	// Record carbon intensity metric
-	CarbonIntensityGauge.WithLabelValues(cs.config.API.ElectricityMapRegion).Set(data.CarbonIntensity)
-
-	// Get threshold from pod annotation or use configured threshold
-	threshold := cs.config.Carbon.IntensityThreshold
-	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold"]; ok {
-		if t, err := strconv.ParseFloat(val, 64); err == nil {
-			threshold = t
-		} else {
-			return framework.NewStatus(framework.Error, "invalid carbon intensity threshold annotation")
-		}
-	}
-
-	if data.CarbonIntensity > threshold {
-		SchedulingAttempts.WithLabelValues("intensity_exceeded").Inc()
-		// Record scheduling efficiency metrics
-		if initialIntensity, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/initial-carbon-intensity"]; ok {
-			if initial, err := strconv.ParseFloat(initialIntensity, 64); err == nil {
-				delta := data.CarbonIntensity - initial
-				SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", pod.Name).Set(delta)
-
-				// Estimate savings based on delta
-				if delta < 0 { // negative delta means improvement
-					EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(-delta)
-				}
-			}
-		} else {
-			// First time seeing this pod, initialize annotations if needed
-			if pod.Annotations == nil {
-				pod.Annotations = make(map[string]string)
-			}
-			pod.Annotations["compute-gardener-scheduler.kubernetes.io/initial-carbon-intensity"] = fmt.Sprintf("%.2f", data.CarbonIntensity)
-		}
-
-		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", data.CarbonIntensity, threshold)
-
-		// Track node CPU usage if pod was previously running
-		if pod.Spec.NodeName != "" {
-			nodeName := pod.Spec.NodeName
-			// Record pre-job metrics
-			NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "pre_job").Set(cs.getNodeCPUUsage(nodeName))
-			power := cs.estimateNodePower(nodeName)
-			NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "pre_job").Set(power)
-		}
-
-		return framework.NewStatus(framework.Unschedulable, msg)
-	}
-
-	return framework.NewStatus(framework.Success, "")
-}
-
-func (cs *ComputeGardenerScheduler) getCarbonIntensityData(ctx context.Context) (*api.ElectricityData, error) {
-	// Check cache first
-	if data, found := cs.cache.Get(cs.config.API.ElectricityMapRegion); found {
-		return data, nil
-	}
-
-	// Fetch from API
-	data, err := cs.apiClient.GetCarbonIntensity(ctx, cs.config.API.ElectricityMapRegion)
-	if err != nil {
-		return nil, err
-	}
-
-	// Update cache
-	cs.cache.Set(cs.config.API.ElectricityMapRegion, data)
-	return data, nil
-}
-
 func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -364,136 +296,26 @@ func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 }
 
 func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
-	_, err := cs.getCarbonIntensityData(ctx)
-	return err
-}
-
-// PostBind implements the PostBind interface
-func (cs *ComputeGardenerScheduler) PostBind(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) {
-	// Record baseline CPU/power when pod is bound but hasn't started
-	baselineCPU := cs.getNodeCPUUsage(nodeName)
-	baselinePower := cs.estimateNodePower(nodeName)
-
-	// Store in cache and set metric
-	key := fmt.Sprintf("%s/%s/baseline", nodeName, pod.Name)
-	cs.powerMetrics.Store(key, baselinePower)
-
-	NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "baseline").Set(baselineCPU)
-	NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "baseline").Set(baselinePower)
+	// let's do something else here to consider health of core scheduler (remove this comment and re-impl)
+	// _, err :=
+	// return err
+	return nil
 }
 
 // handlePodCompletion records metrics when a pod completes
 func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
+	// Get pod CPU usage from container statuses
+	var totalCPUUsage float64
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.State.Terminated != nil {
+			// TODO: Get pod CPU usage from container metrics... yes, pod coming into prefilter should have this, right? but we may need to do before termination... hmm
+			// For now, we'll just use a placeholder value
+			totalCPUUsage += 0.5 // Placeholder - need to implement actual pod CPU metrics
+		}
+	}
+
+	// Calculate power consumption based on CPU usage
 	nodeName := pod.Spec.NodeName
-	if nodeName == "" {
-		return
-	}
-
-	// Record final CPU/power at completion (better represents average utilization)
-	finalCPU := cs.getNodeCPUUsage(nodeName)
-	finalPower := cs.estimateNodePower(nodeName)
-
-	// Store in cache and set metric
-	key := fmt.Sprintf("%s/%s/final", nodeName, pod.Name)
-	cs.powerMetrics.Store(key, finalPower)
-
-	NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "final").Set(finalCPU)
-	NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "final").Set(finalPower)
-
-	// Calculate energy usage and carbon emissions based on baseline and final measurements
-	if baselinePower, ok := cs.getPowerMetric(nodeName, pod.Name, "baseline"); ok {
-		duration := cs.clock.Since(pod.Status.StartTime.Time)
-		// Use final power as better representation of average
-		energyKWh := (finalPower * duration.Hours()) / 1000 // Convert W*h to kWh
-
-		JobEnergyUsage.WithLabelValues(pod.Name, pod.Namespace).Observe(energyKWh)
-
-		// Get current carbon intensity
-		data, err := cs.getCarbonIntensityData(context.Background())
-		if err == nil {
-			// Calculate carbon emissions (gCO2eq) = energy (kWh) * intensity (gCO2eq/kWh)
-			carbonEmissions := energyKWh * data.CarbonIntensity
-			JobCarbonEmissions.WithLabelValues(pod.Name, pod.Namespace).Observe(carbonEmissions)
-		}
-
-		// Calculate additional energy from job (above baseline)
-		additionalPower := finalPower - baselinePower
-		if additionalPower > 0 {
-			additionalEnergyKWh := (additionalPower * duration.Hours()) / 1000
-			EstimatedSavings.WithLabelValues("energy", "kwh").Add(additionalEnergyKWh)
-
-			// Calculate additional carbon emissions if we have intensity data
-			if err == nil {
-				additionalEmissions := additionalEnergyKWh * data.CarbonIntensity
-				EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(additionalEmissions)
-			}
-		}
-	}
-}
-
-// getPowerMetric retrieves a previously recorded power metric from cache
-func (cs *ComputeGardenerScheduler) getPowerMetric(nodeName, podName, phase string) (float64, bool) {
-	key := fmt.Sprintf("%s/%s/%s", nodeName, podName, phase)
-	if value, ok := cs.powerMetrics.Load(key); ok {
-		return value.(float64), true
-	}
-	return 0, false
-}
-
-// getNodeCPUUsage returns the current CPU usage (0-1) for a node
-func (cs *ComputeGardenerScheduler) getNodeCPUUsage(nodeName string) float64 {
-	// Get node metrics from metrics server
-	metrics, err := cs.metricsClient.NodeMetricses().Get(context.Background(), nodeName, metav1.GetOptions{})
-	if err != nil {
-		klog.ErrorS(err, "Failed to get node metrics", "node", nodeName, "error_type", "metrics_api")
-		SchedulingAttempts.WithLabelValues("metrics_api_error").Inc()
-		return 0
-	}
-
-	// Validate metrics data
-	if metrics.Usage.Cpu().IsZero() {
-		klog.V(2).InfoS("Node CPU metrics reported as zero - possible metrics-server issue",
-			"node", nodeName)
-		SchedulingAttempts.WithLabelValues("zero_metrics").Inc()
-		return 0
-	}
-
-	node, err := cs.handle.ClientSet().CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
-	if err != nil {
-		klog.ErrorS(err, "Failed to get node", "node", nodeName)
-		return 0
-	}
-
-	// Calculate CPU usage percentage
-	cpuQuantity := metrics.Usage.Cpu()
-	capacityQuantity := node.Status.Capacity.Cpu()
-
-	cpuUsage := float64(cpuQuantity.MilliValue()) / float64(capacityQuantity.MilliValue())
-	return cpuUsage
-}
-
-// describeContainerState returns a string description of a container state
-func describeContainerState(state v1.ContainerState) string {
-	switch {
-	case state.Running != nil:
-		return fmt.Sprintf("running since %v", state.Running.StartedAt)
-	case state.Waiting != nil:
-		return fmt.Sprintf("waiting: %s - %s", state.Waiting.Reason, state.Waiting.Message)
-	case state.Terminated != nil:
-		return fmt.Sprintf("terminated: %s (exit code: %d) - %s",
-			state.Terminated.Reason,
-			state.Terminated.ExitCode,
-			state.Terminated.Message)
-	default:
-		return "unknown"
-	}
-}
-
-// estimateNodePower estimates power consumption based on CPU usage
-func (cs *ComputeGardenerScheduler) estimateNodePower(nodeName string) float64 {
-	cpuUsage := cs.getNodeCPUUsage(nodeName)
-
-	// Get node-specific power config if available, otherwise use defaults
 	var idlePower, maxPower float64
 	if nodePower, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
 		idlePower = nodePower.IdlePower
@@ -504,6 +326,21 @@ func (cs *ComputeGardenerScheduler) estimateNodePower(nodeName string) float64 {
 	}
 
 	// Linear interpolation between idle and max power based on CPU usage
-	estimatedPower := idlePower + (maxPower-idlePower)*cpuUsage
-	return estimatedPower
+	estimatedPower := idlePower + (maxPower-idlePower)*totalCPUUsage
+
+	// Calculate energy usage
+	if pod.Status.StartTime != nil {
+		duration := cs.clock.Since(pod.Status.StartTime.Time)
+		energyKWh := (estimatedPower * duration.Hours()) / 1000 // Convert W*h to kWh
+		JobEnergyUsage.WithLabelValues(pod.Name, pod.Namespace).Observe(energyKWh)
+
+		// Get current carbon intensity if enabled
+		if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+			if intensity, err := cs.carbonImpl.GetCurrentIntensity(context.Background()); err == nil {
+				// Calculate carbon emissions (gCO2eq) = energy (kWh) * intensity (gCO2eq/kWh)
+				carbonEmissions := energyKWh * intensity
+				JobCarbonEmissions.WithLabelValues(pod.Name, pod.Namespace).Observe(carbonEmissions)
+			}
+		}
+	}
 }

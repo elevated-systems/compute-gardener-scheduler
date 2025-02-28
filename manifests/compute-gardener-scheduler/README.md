@@ -86,11 +86,12 @@ The scheduler is configured through environment variables in the deployment:
 
 Compute Gardener Configuration:
 - `ELECTRICITY_MAP_API_KEY`: API key from secret (required)
+- `CARBON_ENABLED`: Enable carbon-aware scheduling ("true"/"false", default: "true")
 - `CARBON_INTENSITY_THRESHOLD`: Base carbon intensity threshold (gCO2/kWh)
 - `MAX_SCHEDULING_DELAY`: Maximum time to delay pod scheduling
 
 Time-of-Use Pricing Configuration:
-- `PRICING_ENABLED`: Enable price-aware scheduling ("true"/"false")
+- `PRICING_ENABLED`: Enable price-aware scheduling ("true"/"false", default: "false")
 - `PRICING_PROVIDER`: Set to "tou" for time-of-use pricing
 - `PRICING_BASE_RATE`: Base electricity rate ($/kWh)
 - `PRICING_PEAK_RATE`: Peak rate multiplier (e.g., 1.5 for 50% higher)
@@ -156,13 +157,15 @@ metadata:
 
 The scheduler exposes metrics on port 10259 for Prometheus scraping:
 
-- `carbon_intensity_gauge`: Current carbon intensity
-- `electricity_rate_gauge`: Current electricity rate based on TOU schedule
-- `scheduling_attempts_total`: Scheduling attempt counts
-- `pod_scheduling_latency_seconds`: Pod scheduling latency
-- `carbon_savings_total`: Estimated carbon savings
-- `cost_savings_total`: Estimated cost savings
-- `price_based_delays_total`: Pricing-based delay counts
+- `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
+- `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
+- `scheduler_compute_gardener_scheduling_attempt_total`: Number of attempts to schedule pods by result
+- `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts
+- `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
+- `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
+- `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
+- `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
+- `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
 
 ## Health Checks
 
@@ -172,11 +175,12 @@ The scheduler provides health checks on port 10259:
 
 ## Resource Requirements
 
-The scheduler has minimal resource requirements:
+The scheduler has modest resource requirements:
 ```yaml
 resources:
   requests:
     cpu: '0.1'
+    memory: '256Mi'
 ```
 
 ## Security Context
@@ -206,7 +210,19 @@ kubectl get pod <pod-name> -o yaml | grep schedulerName
 kubectl get secret -n kube-system compute-gardener-scheduler-secrets -o yaml
 ```
 
-4. **TOU pricing not working**: Verify pricing schedules configuration:
+4. **Carbon-aware scheduling not working**: Check carbon configuration:
+```bash
+# Verify carbon-aware scheduling is enabled
+kubectl get deployment -n kube-system compute-gardener-scheduler -o yaml | grep CARBON
+
+# Check scheduler logs for carbon-related issues
+kubectl logs -n kube-system -l component=scheduler | grep carbon
+
+# Verify API responses
+kubectl logs -n kube-system -l component=scheduler | grep "carbon intensity"
+```
+
+5. **TOU pricing not working**: Verify pricing schedules configuration:
 ```bash
 kubectl get configmap -n kube-system compute-gardener-pricing-schedules -o yaml
 

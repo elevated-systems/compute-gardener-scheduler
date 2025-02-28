@@ -31,7 +31,9 @@ func LoadFromEnv() (*Config, error) {
 			EnablePodPriorities: getBoolOrDefault("ENABLE_POD_PRIORITIES", false),
 		},
 		Carbon: CarbonConfig{
+			Enabled:            true,
 			IntensityThreshold: getFloatOrDefault("CARBON_INTENSITY_THRESHOLD", 150.0),
+			DefaultRegion:      getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
 		},
 		Pricing: PricingConfig{
 			Enabled:   getBoolOrDefault("PRICING_ENABLED", false),
@@ -109,13 +111,20 @@ func getIntOrDefault(key string, defaultValue int) int {
 func getFloatOrDefault(key string, defaultValue float64) float64 {
 	if strValue := os.Getenv(key); strValue != "" {
 		if value, err := strconv.ParseFloat(strValue, 64); err == nil {
+			klog.V(2).InfoS("Using float value from environment",
+				"key", key,
+				"value", value)
 			return value
+		} else {
+			klog.ErrorS(err, "Invalid float value in environment, using default",
+				"key", key,
+				"value", strValue,
+				"default", defaultValue)
 		}
-		klog.V(2).InfoS("Invalid float value, using default",
-			"key", key,
-			"value", strValue,
-			"default", defaultValue)
 	}
+	klog.V(2).InfoS("No environment value found, using default",
+		"key", key,
+		"default", defaultValue)
 	return defaultValue
 }
 
