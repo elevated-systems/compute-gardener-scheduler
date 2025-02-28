@@ -123,6 +123,17 @@ var (
 		[]string{"period"}, // "peak" or "off-peak"
 	)
 
+	// CarbonBasedDelays counts scheduling delays due to carbon intensity thresholds
+	CarbonBasedDelays = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "carbon_delay_total",
+			Help:           "Number of scheduling delays due to carbon intensity thresholds",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"region"}, // region where carbon intensity was measured
+	)
+
 	// JobCarbonEmissions tracks estimated carbon emissions for jobs
 	JobCarbonEmissions = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
@@ -148,5 +159,6 @@ func init() {
 	legacyregistry.MustRegister(EstimatedSavings)
 	legacyregistry.MustRegister(ElectricityRateGauge)
 	legacyregistry.MustRegister(PriceBasedDelays)
+	legacyregistry.MustRegister(CarbonBasedDelays)
 	legacyregistry.MustRegister(JobCarbonEmissions)
 }

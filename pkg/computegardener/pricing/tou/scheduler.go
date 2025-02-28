@@ -2,7 +2,12 @@ package tou
 
 import (
 	"fmt"
+	"strconv"
 	"time"
+
+	v1 "k8s.io/api/core/v1"
+	klog "k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
 )
@@ -43,6 +48,53 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 	}
 
 	return 0 // No schedules configured
+}
+
+// CheckPriceConstraints checks if current electricity rate exceeds pod's threshold
+func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework.Status {
+	rate := s.GetCurrentRate(now)
+
+	// Get threshold from pod annotation or use off-peak rate as threshold
+	var threshold float64
+	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
+		klog.V(2).InfoS("Found price threshold annotation",
+			"pod", pod.Name,
+			"namespace", pod.Namespace,
+			"value", val)
+		if t, err := strconv.ParseFloat(val, 64); err == nil {
+			threshold = t
+			klog.V(2).InfoS("Using price threshold from annotation",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"threshold", threshold)
+		} else {
+			klog.ErrorS(err, "Invalid price threshold annotation",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"value", val)
+			return framework.NewStatus(framework.Error, "invalid electricity price threshold annotation")
+		}
+	} else if len(s.config.Schedules) > 0 {
+		// Use off-peak rate as default threshold
+		threshold = s.config.Schedules[0].OffPeakRate
+		klog.V(2).InfoS("Using off-peak rate as price threshold",
+			"pod", pod.Name,
+			"namespace", pod.Namespace,
+			"threshold", threshold)
+	} else {
+		return framework.NewStatus(framework.Error, "no pricing schedules configured")
+	}
+
+	if rate > threshold {
+		return framework.NewStatus(
+			framework.Unschedulable,
+			fmt.Sprintf("Current electricity rate ($%.3f/kWh) exceeds threshold ($%.3f/kWh)",
+				rate,
+				threshold),
+		)
+	}
+
+	return framework.NewStatus(framework.Success, "")
 }
 
 // containsDay checks if a day is included in a day string (e.g. "1,2,3" contains "2")

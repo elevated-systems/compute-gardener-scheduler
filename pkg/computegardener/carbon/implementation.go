@@ -3,10 +3,7 @@ package carbon
 import (
 	"context"
 	"fmt"
-	"strconv"
 
-	v1 "k8s.io/api/core/v1"
-	klog "k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
@@ -18,8 +15,8 @@ type Implementation interface {
 	// GetCurrentIntensity returns the current carbon intensity for the configured region
 	GetCurrentIntensity(ctx context.Context) (float64, error)
 
-	// CheckIntensityConstraints checks if current carbon intensity exceeds pod's threshold
-	CheckIntensityConstraints(ctx context.Context, pod *v1.Pod) *framework.Status
+	// CheckIntensityConstraints checks if current carbon intensity exceeds threshold
+	CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status
 }
 
 type carbonImpl struct {
@@ -43,37 +40,10 @@ func (c *carbonImpl) GetCurrentIntensity(ctx context.Context) (float64, error) {
 	return data.CarbonIntensity, nil
 }
 
-func (c *carbonImpl) CheckIntensityConstraints(ctx context.Context, pod *v1.Pod) *framework.Status {
+func (c *carbonImpl) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {
 	intensity, err := c.GetCurrentIntensity(ctx)
 	if err != nil {
 		return framework.NewStatus(framework.Error, err.Error())
-	}
-
-	// Get threshold from pod annotation or use configured threshold
-	threshold := c.config.IntensityThreshold
-	klog.V(2).InfoS("Initial carbon intensity threshold from config",
-		"pod", pod.Name,
-		"namespace", pod.Namespace,
-		"threshold", threshold)
-
-	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold"]; ok {
-		klog.V(2).InfoS("Found carbon intensity threshold annotation",
-			"pod", pod.Name,
-			"namespace", pod.Namespace,
-			"value", val)
-		if t, err := strconv.ParseFloat(val, 64); err == nil {
-			threshold = t
-			klog.V(2).InfoS("Using carbon intensity threshold from annotation",
-				"pod", pod.Name,
-				"namespace", pod.Namespace,
-				"threshold", threshold)
-		} else {
-			klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
-				"pod", pod.Name,
-				"namespace", pod.Namespace,
-				"value", val)
-			return framework.NewStatus(framework.Error, "invalid carbon intensity threshold annotation")
-		}
 	}
 
 	if intensity > threshold {

@@ -147,7 +147,7 @@ compute-gardener-scheduler.kubernetes.io/skip: "false"
 
 2. **Carbon Intensity**
 ```yaml
-compute-gardener-scheduler.kubernetes.io/carbon-enabled: "true"
+compute-gardener-scheduler.kubernetes.io/carbon-enabled: "true" # Set to "false" to disable carbon awareness for this pod
 compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "200.0"
 ```
 

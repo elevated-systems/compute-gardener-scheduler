@@ -86,6 +86,9 @@ Pods can control scheduling behavior using the following annotations:
 # Opt out of compute-gardener scheduling
 compute-gardener-scheduler.kubernetes.io/skip: "true"
 
+# Disable carbon-aware scheduling for this pod only
+compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"
+
 # Set custom carbon intensity threshold
 compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0"
 
@@ -111,6 +114,7 @@ The following metrics are available at https://[scheduler-pod]:10260/metrics:
 - `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts
 - `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
 - `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
+- `scheduler_compute_gardener_carbon_delay_total`: Number of scheduling delays due to carbon intensity thresholds
 - `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes at baseline and completion
 - `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption
 - `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs

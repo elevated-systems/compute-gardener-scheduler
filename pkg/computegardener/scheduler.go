@@ -177,16 +177,78 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check pricing constraints if enabled
-	if cs.config.Pricing.Enabled {
-		if status := cs.checkPricingConstraints(ctx, pod); !status.IsSuccess() {
+	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
+			// Record metrics for price-based delay
+			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
+			threshold := cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
+			if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
+				if t, err := strconv.ParseFloat(val, 64); err == nil {
+					threshold = t
+				}
+			}
+
+			period := "peak"
+			if rate <= threshold {
+				period = "off-peak"
+			}
+			PriceBasedDelays.WithLabelValues(period).Inc()
+			savings := rate - threshold
+			EstimatedSavings.WithLabelValues("cost", "dollars").Add(savings)
+			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
+
 			return nil, status
 		}
 	}
 
 	// Check carbon intensity constraints if enabled
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		if status := cs.carbonImpl.CheckIntensityConstraints(ctx, pod); !status.IsSuccess() {
-			return nil, status
+		// Check if pod has annotation to disable carbon-aware scheduling
+		if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-enabled"]; ok && val == "false" {
+			klog.V(2).InfoS("Carbon-aware scheduling disabled via annotation",
+				"pod", pod.Name,
+				"namespace", pod.Namespace)
+			// Skip carbon check if explicitly disabled for this pod
+		} else {
+			// Get threshold from pod annotation or use configured threshold
+			threshold := cs.config.Carbon.IntensityThreshold
+			klog.V(2).InfoS("Initial carbon intensity threshold from config",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"threshold", threshold)
+
+			if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold"]; ok {
+				klog.V(2).InfoS("Found carbon intensity threshold annotation",
+					"pod", pod.Name,
+					"namespace", pod.Namespace,
+					"value", val)
+				if t, err := strconv.ParseFloat(val, 64); err == nil {
+					threshold = t
+					klog.V(2).InfoS("Using carbon intensity threshold from annotation",
+						"pod", pod.Name,
+						"namespace", pod.Namespace,
+						"threshold", threshold)
+				} else {
+					klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
+						"pod", pod.Name,
+						"namespace", pod.Namespace,
+						"value", val)
+					return nil, framework.NewStatus(framework.Error, "invalid carbon intensity threshold annotation")
+				}
+			}
+
+			if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
+				// Record metrics for carbon-based delay
+				if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
+					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
+					if intensity > threshold {
+						CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+						savings := intensity - threshold
+						EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
+					}
+				}
+				return nil, status
+			}
 		}
 	}
 
@@ -229,50 +291,6 @@ func (cs *ComputeGardenerScheduler) isOptedOut(pod *v1.Pod) bool {
 	return pod.Annotations["compute-gardener-scheduler.kubernetes.io/skip"] == "true"
 }
 
-func (cs *ComputeGardenerScheduler) checkPricingConstraints(ctx context.Context, pod *v1.Pod) *framework.Status {
-	if cs.pricingImpl == nil {
-		return framework.NewStatus(framework.Success, "")
-	}
-
-	rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
-
-	// Get threshold from pod annotation, env var, or use off-peak rate as threshold
-	var threshold float64
-	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
-		if t, err := strconv.ParseFloat(val, 64); err == nil {
-			threshold = t
-		} else {
-			return framework.NewStatus(framework.Error, "invalid electricity price threshold annotation")
-		}
-	} else if len(cs.config.Pricing.Schedules) > 0 {
-		// Use off-peak rate as default threshold
-		threshold = cs.config.Pricing.Schedules[0].OffPeakRate
-	} else {
-		return framework.NewStatus(framework.Error, "no pricing schedules configured")
-	}
-
-	// Record current electricity rate
-	period := "peak"
-	if rate <= threshold {
-		period = "off-peak"
-	}
-	ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
-
-	if rate > threshold {
-		PriceBasedDelays.WithLabelValues(period).Inc()
-		savings := rate - threshold
-		EstimatedSavings.WithLabelValues("cost", "dollars").Add(savings)
-
-		return framework.NewStatus(
-			framework.Unschedulable,
-			fmt.Sprintf("Current electricity rate ($%.3f/kWh) exceeds threshold ($%.3f/kWh)",
-				rate,
-				threshold),
-		)
-	}
-
-	return framework.NewStatus(framework.Success, "")
-}
 func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()

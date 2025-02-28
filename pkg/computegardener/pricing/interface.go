@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing/tou"
 )
@@ -12,6 +14,9 @@ import (
 type Implementation interface {
 	// GetCurrentRate returns the current electricity rate in $/kWh
 	GetCurrentRate(now time.Time) float64
+
+	// CheckPriceConstraints checks if current electricity rate exceeds pod's threshold
+	CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework.Status
 }
 
 // Factory creates pricing implementations based on configuration
