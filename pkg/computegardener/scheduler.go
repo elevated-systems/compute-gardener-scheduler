@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -12,12 +11,14 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	metricsv1beta1client "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
 	schedulercache "sigs.k8s.io/scheduler-plugins/pkg/computegardener/cache"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/clock"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
+	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/metrics"
 	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing"
 )
 
@@ -37,9 +38,11 @@ type ComputeGardenerScheduler struct {
 	pricingImpl pricing.Implementation
 	carbonImpl  carbon.Implementation
 	clock       clock.Clock
-
-	// Metric value cache
-	powerMetrics sync.Map // map[string]float64 - key format: "nodeName/podName/phase"
+	
+	// Metrics components
+	coreMetricsClient metrics.CoreMetricsClient
+	gpuMetricsClient  metrics.GPUMetricsClient
+	metricsStore      metrics.PodMetricsStorage
 
 	// Scheduler state
 	startTime time.Time
@@ -78,6 +81,60 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		carbonImpl = carbon.New(&cfg.Carbon, apiClient)
 	}
 
+	// Setup metrics clients - if metrics server is not available, they'll be nil
+	var coreMetricsClient metrics.CoreMetricsClient
+	var gpuMetricsClient metrics.GPUMetricsClient
+	var metricsStore metrics.PodMetricsStorage
+	
+	// Setup downsampling strategy based on config
+	var downsamplingStrategy metrics.DownsamplingStrategy
+	switch cfg.Power.DownsamplingStrategy {
+	case "lttb":
+		downsamplingStrategy = &metrics.LTTBDownsampling{}
+	case "timeBased":
+		downsamplingStrategy = &metrics.SimpleTimeBasedDownsampling{}
+	case "minMax":
+		downsamplingStrategy = &metrics.MinMaxDownsampling{}
+	default:
+		// Default to time-based if not specified
+		downsamplingStrategy = &metrics.SimpleTimeBasedDownsampling{}
+	}
+	
+	// Initialize metrics store with the configured retention parameters
+	if cfg.Power.MetricsSamplingInterval != "" {
+		var retentionTime time.Duration
+		if cfg.Power.CompletedPodRetention != "" {
+			if retention, err := time.ParseDuration(cfg.Power.CompletedPodRetention); err == nil {
+				retentionTime = retention
+			} else {
+				klog.ErrorS(err, "Invalid completed pod retention time, using default of 1h")
+				retentionTime = 1 * time.Hour
+			}
+		} else {
+			retentionTime = 1 * time.Hour
+		}
+		
+		// Initialize metrics store
+		metricsStore = metrics.NewInMemoryStore(
+			5*time.Minute, // Cleanup period
+			retentionTime,
+			cfg.Power.MaxSamplesPerPod,
+			downsamplingStrategy,
+		)
+		
+		// Try to initialize metrics client (will be nil if metrics-server not available)
+		// We'll log at startup but continue even if it's not available
+		if client, err := createMetricsClient(h); err == nil {
+			coreMetricsClient = metrics.NewK8sMetricsClient(client)
+			klog.V(2).Info("Initialized metrics-server client for pod metrics collection")
+		} else {
+			klog.ErrorS(err, "Failed to initialize metrics-server client, energy metrics will be limited")
+		}
+		
+		// Initialize a null GPU metrics client (stub for future implementation)
+		gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+	}
+	
 	scheduler := &ComputeGardenerScheduler{
 		handle:      h,
 		config:      cfg,
@@ -86,12 +143,23 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		pricingImpl: pricingImpl,
 		carbonImpl:  carbonImpl,
 		clock:       clock.RealClock{},
+		
+		// Metrics components
+		coreMetricsClient: coreMetricsClient,
+		gpuMetricsClient:  gpuMetricsClient,
+		metricsStore:      metricsStore,
+		
 		startTime:   time.Now(),
 		stopCh:      make(chan struct{}),
 	}
 
 	// Start health check worker
 	go scheduler.healthCheckWorker(ctx)
+	
+	// Start metrics collection worker if enabled
+	if scheduler.config.Power.MetricsSamplingInterval != "" {
+		go scheduler.metricsCollectionWorker(ctx)
+	}
 
 	// Register pod informer to track completion
 	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
@@ -267,7 +335,27 @@ func (cs *ComputeGardenerScheduler) Close() error {
 	close(cs.stopCh)
 	cs.apiClient.Close()
 	cs.cache.Close()
+	
+	// Close metrics store if configured
+	if cs.metricsStore != nil {
+		cs.metricsStore.Close()
+	}
+	
 	return nil
+}
+
+// createMetricsClient creates a client for the Kubernetes metrics API
+func createMetricsClient(handle framework.Handle) (metricsv1beta1client.PodMetricsInterface, error) {
+	config := *handle.KubeConfig()
+	
+	// Create a metrics client using the scheduler's kubeconfig
+	metricsClient, err := metricsv1beta1client.NewForConfig(&config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metrics client: %v", err)
+	}
+	
+	// Return the pod metrics interface
+	return metricsClient.PodMetricses(""), nil
 }
 
 func (cs *ComputeGardenerScheduler) hasExceededMaxDelay(pod *v1.Pod) bool {
@@ -351,47 +439,4 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// handlePodCompletion records metrics when a pod completes
-func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
-	// Get pod CPU usage from container statuses
-	var totalCPUUsage float64
-	for _, status := range pod.Status.ContainerStatuses {
-		if status.State.Terminated != nil {
-			// TODO: Get pod CPU usage from container metrics... yes, pod coming into prefilter should have this, right? but we may need to do before termination... hmm
-			// For now, we'll just use a placeholder value
-			totalCPUUsage += 0.5 // Placeholder - need to implement actual pod CPU metrics
-		}
-	}
-
-	// Calculate power consumption based on CPU usage
-	nodeName := pod.Spec.NodeName
-	var idlePower, maxPower float64
-	if nodePower, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
-		idlePower = nodePower.IdlePower
-		maxPower = nodePower.MaxPower
-	} else {
-		idlePower = cs.config.Power.DefaultIdlePower
-		maxPower = cs.config.Power.DefaultMaxPower
-	}
-
-	// Linear interpolation between idle and max power based on CPU usage
-	estimatedPower := idlePower + (maxPower-idlePower)*totalCPUUsage
-
-	// Calculate energy usage
-	if pod.Status.StartTime != nil {
-		duration := cs.clock.Since(pod.Status.StartTime.Time)
-		energyKWh := (estimatedPower * duration.Hours()) / 1000 // Convert W*h to kWh
-		JobEnergyUsage.WithLabelValues(pod.Name, pod.Namespace).Observe(energyKWh)
-
-		// Get current carbon intensity if enabled
-		if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-			if intensity, err := cs.carbonImpl.GetCurrentIntensity(context.Background()); err == nil {
-				// Calculate carbon emissions (gCO2eq) = energy (kWh) * intensity (gCO2eq/kWh)
-				carbonEmissions := energyKWh * intensity
-				JobCarbonEmissions.WithLabelValues(pod.Name, pod.Namespace).Observe(carbonEmissions)
-			}
-		}
-	}
 }

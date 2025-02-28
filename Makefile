@@ -21,7 +21,7 @@ RELEASE_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 
-VERSION=$(shell echo $(RELEASE_VERSION)')
+VERSION=$(shell echo $(RELEASE_VERSION))
 VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 
 .PHONY: all

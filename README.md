@@ -18,6 +18,7 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 ### Prerequisites
 
 - **Prometheus** (Optional): While not required for the scheduler to function, Prometheus is recommended for monitoring the scheduler's metrics. The scheduler exposes various metrics that help validate its behavior and performance.
+- **Metrics Server** (Optional): Required for collecting real-time pod resource usage metrics to calculate accurate energy usage and carbon footprint. Without metrics-server, energy estimates will be less accurate and dependable.
 
 ### Environment Variables
 
@@ -52,6 +53,12 @@ PRICING_SCHEDULES_PATH=/path/to/schedules.yaml  # Optional: Path to pricing sche
 NODE_DEFAULT_IDLE_POWER=100.0          # Default idle power consumption in watts
 NODE_DEFAULT_MAX_POWER=400.0           # Default maximum power consumption in watts
 NODE_POWER_CONFIG_worker1=idle:50,max:300  # Node-specific power settings
+
+# Metrics Collection Configuration
+METRICS_SAMPLING_INTERVAL=30s          # Interval for collecting pod metrics (e.g. "30s", "1m")
+MAX_SAMPLES_PER_POD=500                # Maximum number of metrics samples to store per pod
+COMPLETED_POD_RETENTION=1h             # How long to keep metrics for completed pods
+DOWNSAMPLING_STRATEGY=timeBased        # Strategy for downsampling metrics (lttb, timeBased, minMax)
 
 # Observability Configuration
 LOG_LEVEL=info                        # Optional: Logging level
@@ -115,8 +122,12 @@ The following metrics are available:
 - `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
 - `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
 - `scheduler_compute_gardener_carbon_delay_total`: Number of scheduling delays due to carbon intensity thresholds
-- `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes at baseline and completion
-- `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption
+- `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes (baseline, current, final)
+- `scheduler_compute_gardener_node_memory_usage_bytes`: Memory usage on nodes (baseline, current, final)
+- `scheduler_compute_gardener_node_gpu_usage`: GPU utilization on nodes (baseline, current, final)
+- `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption (baseline, current, final)
+- `scheduler_compute_gardener_metrics_samples_stored`: Number of pod metrics samples currently stored in cache
+- `scheduler_compute_gardener_metrics_cache_size`: Number of pods being tracked in metrics cache
 - `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
 - `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
 - `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)

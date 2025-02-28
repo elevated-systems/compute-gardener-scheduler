@@ -50,10 +50,32 @@ var (
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "node_cpu_usage_cores",
-			Help:           "CPU usage in cores on nodes at baseline (bind) and final (completion)",
+			Help:           "CPU usage in cores on nodes at baseline (bind) and current",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"node", "pod", "phase"}, // phase: "baseline", "final"
+		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
+	)
+
+	// NodeMemoryUsage tracks memory usage on nodes
+	NodeMemoryUsage = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "node_memory_usage_bytes",
+			Help:           "Memory usage in bytes on nodes",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
+	)
+
+	// NodeGPUUsage tracks GPU usage on nodes
+	NodeGPUUsage = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "node_gpu_usage",
+			Help:           "GPU utilization on nodes (0-1 range)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
 	)
 
 	// NodePowerEstimate estimates node power consumption based on CPU usage
@@ -61,10 +83,31 @@ var (
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "node_power_estimate_watts",
-			Help:           "Estimated power consumption in watts based on node CPU usage",
+			Help:           "Estimated power consumption in watts based on node resource usage",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"node", "pod", "phase"}, // phase: "baseline", "final"
+		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
+	)
+
+	// MetricsSamplesStored tracks the number of time-series samples stored per pod
+	MetricsSamplesStored = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "metrics_samples_stored",
+			Help:           "Number of pod metrics samples currently stored in cache",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace"},
+	)
+
+	// MetricsCacheSize tracks the total number of pods being monitored
+	MetricsCacheSize = metrics.NewGauge(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "metrics_cache_size",
+			Help:           "Number of pods being tracked in metrics cache",
+			StabilityLevel: metrics.ALPHA,
+		},
 	)
 
 	// JobEnergyUsage tracks estimated energy usage for jobs
@@ -153,7 +196,11 @@ func init() {
 	legacyregistry.MustRegister(PodSchedulingLatency)
 	legacyregistry.MustRegister(SchedulingAttempts)
 	legacyregistry.MustRegister(NodeCPUUsage)
+	legacyregistry.MustRegister(NodeMemoryUsage)
+	legacyregistry.MustRegister(NodeGPUUsage)
 	legacyregistry.MustRegister(NodePowerEstimate)
+	legacyregistry.MustRegister(MetricsSamplesStored)
+	legacyregistry.MustRegister(MetricsCacheSize)
 	legacyregistry.MustRegister(JobEnergyUsage)
 	legacyregistry.MustRegister(SchedulingEfficiencyMetrics)
 	legacyregistry.MustRegister(EstimatedSavings)

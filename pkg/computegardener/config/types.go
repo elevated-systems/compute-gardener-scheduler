@@ -12,12 +12,21 @@ type PowerConfig struct {
 	DefaultIdlePower float64              `yaml:"defaultIdlePower"` // Default idle power in watts
 	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`  // Default max power in watts
 	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`  // Per-node power settings
+	
+	// Metrics collection configuration
+	MetricsSamplingInterval string                `yaml:"metricsSamplingInterval"` // e.g. "30s" or "1m"
+	MaxSamplesPerPod        int                   `yaml:"maxSamplesPerPod"`        // e.g. 1000
+	CompletedPodRetention   string                `yaml:"completedPodRetention"`   // e.g. "1h"
+	DownsamplingStrategy    string                `yaml:"downsamplingStrategy"`    // "lttb", "timeBased", "minMax"
 }
 
 // NodePower holds power settings for a specific node
 type NodePower struct {
 	IdlePower float64 `yaml:"idlePower"` // Idle power in watts
 	MaxPower  float64 `yaml:"maxPower"`  // Max power in watts
+	// Optional GPU-specific power settings
+	IdleGPUPower float64 `yaml:"idleGPUPower,omitempty"` // Idle GPU power in watts
+	MaxGPUPower  float64 `yaml:"maxGPUPower,omitempty"`  // Max GPU power in watts
 }
 
 // Config holds all configuration for the compute-gardener scheduler
@@ -107,6 +116,33 @@ func (c *Config) Validate() error {
 		if power.MaxPower <= power.IdlePower {
 			return fmt.Errorf("max power must be greater than idle power for node %s", node)
 		}
+		
+		// Validate GPU power settings if specified
+		if power.IdleGPUPower > 0 && power.MaxGPUPower <= power.IdleGPUPower {
+			return fmt.Errorf("max GPU power must be greater than idle GPU power for node %s", node)
+		}
+	}
+	
+	// Validate metrics settings
+	if c.Power.MetricsSamplingInterval != "" {
+		if _, err := time.ParseDuration(c.Power.MetricsSamplingInterval); err != nil {
+			return fmt.Errorf("invalid metrics sampling interval: %v", err)
+		}
+	}
+	
+	if c.Power.CompletedPodRetention != "" {
+		if _, err := time.ParseDuration(c.Power.CompletedPodRetention); err != nil {
+			return fmt.Errorf("invalid completed pod retention duration: %v", err)
+		}
+	}
+	
+	// Validate downsampling strategy
+	if c.Power.DownsamplingStrategy != "" && 
+	   c.Power.DownsamplingStrategy != "lttb" && 
+	   c.Power.DownsamplingStrategy != "timeBased" && 
+	   c.Power.DownsamplingStrategy != "minMax" {
+		return fmt.Errorf("invalid downsampling strategy: %s (must be one of: lttb, timeBased, minMax)", 
+			c.Power.DownsamplingStrategy)
 	}
 
 	return nil
