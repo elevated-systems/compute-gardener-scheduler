@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -107,15 +106,14 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 	}
 
 	return &ComputeGardenerScheduler{
-		handle:       &mockHandle{},
-		config:       cfg,
-		apiClient:    api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-		cache:        cache,
-		pricingImpl:  pricingmock.New(rate),
-		carbonImpl:   carbonImpl,
-		clock:        clock.NewMockClock(mockTime),
-		powerMetrics: sync.Map{},
-		startTime:    mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		handle:      &mockHandle{},
+		config:      cfg,
+		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+		cache:       cache,
+		pricingImpl: pricingmock.New(rate),
+		carbonImpl:  carbonImpl,
+		clock:       clock.NewMockClock(mockTime),
+		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 	}
 }
 
@@ -495,15 +493,14 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 	// Create scheduler with error-prone carbon implementation
 	cache := schedulercache.New(time.Minute, time.Hour)
 	scheduler := &ComputeGardenerScheduler{
-		handle:       &mockHandle{},
-		config:       cfg,
-		apiClient:    api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-		cache:        cache,
-		pricingImpl:  pricingmock.New(0.1),
-		carbonImpl:   carbonmock.NewWithError(),
-		clock:        clock.NewMockClock(baseTime),
-		powerMetrics: sync.Map{},
-		startTime:    baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		handle:      &mockHandle{},
+		config:      cfg,
+		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+		cache:       cache,
+		pricingImpl: pricingmock.New(0.1),
+		carbonImpl:  carbonmock.NewWithError(),
+		clock:       clock.NewMockClock(baseTime),
+		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 	}
 
 	// Test PreFilter
@@ -619,15 +616,14 @@ func TestHealthCheck(t *testing.T) {
 
 			// Create scheduler
 			scheduler := &ComputeGardenerScheduler{
-				handle:       &mockHandle{},
-				config:       cfg,
-				apiClient:    api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-				cache:        cache,
-				pricingImpl:  pricingmock.New(0.1),
-				carbonImpl:   carbonImpl,
-				clock:        clock.NewMockClock(baseTime),
-				powerMetrics: sync.Map{},
-				startTime:    baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+				handle:      &mockHandle{},
+				config:      cfg,
+				apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+				cache:       cache,
+				pricingImpl: pricingmock.New(0.1),
+				carbonImpl:  carbonImpl,
+				clock:       clock.NewMockClock(baseTime),
+				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 			}
 
 			// Test health check
