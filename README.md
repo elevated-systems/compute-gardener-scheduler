@@ -17,7 +17,7 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 
 ### Prerequisites
 
-- **metrics-server**: The scheduler requires [metrics-server](https://github.com/kubernetes-sigs/metrics-server) to be installed and running in your cluster to collect CPU metrics for power estimation. Without metrics-server, power-related metrics will report as 0.
+- **Prometheus** (Optional): While not required for the scheduler to function, Prometheus is recommended for monitoring the scheduler's metrics. The scheduler exposes various metrics that help validate its behavior and performance.
 
 ### Environment Variables
 
@@ -101,12 +101,12 @@ compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"
 
 ## Metrics
 
-The scheduler exports Prometheus metrics through the kube-scheduler's secure endpoints:
+The scheduler exports Prometheus metrics through a dedicated Service and ServiceMonitor:
 
-- Health checks on port 10259 (HTTPS)
-- Metrics on port 10260 (HTTPS)
+- Health checks on port 10259 (HTTPS) path /healthz
+- Metrics on port 10259 (HTTPS) path /metrics
 
-The following metrics are available at https://[scheduler-pod]:10260/metrics:
+The following metrics are available:
 
 - `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
 - `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
@@ -121,12 +121,54 @@ The following metrics are available at https://[scheduler-pod]:10260/metrics:
 - `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
 - `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
 
-All metrics are automatically registered with the kube-scheduler's metrics registry and exposed through its secure metrics endpoint. The scheduler deployment includes Prometheus annotations for automatic service discovery:
+### Metrics Collection
+
+The deployment includes both a Service and ServiceMonitor for Prometheus integration:
+
+```yaml
+# Service exposes the metrics endpoint
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-scheduler-metrics
+  namespace: kube-system
+  labels:
+    component: scheduler
+    tier: control-plane
+spec:
+  ports:
+  - name: https
+    port: 10259
+    targetPort: 10259
+    protocol: TCP
+  selector:
+    component: scheduler
+    tier: control-plane
+
+# ServiceMonitor configures Prometheus to scrape metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-scheduler-monitor
+  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  endpoints:
+  - port: https 
+    scheme: https
+    path: /metrics
+    interval: 30s
+```
+
+Additionally, the Pod template includes Prometheus annotations for environments that use annotation-based discovery:
 
 ```yaml
 annotations:
   prometheus.io/scrape: 'true'
-  prometheus.io/port: '10260'
+  prometheus.io/port: '10259'
   prometheus.io/scheme: 'https'
   prometheus.io/path: '/metrics'
 ```

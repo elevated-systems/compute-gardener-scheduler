@@ -158,7 +158,14 @@ metadata:
 
 ## Monitoring
 
-The scheduler exposes metrics on port 10259 for Prometheus scraping:
+The scheduler exposes metrics and health checks on port 10259 (HTTPS):
+
+- Health checks: `/healthz` 
+- Metrics: `/metrics`
+
+The deployment includes both a Service and ServiceMonitor for Prometheus integration. To monitor the scheduler effectively, you need Prometheus installed in your cluster.
+
+Available metrics include:
 
 - `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
 - `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
@@ -173,11 +180,45 @@ The scheduler exposes metrics on port 10259 for Prometheus scraping:
 - `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
 - `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
 
-## Health Checks
+### Metrics Collection Components
 
-The scheduler provides health checks on port 10259:
-- Liveness: `/healthz`
-- Readiness: `/healthz`
+```yaml
+# Service exposes the metrics endpoint
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-scheduler-metrics
+  namespace: kube-system
+  labels:
+    component: scheduler
+    tier: control-plane
+spec:
+  ports:
+  - name: https
+    port: 10259
+    targetPort: 10259
+    protocol: TCP
+  selector:
+    component: scheduler
+    tier: control-plane
+
+# ServiceMonitor configures Prometheus to scrape metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-scheduler-monitor
+  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  endpoints:
+  - port: https 
+    scheme: https
+    path: /metrics
+    interval: 30s
+```
 
 ## Resource Requirements
 
