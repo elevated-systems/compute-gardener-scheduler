@@ -53,6 +53,7 @@ PRICING_SCHEDULES_PATH=/path/to/schedules.yaml  # Optional: Path to pricing sche
 NODE_DEFAULT_IDLE_POWER=100.0          # Default idle power consumption in watts
 NODE_DEFAULT_MAX_POWER=400.0           # Default maximum power consumption in watts
 NODE_POWER_CONFIG_worker1=idle:50,max:300  # Node-specific power settings
+HARDWARE_PROFILES_PATH=/path/to/hardware-profiles.yaml  # Path to hardware profiles ConfigMap
 
 # Metrics Collection Configuration
 METRICS_SAMPLING_INTERVAL=30s          # Interval for collecting pod metrics (e.g. "30s", "1m")
@@ -99,6 +100,10 @@ compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"
 # Set custom carbon intensity threshold
 compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0"
 
+# Optional node labels for hardware identification (for improved energy profiles)
+node.kubernetes.io/cpu-model: "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz"
+node.kubernetes.io/gpu-model: "NVIDIA GeForce GTX 1660"
+
 # Set custom price threshold
 compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"
 
@@ -133,6 +138,72 @@ Alternatively, you can deploy using the provided YAML manifests:
 # First, update the API key in the manifest
 # Then apply the manifest
 kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
+```
+
+## Hardware Power Profiles
+
+The scheduler uses hardware-specific power profiles to accurately estimate and optimize energy consumption. This works through multiple layers:
+
+1. **Hardware Profile Database**: A ConfigMap containing power profiles for various CPU, GPU, and memory types
+2. **Cloud Instance Detection**: Automatically maps cloud instance types to their hardware components
+3. **On-Premises Hardware Detection**: Uses node labels or runtime detection to identify hardware
+
+### Labeling Nodes with Hardware Information
+
+For optimal performance, you can label your nodes with their hardware details:
+
+```bash
+# Label all nodes in your cluster
+./hack/label-node-hardware.sh
+
+# Or label a specific node
+./hack/label-node-hardware.sh worker-1
+```
+
+This adds standard Kubernetes labels that describe the hardware:
+- `node.kubernetes.io/cpu-model`: CPU model string (e.g., "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz")
+- `node.kubernetes.io/gpu-model`: GPU model if present (e.g., "NVIDIA GeForce RTX 3060")
+
+The scheduler uses these labels as a fast path for hardware identification. Without labels, it will perform runtime detection and cache the results.
+
+### Hardware Profile ConfigMap
+
+The hardware profiles are defined in a YAML format:
+
+```yaml
+# CPU power profiles
+cpuProfiles:
+  "Intel(R) Xeon(R) Platinum 8275CL":
+    idlePower: 10.5  # Idle power in watts
+    maxPower: 120.0  # Max power in watts
+  "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz":
+    idlePower: 5.0
+    maxPower: 65.0
+
+# GPU power profiles
+gpuProfiles:
+  "NVIDIA A100":
+    idlePower: 25.0
+    maxPower: 400.0
+  "NVIDIA GeForce GTX 1660":
+    idlePower: 7.0
+    maxPower: 125.0
+
+# Memory power profiles
+memProfiles:
+  "DDR4-2666 ECC":
+    idlePowerPerGB: 0.125  # Idle power per GB in watts
+    maxPowerPerGB: 0.375   # Max power per GB in watts
+    baseIdlePower: 1.0     # Base power overhead in watts
+
+# Cloud instance mappings to hardware components
+cloudInstanceMapping:
+  aws:
+    "m5.large":
+      cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
+      memoryType: "DDR4-2666 ECC"
+      numCPUs: 2
+      totalMemory: 8192  # in MB
 ```
 
 ## Metrics

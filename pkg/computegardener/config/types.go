@@ -12,6 +12,42 @@ type PowerConfig struct {
 	DefaultIdlePower float64              `yaml:"defaultIdlePower"` // Default idle power in watts
 	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`  // Default max power in watts
 	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`  // Per-node power settings
+	HardwareProfiles *HardwareProfiles    `yaml:"hardwareProfiles,omitempty"` // Hardware profile registry
+}
+
+// HardwareProfiles contains mappings from hardware identifiers to power profiles
+type HardwareProfiles struct {
+	// Power profiles for hardware components
+	CPUProfiles  map[string]PowerProfile `yaml:"cpuProfiles"`  // CPU model -> power profile
+	GPUProfiles  map[string]PowerProfile `yaml:"gpuProfiles"`  // GPU model -> power profile
+	MemProfiles  map[string]MemoryPowerProfile `yaml:"memProfiles"`  // Memory type -> power profile
+	
+	// Cloud instance mappings to hardware components
+	CloudInstanceMapping map[string]map[string]HardwareComponents `yaml:"cloudInstanceMapping"` // Provider -> instance type -> hardware components
+}
+
+// PowerProfile defines power characteristics for a hardware component
+type PowerProfile struct {
+	IdlePower float64 `yaml:"idlePower"` // Idle power in watts
+	MaxPower  float64 `yaml:"maxPower"`  // Max power in watts
+}
+
+// MemoryPowerProfile defines power characteristics for memory components
+type MemoryPowerProfile struct {
+	IdlePowerPerGB float64 `yaml:"idlePowerPerGB"` // Idle power in watts per GB
+	MaxPowerPerGB  float64 `yaml:"maxPowerPerGB"`  // Max power in watts per GB
+	BaseIdlePower  float64 `yaml:"baseIdlePower,omitempty"` // Base idle power for memory controller
+}
+
+// HardwareComponents defines the hardware composition of a node or instance
+type HardwareComponents struct {
+	CPUModel       string `yaml:"cpuModel"`              // CPU model identifier
+	GPUModel       string `yaml:"gpuModel,omitempty"`    // GPU model identifier, if present
+	MemoryType     string `yaml:"memoryType,omitempty"`  // Memory type identifier
+	NumCPUs        int    `yaml:"numCPUs,omitempty"`     // Number of CPU cores/threads
+	NumGPUs        int    `yaml:"numGPUs,omitempty"`     // Number of GPUs, if present
+	TotalMemory    int    `yaml:"totalMemory,omitempty"` // Total memory in MB
+	MemoryChannels int    `yaml:"memChannels,omitempty"` // Number of memory channels
 }
 
 // MetricsConfig holds configuration for metrics collection and storage
@@ -126,6 +162,13 @@ func (c *Config) Validate() error {
 		}
 	}
 	
+	// Validate hardware profiles if configured
+	if c.Power.HardwareProfiles != nil {
+		if err := c.validateHardwareProfiles(); err != nil {
+			return fmt.Errorf("invalid hardware profiles: %v", err)
+		}
+	}
+	
 	// Validate metrics settings
 	if c.Metrics.SamplingInterval != "" {
 		if _, err := time.ParseDuration(c.Metrics.SamplingInterval); err != nil {
@@ -206,5 +249,81 @@ func validateSchedule(schedule Schedule) error {
 		}
 	}
 
+	return nil
+}
+
+// validateHardwareProfiles validates hardware profiles configuration
+func (c *Config) validateHardwareProfiles() error {
+	profiles := c.Power.HardwareProfiles
+	
+	// Validate CPU profiles
+	if len(profiles.CPUProfiles) == 0 {
+		return fmt.Errorf("no CPU profiles defined")
+	}
+	
+	for model, profile := range profiles.CPUProfiles {
+		if profile.IdlePower <= 0 {
+			return fmt.Errorf("idle power for CPU %s must be positive", model)
+		}
+		if profile.MaxPower <= profile.IdlePower {
+			return fmt.Errorf("max power must be greater than idle power for CPU %s", model)
+		}
+	}
+	
+	// Validate GPU profiles if present
+	for model, profile := range profiles.GPUProfiles {
+		if profile.IdlePower <= 0 {
+			return fmt.Errorf("idle power for GPU %s must be positive", model)
+		}
+		if profile.MaxPower <= profile.IdlePower {
+			return fmt.Errorf("max power must be greater than idle power for GPU %s", model)
+		}
+	}
+	
+	// Validate memory profiles if present
+	for memType, profile := range profiles.MemProfiles {
+		if profile.IdlePowerPerGB < 0 {
+			return fmt.Errorf("idle power per GB for memory %s cannot be negative", memType)
+		}
+		if profile.MaxPowerPerGB <= 0 {
+			return fmt.Errorf("max power per GB for memory %s must be positive", memType)
+		}
+		if profile.MaxPowerPerGB <= profile.IdlePowerPerGB {
+			return fmt.Errorf("max power per GB must be greater than idle power per GB for memory %s", memType)
+		}
+	}
+	
+	// Validate cloud instance mappings
+	for provider, instances := range profiles.CloudInstanceMapping {
+		for instanceType, components := range instances {
+			// Check for required CPU model
+			if components.CPUModel == "" {
+				return fmt.Errorf("missing CPU model for %s instance %s", provider, instanceType)
+			}
+			
+			// Check CPU model exists in profiles
+			if _, exists := profiles.CPUProfiles[components.CPUModel]; !exists {
+				return fmt.Errorf("CPU model %s for %s instance %s not found in CPU profiles", 
+					components.CPUModel, provider, instanceType)
+			}
+			
+			// Check GPU model exists in profiles if specified
+			if components.GPUModel != "" {
+				if _, exists := profiles.GPUProfiles[components.GPUModel]; !exists {
+					return fmt.Errorf("GPU model %s for %s instance %s not found in GPU profiles", 
+						components.GPUModel, provider, instanceType)
+				}
+			}
+			
+			// Check memory type exists in profiles if specified
+			if components.MemoryType != "" {
+				if _, exists := profiles.MemProfiles[components.MemoryType]; !exists {
+					return fmt.Errorf("memory type %s for %s instance %s not found in memory profiles", 
+						components.MemoryType, provider, instanceType)
+				}
+			}
+		}
+	}
+	
 	return nil
 }

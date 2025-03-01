@@ -218,6 +218,8 @@ spec:
           value: "tou"
         - name: PRICING_SCHEDULES_PATH
           value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
+        - name: HARDWARE_PROFILES_PATH
+          value: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles/hardware-profiles.yaml"
         ports:
         - containerPort: 10259
           name: https
@@ -249,6 +251,8 @@ spec:
           - name: pricing-schedules-volume
             mountPath: /etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml
             subPath: schedules.yaml
+          - name: hardware-profiles-volume
+            mountPath: /etc/kubernetes/compute-gardener-scheduler/hardware-profiles
       hostNetwork: false
       hostPID: false
       volumes:
@@ -258,3 +262,6 @@ spec:
         - name: pricing-schedules-volume
           configMap:
             name: compute-gardener-pricing-schedules
+        - name: hardware-profiles-volume
+          configMap:
+            name: compute-gardener-hw-profiles

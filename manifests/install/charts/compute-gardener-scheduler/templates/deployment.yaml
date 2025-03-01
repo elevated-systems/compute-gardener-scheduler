@@ -61,6 +61,10 @@ spec:
         - name: PRICING_ENABLED
           value: "false"
         {{- end }}
+        {{- if .Values.hardwareProfiles.enabled }}
+        - name: HARDWARE_PROFILES_PATH
+          value: "{{ .Values.hardwareProfiles.mountPath }}/hardware-profiles.yaml"
+        {{- end }}
         ports:
         - containerPort: {{ .Values.metrics.port }}
           name: https
@@ -89,6 +93,10 @@ spec:
             mountPath: /etc/kubernetes/{{ .Values.scheduler.name }}/pricing-schedules.yaml
             subPath: schedules.yaml
           {{- end }}
+          {{- if .Values.hardwareProfiles.enabled }}
+          - name: hardware-profiles-volume
+            mountPath: {{ .Values.hardwareProfiles.mountPath }}
+          {{- end }}
       hostNetwork: false
       hostPID: false
       {{- with .Values.scheduler.nodeSelector }}
@@ -108,4 +116,9 @@ spec:
         - name: pricing-schedules-volume
           configMap:
             name: {{ .Values.scheduler.name }}-pricing-schedules
+        {{- end }}
+        {{- if .Values.hardwareProfiles.enabled }}
+        - name: hardware-profiles-volume
+          configMap:
+            name: {{ .Values.scheduler.name }}-hw-profiles
         {{- end }}

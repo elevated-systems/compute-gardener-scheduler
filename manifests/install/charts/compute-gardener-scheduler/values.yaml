@@ -77,3 +77,8 @@ samplePod:
 plugins:
   # Can be expanded with further plugin-specific configuration
   pluginConfig: []
+
+# Hardware profiles for power estimation
+hardwareProfiles:
+  enabled: true
+  mountPath: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles"

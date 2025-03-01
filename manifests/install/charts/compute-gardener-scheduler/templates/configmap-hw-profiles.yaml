@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "compute-gardener-scheduler.fullname" . }}-hw-profiles
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+data:
+  hardware-profiles.yaml: |
+    # CPU power profiles - identifier -> power characteristics
+    cpuProfiles:
+      # Intel CPUs - Server/Cloud
+      "Intel(R) Xeon(R) Platinum 8275CL":
+        idlePower: 10.5
+        maxPower: 120.0
+      "Intel(R) Xeon(R) Platinum 8124M":
+        idlePower: 12.0
+        maxPower: 150.0
+      "Intel(R) Xeon(R) E5-2686 v4":
+        idlePower: 9.0
+        maxPower: 95.0
+      "Intel(R) Xeon(R) E5-2676 v3":
+        idlePower: 8.5
+        maxPower: 85.0
+      "Intel(R) Xeon(R) Gold 6148":
+        idlePower: 11.0
+        maxPower: 125.0
+      "Intel(R) Xeon(R) Platinum 8168":
+        idlePower: 12.5
+        maxPower: 155.0
+      
+      # Intel CPUs - Consumer/Edge (Homelab)
+      "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz":
+        idlePower: 5.0
+        maxPower: 65.0
+      "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz":
+        idlePower: 8.0
+        maxPower: 95.0
+      "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz":
+        idlePower: 9.0
+        maxPower: 105.0
+      "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz":
+        idlePower: 10.0
+        maxPower: 125.0
+      
+      # AMD CPUs - Server/Cloud
+      "AMD EPYC 7R32":
+        idlePower: 11.0
+        maxPower: 130.0
+      "AMD EPYC 7571":
+        idlePower: 10.0
+        maxPower: 120.0
+      "AMD EPYC 7R13":
+        idlePower: 11.5
+        maxPower: 140.0
+      "AMD EPYC 7763":
+        idlePower: 12.5
+        maxPower: 160.0
+      
+      # AMD CPUs - Consumer/Edge (Homelab)
+      "AMD Ryzen 5 3600 6-Core Processor":
+        idlePower: 6.0
+        maxPower: 65.0
+      "AMD Ryzen 7 5800X 8-Core Processor":
+        idlePower: 8.0
+        maxPower: 105.0
+    
+    # GPU power profiles - identifier -> power characteristics
+    gpuProfiles:
+      # NVIDIA GPUs - Data Center
+      "NVIDIA A100":
+        idlePower: 25.0
+        maxPower: 400.0
+      "NVIDIA T4":
+        idlePower: 10.0
+        maxPower: 70.0
+      "NVIDIA V100":
+        idlePower: 30.0
+        maxPower: 300.0
+      "NVIDIA K80":
+        idlePower: 15.0
+        maxPower: 150.0
+      "NVIDIA A10G":
+        idlePower: 20.0
+        maxPower: 230.0
+      
+      # NVIDIA GPUs - Consumer
+      "NVIDIA GeForce RTX 3080":
+        idlePower: 20.0
+        maxPower: 320.0
+      "NVIDIA GeForce GTX 1080 Ti":
+        idlePower: 15.0
+        maxPower: 250.0
+      "NVIDIA GeForce GTX 1660":
+        idlePower: 7.0
+        maxPower: 125.0
+      "NVIDIA GeForce RTX 3060":
+        idlePower: 12.0
+        maxPower: 170.0
+    
+    # Memory power profiles - memory type -> power characteristics
+    memProfiles:
+      # Server Memory
+      "DDR4-2666 ECC":
+        idlePowerPerGB: 0.125
+        maxPowerPerGB: 0.375
+        baseIdlePower: 1.0
+      "DDR4-3200 ECC":
+        idlePowerPerGB: 0.15
+        maxPowerPerGB: 0.45
+        baseIdlePower: 1.2
+      "DDR5-4800 ECC":
+        idlePowerPerGB: 0.11
+        maxPowerPerGB: 0.33
+        baseIdlePower: 0.9
+      
+      # Desktop/Consumer Memory
+      "DDR4-2400":
+        idlePowerPerGB: 0.1
+        maxPowerPerGB: 0.3
+        baseIdlePower: 0.8
+      "DDR4-3200":
+        idlePowerPerGB: 0.12
+        maxPowerPerGB: 0.36
+        baseIdlePower: 1.0
+      "DDR4-3600":
+        idlePowerPerGB: 0.14
+        maxPowerPerGB: 0.42
+        baseIdlePower: 1.1
+      "DDR5-5200":
+        idlePowerPerGB: 0.1
+        maxPowerPerGB: 0.3
+        baseIdlePower: 0.8
+
+    # Cloud instance type mappings to hardware components
+    cloudInstanceMapping:
+      # AWS instance types
+      aws:
+        "m5.large":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
+          memoryType: "DDR4-2666 ECC"
+          numCPUs: 2
+          totalMemory: 8192
+          memChannels: 6
+        "m5.xlarge":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
+          numCPUs: 4
+          totalMemory: 16384
+        "m5.2xlarge":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
+          numCPUs: 8
+          totalMemory: 32768
+        "c5.large":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8124M"
+          numCPUs: 2
+          totalMemory: 4096
+        "c5.xlarge":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8124M"
+          numCPUs: 4
+          totalMemory: 8192
+        "p3.2xlarge":
+          cpuModel: "Intel(R) Xeon(R) E5-2686 v4"
+          gpuModel: "NVIDIA V100"
+          numCPUs: 8
+          numGPUs: 1
+          totalMemory: 61440
+      
+      # GCP instance types
+      gcp:
+        "n2-standard-2":
+          cpuModel: "Intel(R) Xeon(R) Gold 6148"
+          numCPUs: 2
+          totalMemory: 8192
+        "n2-standard-4":
+          cpuModel: "Intel(R) Xeon(R) Gold 6148"
+          numCPUs: 4
+          totalMemory: 16384
+        "n2-standard-8":
+          cpuModel: "Intel(R) Xeon(R) Gold 6148"
+          numCPUs: 8
+          totalMemory: 32768
+        "c2-standard-4":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8168"
+          numCPUs: 4
+          totalMemory: 16384
+        "a2-highgpu-1g":
+          cpuModel: "AMD EPYC 7B12"
+          gpuModel: "NVIDIA A100"
+          numCPUs: 12
+          numGPUs: 1
+          totalMemory: 86016
+      
+      # Azure instance types
+      azure:
+        "Standard_D2s_v3":
+          cpuModel: "Intel(R) Xeon(R) E5-2673 v4"
+          numCPUs: 2
+          totalMemory: 8192
+        "Standard_D4s_v3":
+          cpuModel: "Intel(R) Xeon(R) E5-2673 v4"
+          numCPUs: 4
+          totalMemory: 16384
+        "Standard_F8s_v2":
+          cpuModel: "Intel(R) Xeon(R) Platinum 8168"
+          numCPUs: 8
+          totalMemory: 16384
+        "Standard_NC6s_v3":
+          cpuModel: "Intel(R) Xeon(R) E5-2690 v4"
+          gpuModel: "NVIDIA V100"
+          numCPUs: 6
+          numGPUs: 1
+          totalMemory: 114688

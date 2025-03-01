@@ -55,6 +55,21 @@ func LoadFromEnv() (*Config, error) {
 			DownsamplingStrategy: getEnvOrDefault("DOWNSAMPLING_STRATEGY", "timeBased"),
 		},
 	}
+	
+	// Try to load hardware profiles if path is provided
+	hwProfilesPath := os.Getenv("HARDWARE_PROFILES_PATH")
+	if hwProfilesPath != "" {
+		if profiles, err := LoadHardwareProfiles(hwProfilesPath); err == nil {
+			cfg.Power.HardwareProfiles = profiles
+			klog.V(2).InfoS("Loaded hardware profiles", 
+				"path", hwProfilesPath,
+				"cpuProfiles", len(profiles.CPUProfiles),
+				"gpuProfiles", len(profiles.GPUProfiles),
+				"memProfiles", len(profiles.MemProfiles))
+		} else {
+			klog.ErrorS(err, "Failed to load hardware profiles", "path", hwProfilesPath)
+		}
+	}
 
 	// Load pricing schedules if enabled and path provided
 	if cfg.Pricing.Enabled {
@@ -212,6 +227,33 @@ func loadNodePowerConfig() map[string]NodePower {
 	}
 
 	return config
+}
+
+// LoadHardwareProfiles tries to load hardware profiles from a ConfigMap
+func LoadHardwareProfiles(configMapPath string) (*HardwareProfiles, error) {
+	// If no path is provided, return nil (profiles will be disabled)
+	if configMapPath == "" {
+		return nil, nil
+	}
+	
+	// Read the file data
+	data, err := os.ReadFile(configMapPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read hardware profiles file: %v", err)
+	}
+	
+	// Parse the YAML
+	profiles := &HardwareProfiles{}
+	if err := yaml.Unmarshal(data, profiles); err != nil {
+		return nil, fmt.Errorf("failed to parse hardware profiles: %v", err)
+	}
+	
+	// Basic validation
+	if len(profiles.CPUProfiles) == 0 {
+		return nil, fmt.Errorf("no CPU profiles found in hardware profiles")
+	}
+	
+	return profiles, nil
 }
 
 func loadPricingSchedules(cfg *Config, path string) error {

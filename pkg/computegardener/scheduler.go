@@ -36,8 +36,9 @@ type ComputeGardenerScheduler struct {
 	apiClient   *api.Client
 	cache       *schedulercache.Cache
 	pricingImpl pricing.Implementation
-	carbonImpl  carbon.Implementation
-	clock       clock.Clock
+	carbonImpl       carbon.Implementation
+	clock            clock.Clock
+	hardwareProfiler *metrics.HardwareProfiler
 
 	// Metrics components
 	coreMetricsClient metrics.CoreMetricsClient
@@ -68,6 +69,16 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		cfg.Cache,
 	)
 	dataCache := schedulercache.New(cfg.Cache.CacheTTL, cfg.Cache.MaxCacheAge)
+	
+	// Initialize hardware profiler if hardware profiles are configured
+	var hardwareProfiler *metrics.HardwareProfiler
+	if cfg.Power.HardwareProfiles != nil {
+		hardwareProfiler = metrics.NewHardwareProfiler(cfg.Power.HardwareProfiles)
+		klog.V(2).InfoS("Hardware profiler initialized with profiles", 
+			"cpuProfiles", len(cfg.Power.HardwareProfiles.CPUProfiles),
+			"gpuProfiles", len(cfg.Power.HardwareProfiles.GPUProfiles),
+			"memProfiles", len(cfg.Power.HardwareProfiles.MemProfiles))
+	}
 
 	// Initialize pricing implementation if enabled
 	pricingImpl, err := pricing.Factory(cfg.Pricing)
@@ -134,13 +145,14 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	scheduler := &ComputeGardenerScheduler{
-		handle:      h,
-		config:      cfg,
-		apiClient:   apiClient,
-		cache:       dataCache,
-		pricingImpl: pricingImpl,
-		carbonImpl:  carbonImpl,
-		clock:       clock.RealClock{},
+		handle:           h,
+		config:           cfg,
+		apiClient:        apiClient,
+		cache:            dataCache,
+		pricingImpl:      pricingImpl,
+		carbonImpl:       carbonImpl,
+		clock:            clock.RealClock{},
+		hardwareProfiler: hardwareProfiler,
 
 		// Metrics components
 		coreMetricsClient: coreMetricsClient,
@@ -194,10 +206,46 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		},
 	)
 
-	// Register shutdown handler
+	// Register node handlers for initialization and cleanup
 	h.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				node, ok := obj.(*v1.Node)
+				if !ok {
+					return
+				}
+				// Initialize node with hardware profile if needed
+				if scheduler.hardwareProfiler != nil {
+					// Automatically detect hardware and update cache
+					if profile, err := scheduler.hardwareProfiler.DetectNodePowerProfile(node); err == nil {
+						klog.V(2).InfoS("Automatically detected node hardware profile", 
+							"node", node.Name, 
+							"idlePower", profile.IdlePower, 
+							"maxPower", profile.MaxPower)
+					}
+				}
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				// Check if changes occurred that might affect hardware profile
+				oldNode, ok1 := oldObj.(*v1.Node)
+				newNode, ok2 := newObj.(*v1.Node)
+				if !ok1 || !ok2 {
+					return
+				}
+				
+				// Refresh hardware profile if node specs changed
+				if scheduler.hardwareProfiler != nil && nodeSpecsChanged(oldNode, newNode) {
+					klog.V(2).InfoS("Node specs changed, refreshing hardware profile", "node", newNode.Name)
+					scheduler.hardwareProfiler.RefreshNodeCache(newNode)
+				}
+			},
 			DeleteFunc: func(obj interface{}) {
+				// Handle possible node deletion
+				if node, ok := obj.(*v1.Node); ok && scheduler.hardwareProfiler != nil {
+					// Could clean up any node-specific cached data here if needed
+					klog.V(2).InfoS("Node deleted", "node", node.Name)
+				}
+				
 				klog.V(2).InfoS("Handling shutdown", "plugin", scheduler.Name())
 				scheduler.Close()
 			},
@@ -312,6 +360,55 @@ func (cs *ComputeGardenerScheduler) Close() error {
 	}
 
 	return nil
+}
+
+// nodeSpecsChanged determines if any node specs changed that might affect hardware profile
+func nodeSpecsChanged(oldNode, newNode *v1.Node) bool {
+	// Check for instance type changes
+	if oldNode.Labels["node.kubernetes.io/instance-type"] != newNode.Labels["node.kubernetes.io/instance-type"] {
+		return true
+	}
+	
+	// Check for architecture changes
+	if oldNode.Labels["kubernetes.io/arch"] != newNode.Labels["kubernetes.io/arch"] {
+		return true
+	}
+	
+	// Check for capacity changes
+	oldCPU := oldNode.Status.Capacity.Cpu().Value()
+	newCPU := newNode.Status.Capacity.Cpu().Value()
+	if oldCPU != newCPU {
+		return true
+	}
+	
+	oldMem := oldNode.Status.Capacity.Memory().Value()
+	newMem := newNode.Status.Capacity.Memory().Value()
+	if oldMem != newMem {
+		return true
+	}
+	
+	// Check for GPU changes
+	oldGPU, oldHasGPU := oldNode.Status.Capacity["nvidia.com/gpu"]
+	newGPU, newHasGPU := newNode.Status.Capacity["nvidia.com/gpu"]
+	
+	if oldHasGPU != newHasGPU {
+		return true
+	}
+	
+	if oldHasGPU && newHasGPU && oldGPU.Value() != newGPU.Value() {
+		return true
+	}
+	
+	// CPU/GPU model labels changed
+	if oldNode.Labels["node.kubernetes.io/cpu-model"] != newNode.Labels["node.kubernetes.io/cpu-model"] {
+		return true
+	}
+	
+	if oldNode.Labels["node.kubernetes.io/gpu-model"] != newNode.Labels["node.kubernetes.io/gpu-model"] {
+		return true
+	}
+	
+	return false
 }
 
 // createMetricsClient creates a client for the Kubernetes metrics API
