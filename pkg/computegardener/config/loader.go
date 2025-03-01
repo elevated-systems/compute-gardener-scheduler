@@ -48,6 +48,12 @@ func LoadFromEnv() (*Config, error) {
 			DefaultMaxPower:  getFloatOrDefault("NODE_DEFAULT_MAX_POWER", 400.0),
 			NodePowerConfig:  loadNodePowerConfig(),
 		},
+		Metrics: MetricsConfig{
+			SamplingInterval:     getEnvOrDefault("METRICS_SAMPLING_INTERVAL", "30s"),
+			MaxSamplesPerPod:     getIntOrDefault("MAX_SAMPLES_PER_POD", 500),
+			PodRetention:         getEnvOrDefault("COMPLETED_POD_RETENTION", "1h"),
+			DownsamplingStrategy: getEnvOrDefault("DOWNSAMPLING_STRATEGY", "timeBased"),
+		},
 	}
 
 	// Load pricing schedules if enabled and path provided

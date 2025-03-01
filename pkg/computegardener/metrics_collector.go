@@ -14,7 +14,7 @@ import (
 // metricsCollectionWorker periodically collects pod metrics and updates the store
 func (cs *ComputeGardenerScheduler) metricsCollectionWorker(ctx context.Context) {
 	// Parse sampling interval from config
-	interval, err := time.ParseDuration(cs.config.Power.MetricsSamplingInterval)
+	interval, err := time.ParseDuration(cs.config.Metrics.SamplingInterval)
 	if err != nil {
 		klog.ErrorS(err, "Invalid metrics sampling interval, using default of 30s")
 		interval = 30 * time.Second
@@ -22,7 +22,7 @@ func (cs *ComputeGardenerScheduler) metricsCollectionWorker(ctx context.Context)
 
 	klog.V(2).InfoS("Starting metrics collection worker", 
 		"interval", interval.String(),
-		"maxSamplesPerPod", cs.config.Power.MaxSamplesPerPod)
+		"maxSamplesPerPod", cs.config.Metrics.MaxSamplesPerPod)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

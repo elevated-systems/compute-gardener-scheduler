@@ -12,12 +12,14 @@ type PowerConfig struct {
 	DefaultIdlePower float64              `yaml:"defaultIdlePower"` // Default idle power in watts
 	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`  // Default max power in watts
 	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`  // Per-node power settings
-	
-	// Metrics collection configuration
-	MetricsSamplingInterval string                `yaml:"metricsSamplingInterval"` // e.g. "30s" or "1m"
-	MaxSamplesPerPod        int                   `yaml:"maxSamplesPerPod"`        // e.g. 1000
-	CompletedPodRetention   string                `yaml:"completedPodRetention"`   // e.g. "1h"
-	DownsamplingStrategy    string                `yaml:"downsamplingStrategy"`    // "lttb", "timeBased", "minMax"
+}
+
+// MetricsConfig holds configuration for metrics collection and storage
+type MetricsConfig struct {
+	SamplingInterval     string `yaml:"samplingInterval"`     // e.g. "30s" or "1m"
+	MaxSamplesPerPod     int    `yaml:"maxSamplesPerPod"`     // e.g. 1000
+	PodRetention         string `yaml:"podRetention"`         // e.g. "1h"
+	DownsamplingStrategy string `yaml:"downsamplingStrategy"` // "lttb", "timeBased", "minMax"
 }
 
 // NodePower holds power settings for a specific node
@@ -36,6 +38,7 @@ type Config struct {
 	Carbon     CarbonConfig     `yaml:"carbon"`
 	Pricing    PricingConfig    `yaml:"pricing"`
 	Power      PowerConfig      `yaml:"power"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
 }
 
 // APICacheConfig holds configuration for API caching behavior
@@ -124,25 +127,25 @@ func (c *Config) Validate() error {
 	}
 	
 	// Validate metrics settings
-	if c.Power.MetricsSamplingInterval != "" {
-		if _, err := time.ParseDuration(c.Power.MetricsSamplingInterval); err != nil {
+	if c.Metrics.SamplingInterval != "" {
+		if _, err := time.ParseDuration(c.Metrics.SamplingInterval); err != nil {
 			return fmt.Errorf("invalid metrics sampling interval: %v", err)
 		}
 	}
 	
-	if c.Power.CompletedPodRetention != "" {
-		if _, err := time.ParseDuration(c.Power.CompletedPodRetention); err != nil {
+	if c.Metrics.PodRetention != "" {
+		if _, err := time.ParseDuration(c.Metrics.PodRetention); err != nil {
 			return fmt.Errorf("invalid completed pod retention duration: %v", err)
 		}
 	}
 	
 	// Validate downsampling strategy
-	if c.Power.DownsamplingStrategy != "" && 
-	   c.Power.DownsamplingStrategy != "lttb" && 
-	   c.Power.DownsamplingStrategy != "timeBased" && 
-	   c.Power.DownsamplingStrategy != "minMax" {
+	if c.Metrics.DownsamplingStrategy != "" && 
+	   c.Metrics.DownsamplingStrategy != "lttb" && 
+	   c.Metrics.DownsamplingStrategy != "timeBased" && 
+	   c.Metrics.DownsamplingStrategy != "minMax" {
 		return fmt.Errorf("invalid downsampling strategy: %s (must be one of: lttb, timeBased, minMax)", 
-			c.Power.DownsamplingStrategy)
+			c.Metrics.DownsamplingStrategy)
 	}
 
 	return nil

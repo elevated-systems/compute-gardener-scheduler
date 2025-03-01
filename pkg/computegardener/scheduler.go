@@ -88,7 +88,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	
 	// Setup downsampling strategy based on config
 	var downsamplingStrategy metrics.DownsamplingStrategy
-	switch cfg.Power.DownsamplingStrategy {
+	switch cfg.Metrics.DownsamplingStrategy {
 	case "lttb":
 		downsamplingStrategy = &metrics.LTTBDownsampling{}
 	case "timeBased":
@@ -101,10 +101,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 	
 	// Initialize metrics store with the configured retention parameters
-	if cfg.Power.MetricsSamplingInterval != "" {
+	if cfg.Metrics.SamplingInterval != "" {
 		var retentionTime time.Duration
-		if cfg.Power.CompletedPodRetention != "" {
-			if retention, err := time.ParseDuration(cfg.Power.CompletedPodRetention); err == nil {
+		if cfg.Metrics.PodRetention != "" {
+			if retention, err := time.ParseDuration(cfg.Metrics.PodRetention); err == nil {
 				retentionTime = retention
 			} else {
 				klog.ErrorS(err, "Invalid completed pod retention time, using default of 1h")
@@ -118,12 +118,12 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		klog.V(2).InfoS("Creating in-memory metrics store", 
 			"cleanupPeriod", "5m",
 			"retentionTime", retentionTime.String(),
-			"maxSamplesPerPod", cfg.Power.MaxSamplesPerPod)
+			"maxSamplesPerPod", cfg.Metrics.MaxSamplesPerPod)
 			
 		metricsStore = metrics.NewInMemoryStore(
 			5*time.Minute, // Cleanup period
 			retentionTime,
-			cfg.Power.MaxSamplesPerPod,
+			cfg.Metrics.MaxSamplesPerPod,
 			downsamplingStrategy,
 		)
 		
@@ -162,9 +162,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	go scheduler.healthCheckWorker(ctx)
 	
 	// Start metrics collection worker if enabled
-	if scheduler.config.Power.MetricsSamplingInterval != "" {
+	if scheduler.config.Metrics.SamplingInterval != "" {
 		klog.V(2).InfoS("Starting metrics collection worker", 
-			"samplingInterval", scheduler.config.Power.MetricsSamplingInterval,
+			"samplingInterval", scheduler.config.Metrics.SamplingInterval,
 			"metricsStoreInitialized", scheduler.metricsStore != nil,
 			"coreMetricsClientInitialized", scheduler.coreMetricsClient != nil)
 		go scheduler.metricsCollectionWorker(ctx)
