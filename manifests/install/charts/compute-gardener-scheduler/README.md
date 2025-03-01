@@ -12,8 +12,12 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
 
 - Kubernetes 1.19+
 - Helm 3.2.0+
-- Metrics API enabled in your cluster (for node metrics)
-- Prometheus Operator (optional, for ServiceMonitor support)
+
+### Recommended Components
+
+- **Metrics Server**: Highly recommended but not strictly required. Without Metrics Server, the scheduler won't be able to collect real-time node utilization data, resulting in less accurate energy usage estimates. Core carbon-aware and price-aware scheduling will still function.
+
+- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation.
 
 ## Installation
 

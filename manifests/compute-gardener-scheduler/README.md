@@ -163,7 +163,7 @@ The scheduler exposes metrics and health checks on port 10259 (HTTPS):
 - Health checks: `/healthz` 
 - Metrics: `/metrics`
 
-The deployment includes both a Service and ServiceMonitor for Prometheus integration. To monitor the scheduler effectively, you need Prometheus installed in your cluster.
+The deployment includes both a Service and ServiceMonitor for Prometheus integration. While Prometheus is not strictly required for the scheduler to function, it is highly recommended for monitoring performance and validating carbon/cost savings. Without Prometheus, you'll miss valuable insights into how the scheduler is performing and won't have visibility into the actual emissions and cost reductions achieved.
 
 Available metrics include:
 

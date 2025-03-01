@@ -15,10 +15,11 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 
 ## Configuration
 
-### Prerequisites
+### Recommended Components
 
-- **Prometheus** (Optional): While not required for the scheduler to function, Prometheus is recommended for monitoring the scheduler's metrics. The scheduler exposes various metrics that help validate its behavior and performance.
-- **Metrics Server** (Optional): Required for collecting real-time pod resource usage metrics to calculate accurate energy usage and carbon footprint. Without metrics-server, energy estimates will be less accurate and dependable.
+- **Metrics Server**: Highly recommended but not strictly required. Without Metrics Server, the scheduler won't be able to collect real-time node utilization data, resulting in less accurate energy usage estimates. Core carbon-aware and price-aware scheduling will still function using requested resources rather than actual usage.
+
+- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation and won't have visibility into the actual emissions and cost reductions achieved.
 
 ### Environment Variables
 
