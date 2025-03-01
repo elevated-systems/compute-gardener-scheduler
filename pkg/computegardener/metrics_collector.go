@@ -20,10 +20,6 @@ func (cs *ComputeGardenerScheduler) metricsCollectionWorker(ctx context.Context)
 		interval = 30 * time.Second
 	}
 
-	klog.V(2).InfoS("Starting metrics collection worker", 
-		"interval", interval.String(),
-		"maxSamplesPerPod", cs.config.Metrics.MaxSamplesPerPod)
-
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -41,7 +37,6 @@ func (cs *ComputeGardenerScheduler) metricsCollectionWorker(ctx context.Context)
 func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	// Skip if metrics client is not configured
 	if cs.coreMetricsClient == nil {
-		klog.V(2).Info("Skipping metrics collection - metrics client not configured")
 		return
 	}
 
@@ -51,7 +46,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
 			carbonIntensity = intensity
 		} else {
-			klog.V(2).InfoS("Failed to get carbon intensity", "error", err)
+			klog.ErrorS(err, "Failed to get carbon intensity")
 		}
 	}
 
@@ -68,7 +63,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		if utils, err := cs.gpuMetricsClient.ListPodsGPUUtilization(ctx); err == nil {
 			gpuUtilizations = utils
 		} else {
-			klog.V(2).InfoS("Failed to list GPU utilizations", "error", err)
+			klog.ErrorS(err, "Failed to list GPU utilizations")
 		}
 	}
 
@@ -77,10 +72,6 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		// Get pod details
 		pod, err := cs.handle.ClientSet().CoreV1().Pods(podMetrics.Namespace).Get(ctx, podMetrics.Name, metav1.GetOptions{})
 		if err != nil {
-			klog.V(2).InfoS("Failed to get pod info", 
-				"pod", podMetrics.Name, 
-				"namespace", podMetrics.Namespace, 
-				"error", err)
 			continue
 		}
 
@@ -140,9 +131,6 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 	}
 
-	klog.V(2).InfoS("Collected pod metrics", 
-		"collectedCount", processedCount, 
-		"totalPodsInCache", cacheSize)
 }
 
 // calculatePodPower estimates power consumption for a pod based on resource usage

@@ -38,7 +38,7 @@ type ComputeGardenerScheduler struct {
 	pricingImpl pricing.Implementation
 	carbonImpl  carbon.Implementation
 	clock       clock.Clock
-	
+
 	// Metrics components
 	coreMetricsClient metrics.CoreMetricsClient
 	gpuMetricsClient  metrics.GPUMetricsClient
@@ -85,7 +85,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	var coreMetricsClient metrics.CoreMetricsClient
 	var gpuMetricsClient metrics.GPUMetricsClient
 	var metricsStore metrics.PodMetricsStorage
-	
+
 	// Setup downsampling strategy based on config
 	var downsamplingStrategy metrics.DownsamplingStrategy
 	switch cfg.Metrics.DownsamplingStrategy {
@@ -99,7 +99,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		// Default to time-based if not specified
 		downsamplingStrategy = &metrics.SimpleTimeBasedDownsampling{}
 	}
-	
+
 	// Initialize metrics store with the configured retention parameters
 	if cfg.Metrics.SamplingInterval != "" {
 		var retentionTime time.Duration
@@ -113,33 +113,26 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		} else {
 			retentionTime = 1 * time.Hour
 		}
-		
-		// Initialize metrics store
-		klog.V(2).InfoS("Creating in-memory metrics store", 
-			"cleanupPeriod", "5m",
-			"retentionTime", retentionTime.String(),
-			"maxSamplesPerPod", cfg.Metrics.MaxSamplesPerPod)
-			
+
 		metricsStore = metrics.NewInMemoryStore(
 			5*time.Minute, // Cleanup period
 			retentionTime,
 			cfg.Metrics.MaxSamplesPerPod,
 			downsamplingStrategy,
 		)
-		
+
 		// Try to initialize metrics client (will be nil if metrics-server not available)
 		// We'll log at startup but continue even if it's not available
 		if client, err := createMetricsClient(h); err == nil {
 			coreMetricsClient = metrics.NewK8sMetricsClient(client)
-			klog.V(2).Info("Initialized metrics-server client for pod metrics collection")
 		} else {
 			klog.ErrorS(err, "Failed to initialize metrics-server client, energy metrics will be limited")
 		}
-		
+
 		// Initialize a null GPU metrics client (stub for future implementation)
 		gpuMetricsClient = metrics.NewNullGPUMetricsClient()
 	}
-	
+
 	scheduler := &ComputeGardenerScheduler{
 		handle:      h,
 		config:      cfg,
@@ -148,60 +141,39 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		pricingImpl: pricingImpl,
 		carbonImpl:  carbonImpl,
 		clock:       clock.RealClock{},
-		
+
 		// Metrics components
 		coreMetricsClient: coreMetricsClient,
 		gpuMetricsClient:  gpuMetricsClient,
 		metricsStore:      metricsStore,
-		
-		startTime:   time.Now(),
-		stopCh:      make(chan struct{}),
+
+		startTime: time.Now(),
+		stopCh:    make(chan struct{}),
 	}
 
 	// Start health check worker
 	go scheduler.healthCheckWorker(ctx)
-	
+
 	// Start metrics collection worker if enabled
 	if scheduler.config.Metrics.SamplingInterval != "" {
-		klog.V(2).InfoS("Starting metrics collection worker", 
-			"samplingInterval", scheduler.config.Metrics.SamplingInterval,
-			"metricsStoreInitialized", scheduler.metricsStore != nil,
-			"coreMetricsClientInitialized", scheduler.coreMetricsClient != nil)
 		go scheduler.metricsCollectionWorker(ctx)
 	} else {
 		klog.V(2).InfoS("Metrics collection worker disabled - no sampling interval configured")
 	}
 
 	// Register pod informer to track completion
-	klog.V(2).Info("Registering pod informer handler for pod completion tracking")
 	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldPod := oldObj.(*v1.Pod)
 				newPod := newObj.(*v1.Pod)
-				
-				// Log all pod updates for debugging
-				klog.V(2).InfoS("Pod update received", 
-					"pod", newPod.Name,
-					"namespace", newPod.Namespace,
-					"oldPhase", oldPod.Status.Phase,
-					"newPhase", newPod.Status.Phase)
 
 				// Check for completion or failure
 				isCompleted := false
 				switch {
 				case newPod.Status.Phase == v1.PodSucceeded:
 					isCompleted = true
-					klog.V(2).InfoS("Pod succeeded",
-						"pod", newPod.Name,
-						"namespace", newPod.Namespace)
 				case newPod.Status.Phase == v1.PodFailed:
 					isCompleted = true
-					klog.V(2).InfoS("Pod failed",
-						"pod", newPod.Name,
-						"namespace", newPod.Namespace,
-						"reason", newPod.Status.Reason,
-						"message", newPod.Status.Message)
 				case len(newPod.Status.ContainerStatuses) > 0:
 					allTerminated := true
 					for _, status := range newPod.Status.ContainerStatuses {
@@ -212,17 +184,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					}
 					if allTerminated {
 						isCompleted = true
-						klog.V(2).InfoS("All containers terminated",
-							"pod", newPod.Name,
-							"namespace", newPod.Namespace)
 					}
 				}
 
 				if isCompleted {
-					klog.V(2).InfoS("Handling pod completion",
-						"pod", newPod.Name,
-						"namespace", newPod.Namespace,
-						"node", newPod.Spec.NodeName)
 					scheduler.handlePodCompletion(newPod)
 				}
 			},
@@ -295,29 +260,14 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
 		// Check if pod has annotation to disable carbon-aware scheduling
 		if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-enabled"]; ok && val == "false" {
-			klog.V(2).InfoS("Carbon-aware scheduling disabled via annotation",
-				"pod", pod.Name,
-				"namespace", pod.Namespace)
 			// Skip carbon check if explicitly disabled for this pod
 		} else {
 			// Get threshold from pod annotation or use configured threshold
 			threshold := cs.config.Carbon.IntensityThreshold
-			klog.V(2).InfoS("Initial carbon intensity threshold from config",
-				"pod", pod.Name,
-				"namespace", pod.Namespace,
-				"threshold", threshold)
 
 			if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold"]; ok {
-				klog.V(2).InfoS("Found carbon intensity threshold annotation",
-					"pod", pod.Name,
-					"namespace", pod.Namespace,
-					"value", val)
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
-					klog.V(2).InfoS("Using carbon intensity threshold from annotation",
-						"pod", pod.Name,
-						"namespace", pod.Namespace,
-						"threshold", threshold)
 				} else {
 					klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
 						"pod", pod.Name,
@@ -355,25 +305,25 @@ func (cs *ComputeGardenerScheduler) Close() error {
 	close(cs.stopCh)
 	cs.apiClient.Close()
 	cs.cache.Close()
-	
+
 	// Close metrics store if configured
 	if cs.metricsStore != nil {
 		cs.metricsStore.Close()
 	}
-	
+
 	return nil
 }
 
 // createMetricsClient creates a client for the Kubernetes metrics API
 func createMetricsClient(handle framework.Handle) (metricsv1beta1client.PodMetricsInterface, error) {
 	config := *handle.KubeConfig()
-	
+
 	// Create a metrics client using the scheduler's kubeconfig
 	metricsClient, err := metricsv1beta1client.NewForConfig(&config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metrics client: %v", err)
 	}
-	
+
 	// Return the pod metrics interface
 	return metricsClient.PodMetricses(""), nil
 }
@@ -420,11 +370,11 @@ func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 	// Check cache health
 	regions := cs.cache.GetRegions()
-	
+
 	// Evaluate cache state
 	emptyCache := len(regions) == 0
 	hasFreshData := false
-	
+
 	if !emptyCache {
 		// Check if any region has fresh data
 		for _, region := range regions {
@@ -434,7 +384,7 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 			}
 		}
 	}
-	
+
 	// Only enforce cache health checks if carbon is enabled and cache should be initialized
 	// An empty cache is allowed and normal during initial startup or when carbon features aren't being used
 	if cs.config.Carbon.Enabled && !emptyCache && !hasFreshData {
