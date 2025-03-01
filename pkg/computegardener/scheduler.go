@@ -13,13 +13,13 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1client "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
-	schedulercache "sigs.k8s.io/scheduler-plugins/pkg/computegardener/cache"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/clock"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/metrics"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
+	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing"
 )
 
 const (

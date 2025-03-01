@@ -29,6 +29,6 @@ source "${TEMP_DIR}/setup-envtest"
 ARGS=("$@")
 
 go test "${ARGS[@]}" \
-  sigs.k8s.io/scheduler-plugins/cmd/... \
-  sigs.k8s.io/scheduler-plugins/pkg/... \
-  sigs.k8s.io/scheduler-plugins/apis/...
+  github.com/elevated-systems/compute-gardener-scheduler/cmd/... \
+  github.com/elevated-systems/compute-gardener-scheduler/pkg/... \
+  github.com/elevated-systems/compute-gardener-scheduler/apis/...

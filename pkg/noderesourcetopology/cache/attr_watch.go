@@ -27,8 +27,8 @@ import (
 
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/nodeconfig"
 )
 
 type Watcher struct {

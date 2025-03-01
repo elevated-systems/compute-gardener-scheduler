@@ -18,4 +18,4 @@ limitations under the License.
 // +groupName=kubescheduler.config.k8s.io
 
 // Package config of the API.
-package config // import "sigs.k8s.io/scheduler-plugins/apis/config"
+package config // import "github.com/elevated-systems/compute-gardener-scheduler/apis/config"

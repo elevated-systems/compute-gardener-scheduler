@@ -30,7 +30,7 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	configv1 "k8s.io/kube-scheduler/config/v1"
 	apisconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	config "sigs.k8s.io/scheduler-plugins/apis/config"
+	config "github.com/elevated-systems/compute-gardener-scheduler/apis/config"
 )
 
 func init() {
@@ -398,7 +398,7 @@ func Convert_config_NodeResourceTopologyCache_To_v1_NodeResourceTopologyCache(in
 }
 
 func autoConvert_v1_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopologyMatchArgs(in *NodeResourceTopologyMatchArgs, out *config.NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (*sigs.k8s.io/scheduler-plugins/apis/config/v1.ScoringStrategy vs sigs.k8s.io/scheduler-plugins/apis/config.ScoringStrategy)
+	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (*github.com/elevated-systems/compute-gardener-scheduler/apis/config/v1.ScoringStrategy vs github.com/elevated-systems/compute-gardener-scheduler/apis/config.ScoringStrategy)
 	if err := metav1.Convert_Pointer_int64_To_int64(&in.CacheResyncPeriodSeconds, &out.CacheResyncPeriodSeconds, s); err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func autoConvert_v1_NodeResourceTopologyMatchArgs_To_config_NodeResourceTopology
 }
 
 func autoConvert_config_NodeResourceTopologyMatchArgs_To_v1_NodeResourceTopologyMatchArgs(in *config.NodeResourceTopologyMatchArgs, out *NodeResourceTopologyMatchArgs, s conversion.Scope) error {
-	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (sigs.k8s.io/scheduler-plugins/apis/config.ScoringStrategy vs *sigs.k8s.io/scheduler-plugins/apis/config/v1.ScoringStrategy)
+	// WARNING: in.ScoringStrategy requires manual conversion: inconvertible types (github.com/elevated-systems/compute-gardener-scheduler/apis/config.ScoringStrategy vs *github.com/elevated-systems/compute-gardener-scheduler/apis/config/v1.ScoringStrategy)
 	if err := metav1.Convert_int64_To_Pointer_int64(&in.CacheResyncPeriodSeconds, &out.CacheResyncPeriodSeconds, s); err != nil {
 		return err
 	}

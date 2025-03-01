@@ -27,14 +27,14 @@ import (
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
+	apiconfig "github.com/elevated-systems/compute-gardener-scheduler/apis/config"
 
 	"github.com/go-logr/logr"
 	topologyv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/nodeconfig"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/nodeconfig"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/stringify"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/util"
 )
 
 const (

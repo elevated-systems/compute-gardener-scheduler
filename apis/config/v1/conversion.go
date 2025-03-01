@@ -21,7 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/conversion"
 
-	"sigs.k8s.io/scheduler-plugins/apis/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/apis/config"
 )
 
 // This file stores all necessary manual conversion bits, to leave zz_generated*.go intact after code generation.

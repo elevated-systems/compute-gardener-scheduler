@@ -20,13 +20,13 @@ import (
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
-	schedulercache "sigs.k8s.io/scheduler-plugins/pkg/computegardener/cache"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon"
-	carbonmock "sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon/mock"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/clock"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
-	pricingmock "sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing/mock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
+	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
+	carbonmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon/mock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	pricingmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing/mock"
 )
 
 // mockHTTPClient implements api.HTTPClient for testing

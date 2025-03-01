@@ -31,11 +31,11 @@ import (
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	nrtcache "sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/cache"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/podprovider"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
+	apiconfig "github.com/elevated-systems/compute-gardener-scheduler/apis/config"
+	nrtcache "github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/cache"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/podprovider"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/stringify"
 )
 
 const (

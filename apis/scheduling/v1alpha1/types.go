@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/scheduler-plugins/apis/scheduling"
+	"github.com/elevated-systems/compute-gardener-scheduler/apis/scheduling"
 )
 
 // ElasticQuota sets elastic quota restrictions per namespace

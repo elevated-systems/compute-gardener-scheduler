@@ -28,7 +28,7 @@ import (
 	"k8s.io/klog/v2"
 
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
 )
 
 // DiscardReserved is intended to solve similiar problem as Overreserve Cache,

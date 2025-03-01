@@ -6,8 +6,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/pricing/tou"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing/tou"
 )
 
 // Implementation defines the interface for electricity pricing implementations

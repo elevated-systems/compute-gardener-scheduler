@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
 // HTTPClient interface allows mocking http.Client in tests

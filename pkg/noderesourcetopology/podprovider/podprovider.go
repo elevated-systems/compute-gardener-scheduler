@@ -28,8 +28,8 @@ import (
 	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
+	apiconfig "github.com/elevated-systems/compute-gardener-scheduler/apis/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
 )
 
 type PodFilterFunc func(lh logr.Logger, pod *corev1.Pod) bool

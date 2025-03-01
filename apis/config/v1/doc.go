@@ -15,11 +15,11 @@ limitations under the License.
 */
 
 // +k8s:deepcopy-gen=package
-// +k8s:conversion-gen=sigs.k8s.io/scheduler-plugins/apis/config
+// +k8s:conversion-gen=github.com/elevated-systems/compute-gardener-scheduler/apis/config
 // +k8s:defaulter-gen=TypeMeta
-// +k8s:defaulter-gen-input=sigs.k8s.io/scheduler-plugins/apis/config/v1
+// +k8s:defaulter-gen-input=github.com/elevated-systems/compute-gardener-scheduler/apis/config/v1
 
 // +groupName=kubescheduler.config.k8s.io
 
 // Package v1 is the v1 version of the API.
-package v1 // import "sigs.k8s.io/scheduler-plugins/apis/config/v1"
+package v1 // import "github.com/elevated-systems/compute-gardener-scheduler/apis/config/v1"

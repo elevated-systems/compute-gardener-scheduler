@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/carbon"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 )
 
 // MockCarbon implements the carbon.Implementation interface for testing

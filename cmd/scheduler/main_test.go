@@ -26,8 +26,8 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
 type mockHandle struct {

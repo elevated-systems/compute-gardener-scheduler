@@ -1,4 +1,7 @@
-module sigs.k8s.io/scheduler-plugins
+// This project is a fork of sigs.k8s.io/scheduler-plugins
+// The pkg/computegardener directory contains our custom scheduler code
+// while other directories contain code derived from the upstream project
+module github.com/elevated-systems/compute-gardener-scheduler
 
 go 1.23.0
 
@@ -9,11 +12,8 @@ require (
 	github.com/diktyo-io/networktopology-api v1.0.5-alpha
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-logr/logr v1.4.2
-	github.com/google/go-cmp v0.7.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/k8stopologyawareschedwg/podfingerprint v0.2.2
-	github.com/spf13/pflag v1.0.6
-	github.com/stretchr/testify v1.10.0
 	gonum.org/v1/gonum v0.15.1
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.32.2
@@ -25,10 +25,8 @@ require (
 	k8s.io/kube-scheduler v0.32.2
 	k8s.io/kubernetes v1.32.2
 	k8s.io/metrics v0.32.2
-	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	sigs.k8s.io/controller-runtime v0.20.2
 	sigs.k8s.io/logtools v0.9.0
-	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -60,6 +58,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/cel-go v0.23.2 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
@@ -81,12 +80,12 @@ require (
 	github.com/opencontainers/runc v1.2.5 // indirect
 	github.com/opencontainers/selinux v1.11.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.21.0 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/spf13/cobra v1.9.1 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.18 // indirect
@@ -136,9 +135,11 @@ require (
 	k8s.io/kube-openapi v0.0.0-20241212222426-2c72e554b1e7 // indirect
 	k8s.io/kubelet v0.32.2 // indirect
 	k8s.io/mount-utils v0.32.2 // indirect
+	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.5.0 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 replace (

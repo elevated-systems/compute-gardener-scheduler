@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/metrics"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 )
 
 // metricsCollectionWorker periodically collects pod metrics and updates the store

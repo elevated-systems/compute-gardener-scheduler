@@ -27,10 +27,10 @@ import (
 	topologyv1alpha2attr "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2/helper/attribute"
 	"github.com/k8stopologyawareschedwg/podfingerprint"
 
-	apiconfig "sigs.k8s.io/scheduler-plugins/apis/config"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/logging"
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
-	"sigs.k8s.io/scheduler-plugins/pkg/util"
+	apiconfig "github.com/elevated-systems/compute-gardener-scheduler/apis/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/logging"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/stringify"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/util"
 )
 
 // nrtStore maps the NRT data by node name. It is not thread safe and needs to be protected by a lock.

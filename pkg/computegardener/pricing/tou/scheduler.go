@@ -9,7 +9,7 @@ import (
 	klog "k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
 // Scheduler handles time-of-use electricity pricing schedules

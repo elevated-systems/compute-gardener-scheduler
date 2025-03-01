@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/stringify"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology/stringify"
 )
 
 type NUMANode struct {

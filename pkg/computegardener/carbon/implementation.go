@@ -6,8 +6,8 @@ import (
 
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/api"
-	"sigs.k8s.io/scheduler-plugins/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
 // Implementation defines the interface for carbon-aware scheduling

@@ -43,7 +43,7 @@ kube::codegen::gen_client \
   --with-watch \
   --with-applyconfig \
   --output-dir "${SCRIPT_ROOT}/pkg/generated" \
-  --output-pkg sigs.k8s.io/scheduler-plugins/pkg/generated \
+  --output-pkg github.com/elevated-systems/compute-gardener-scheduler/pkg/generated \
   --boilerplate "${SCRIPT_ROOT}/hack/boilerplate/boilerplate.generatego.txt" \
   "${SCRIPT_ROOT}/apis"
 
