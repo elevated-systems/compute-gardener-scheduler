@@ -28,12 +28,12 @@ helm repo update
 
 ```bash
 # Basic installation
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler-helm \
   --namespace kube-system \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 
 # Installation with price-aware scheduling enabled
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler-helm \
   --namespace kube-system \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY \
   --set priceAware.enabled=true
@@ -120,7 +120,7 @@ Specify each parameter using the `--set key=value[,key=value]` argument to `helm
 
 For example:
 ```bash
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler-helm \
   --namespace kube-system \
   --set scheduler.replicaCount=2 \
   --set carbonAware.carbonIntensityThreshold=180.0
@@ -128,7 +128,7 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
 
 Alternatively, a YAML file that specifies the values for the parameters can be provided while installing the chart. For example:
 ```bash
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler-helm \
   --namespace kube-system \
   -f values.yaml
 ```

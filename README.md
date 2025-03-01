@@ -118,7 +118,7 @@ helm repo add compute-gardener https://elevated-systems.github.io/compute-garden
 helm repo update
 
 # Install the chart
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler-helm \
   --namespace kube-system \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```

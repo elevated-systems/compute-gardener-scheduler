@@ -30,8 +30,5 @@ jobs:
         uses: helm/chart-releaser-action@v1.5.0
         with:
           charts_dir: manifests/install/charts
-          config: |
-            release-name-template: "helm-chart-{{ .Name }}-{{ .Version }}"
-            tag-name-template: "helm-chart-{{ .Name }}-{{ .Version }}"
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
