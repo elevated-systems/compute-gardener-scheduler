@@ -6,7 +6,7 @@ This directory contains example manifests demonstrating various ways to use the 
 
 1. [basic-pod.yaml](basic-pod.yaml) - Simple pod using the compute-gardener scheduler
 2. [carbon-threshold-pod.yaml](carbon-threshold-pod.yaml) - Pod with custom carbon intensity threshold
-3. [price-aware-pod.yaml](price-aware-pod.yaml) - Pod with price-aware scheduling
+3. [price-threshold-pod.yaml](price-threshold-pod.yaml) - Pod with price-aware scheduling
 4. [price-only-pod.yaml](price-only-pod.yaml) - Pod using only price-aware scheduling (carbon disabled)
 5. [opt-out-pod.yaml](opt-out-pod.yaml) - Pod that opts out of carbon/price-aware scheduling
 
