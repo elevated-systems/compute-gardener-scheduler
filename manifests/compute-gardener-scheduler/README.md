@@ -2,6 +2,8 @@
 
 This directory contains Kubernetes manifests for deploying the Compute Gardener Scheduler.
 
+**Note:** The scheduler is deployed to the `compute-gardener` namespace by default and runs as a second scheduler alongside the default Kubernetes scheduler. This makes it compatible with all Kubernetes distributions, including managed Kubernetes services like GKE Autopilot, EKS Fargate, and AKS with Virtual Nodes.
+
 ## Components
 
 The deployment consists of several key components:
@@ -100,22 +102,50 @@ Time-of-Use Pricing Configuration:
 
 ## Deployment
 
-1. Create the API key secret:
+### Prerequisites
+
+If you're using ServiceMonitor for Prometheus integration (standard installation), you'll need to install the Prometheus Operator CRDs first:
+
 ```bash
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+```
+
+### Installation Options
+
+There are two installation options:
+
+#### 1. Standard Installation (with Prometheus metrics)
+
+```bash
+# Create namespace
+kubectl create namespace compute-gardener
+
+# Create API key secret
 kubectl create secret generic compute-gardener-scheduler-secrets \
   --from-literal=electricity-map-api-key=YOUR_API_KEY \
-  -n kube-system
-```
+  -n compute-gardener
 
-2. Create the required ConfigMaps:
-```bash
-kubectl apply -f compute-gardener-scheduler-config.yaml
-kubectl apply -f compute-gardener-pricing-schedules.yaml
-```
-
-3. Deploy the scheduler:
-```bash
+# Deploy scheduler with metrics
 kubectl apply -f compute-gardener-scheduler.yaml
+kubectl apply -f compute-gardener-scheduler-hw-profiles.yaml
+```
+
+#### 2. Minimal Installation (without Prometheus metrics)
+
+For a more lightweight installation or for clusters without Prometheus:
+
+```bash
+# Create namespace
+kubectl create namespace compute-gardener
+
+# Create API key secret
+kubectl create secret generic compute-gardener-scheduler-secrets \
+  --from-literal=electricity-map-api-key=YOUR_API_KEY \
+  -n compute-gardener
+
+# Deploy scheduler without metrics integration
+kubectl apply -f compute-gardener-scheduler-no-metrics.yaml
+kubectl apply -f compute-gardener-scheduler-hw-profiles.yaml
 ```
 
 ## Using the Scheduler
@@ -244,7 +274,7 @@ Common issues and solutions:
 
 1. **Scheduler not starting**: Check the scheduler logs:
 ```bash
-kubectl logs -n kube-system -l component=scheduler
+kubectl logs -n compute-gardener -l component=scheduler
 ```
 
 2. **Pods not scheduling**: Verify the pod's schedulerName matches:
@@ -254,27 +284,39 @@ kubectl get pod <pod-name> -o yaml | grep schedulerName
 
 3. **API errors**: Check API key secret:
 ```bash
-kubectl get secret -n kube-system compute-gardener-scheduler-secrets -o yaml
+kubectl get secret -n compute-gardener compute-gardener-scheduler-secrets -o yaml
 ```
 
 4. **Carbon-aware scheduling not working**: Check carbon configuration:
 ```bash
 # Verify carbon-aware scheduling is enabled
-kubectl get deployment -n kube-system compute-gardener-scheduler -o yaml | grep CARBON
+kubectl get deployment -n compute-gardener compute-gardener-scheduler -o yaml | grep CARBON
 
 # Check scheduler logs for carbon-related issues
-kubectl logs -n kube-system -l component=scheduler | grep carbon
+kubectl logs -n compute-gardener -l component=scheduler | grep carbon
 
 # Verify API responses
-kubectl logs -n kube-system -l component=scheduler | grep "carbon intensity"
+kubectl logs -n compute-gardener -l component=scheduler | grep "carbon intensity"
 ```
 
 5. **TOU pricing not working**: Verify pricing schedules configuration:
 ```bash
-kubectl get configmap -n kube-system compute-gardener-pricing-schedules -o yaml
+kubectl get configmap -n compute-gardener compute-gardener-pricing-schedules -o yaml
 
 # Check environment variables
-kubectl get deployment -n kube-system compute-gardener-scheduler -o yaml | grep PRICING
+kubectl get deployment -n compute-gardener compute-gardener-scheduler -o yaml | grep PRICING
 
 # Check scheduler logs
-kubectl logs -n kube-system -l component=scheduler | grep pricing
+kubectl logs -n compute-gardener -l component=scheduler | grep pricing
+
+6. **ServiceMonitor issues**: If you're having issues with Prometheus monitoring:
+```bash
+# Check if ServiceMonitor CRD is installed
+kubectl get crd | grep servicemonitors
+
+# Install ServiceMonitor CRD if missing
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+
+# Or use the no-metrics version instead
+kubectl apply -f compute-gardener-scheduler-no-metrics.yaml
+```

@@ -1,10 +1,14 @@
 # Default values for compute-gardener-scheduler
 # This is a YAML-formatted file
 
+# Note: Use Helm's --namespace and --create-namespace flags 
+# to specify the installation namespace
+
 # General scheduler configuration
 scheduler:
+  # By default, runs as a second scheduler alongside the default scheduler
+  # Pods must explicitly set schedulerName: compute-gardener-scheduler to use it
   name: compute-gardener-scheduler
-  namespace: kube-system
   image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.2-1d5dddd
   imagePullPolicy: IfNotPresent
   replicaCount: 1
@@ -57,6 +61,8 @@ priceAware:
 
 # Metrics configuration
 metrics:
+  # Set to false to disable all metrics-related resources (Service and ServiceMonitor)
+  # This avoids dependencies on Prometheus Operator CRDs for simple installations
   enabled: true
   port: 10259
   service:
@@ -64,7 +70,7 @@ metrics:
     port: 10259
   serviceMonitor:
     enabled: true
-    namespace: "cattle-monitoring-system" # Adjust to your Prometheus namespace
+    namespace: "monitoring" # Default Prometheus namespace, change to match your setup
     interval: "30s"
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
 

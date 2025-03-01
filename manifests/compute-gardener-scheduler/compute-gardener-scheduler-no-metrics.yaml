@@ -10,38 +10,6 @@ metadata:
   namespace: compute-gardener
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: compute-gardener-scheduler-metrics-reader
-rules:
-- apiGroups:
-  - "metrics.k8s.io"
-  resources:
-  - nodes
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- nonResourceURLs:
-  - "/metrics"
-  verbs:
-  - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: compute-gardener-scheduler-metrics-reader
-subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
-roleRef:
-  kind: ClusterRole
-  name: compute-gardener-scheduler-metrics-reader
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: compute-gardener-scheduler-as-kube-scheduler
@@ -80,48 +48,6 @@ subjects:
 - kind: ServiceAccount
   name: compute-gardener-scheduler
   namespace: compute-gardener
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: compute-gardener-scheduler-monitor
-  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
-  # Note: Install Prometheus Operator CRDs before applying this file: 
-  # kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-spec:
-  selector:
-    matchLabels:
-      component: scheduler
-      tier: control-plane
-  endpoints:
-  - port: https 
-    scheme: https
-    path: /metrics
-    interval: 30s
-    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-    tlsConfig:
-      insecureSkipVerify: true  # For testing only, consider using proper CA verification in production
-  namespaceSelector:
-    matchNames:
-    - compute-gardener
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: compute-gardener-scheduler-metrics
-  namespace: compute-gardener
-  labels:
-    component: scheduler
-    tier: control-plane
-spec:
-  ports:
-  - name: https
-    port: 10259
-    targetPort: 10259
-    protocol: TCP
-  selector:
-    component: scheduler
-    tier: control-plane
 ---
 apiVersion: v1
 kind: Secret
@@ -191,11 +117,6 @@ spec:
         component: scheduler
         tier: control-plane
         version: second
-      annotations:
-        prometheus.io/scrape: 'true'
-        prometheus.io/port: '10259'
-        prometheus.io/scheme: 'https'
-        prometheus.io/path: '/metrics'
     spec:
       serviceAccountName: compute-gardener-scheduler
       containers:
@@ -206,7 +127,6 @@ spec:
         - --secure-port=10259
         - --authentication-skip-lookup=true
         - --authentication-tolerate-lookup-failure=true
-        - --authorization-always-allow-paths=/metrics
         image: docker.io/dmasselink/compute-gardener-scheduler:v20250228-
         imagePullPolicy: Always
         env:

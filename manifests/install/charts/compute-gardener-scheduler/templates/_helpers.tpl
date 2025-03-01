@@ -1,3 +1,9 @@
+{{/* Define fullname */}}
+{{- define "compute-gardener-scheduler.fullname" -}}
+{{ .Values.scheduler.name }}
+{{- end -}}
+
+
 {{/* Define common labels */}}
 {{- define "compute-gardener-scheduler.labels" -}}
 app: {{ .Values.scheduler.name }}
