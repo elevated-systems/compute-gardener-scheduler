@@ -123,7 +123,7 @@ metadata:
   namespace: kube-system
 type: Opaque
 data:
-  electricity-map-api-key: WU9VUl9FTEVDVFJJQ0lUWV9NQVBfQVBJX0tFWQ== # Base64 encoded "YOUR_ELECTRICITY_MAP_API_KEY"
+  electricity-map-api-key: WU9VUl9FTEVDVFJJQ0lUWV9NQVBfQVBJX0tFWQ== #Base64 encoded "YOUR_ELECTRICITY_MAP_API_KEY"
 ---
 apiVersion: v1
 kind: ConfigMap
