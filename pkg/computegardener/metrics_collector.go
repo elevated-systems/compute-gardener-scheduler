@@ -130,11 +130,19 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	}
 
 	// Update metrics store stats
-	MetricsCacheSize.Set(float64(cs.metricsStore.Size()))
+	cacheSize := cs.metricsStore.Size()
+	MetricsCacheSize.Set(float64(cacheSize))
+	
+	// Update samples stored metric for each pod
+	for _, podMetrics := range podMetricsList {
+		if hist, found := cs.metricsStore.GetHistory(string(podMetrics.UID)); found {
+			MetricsSamplesStored.WithLabelValues(podMetrics.Name, podMetrics.Namespace).Set(float64(len(hist.Records)))
+		}
+	}
 
 	klog.V(2).InfoS("Collected pod metrics", 
 		"collectedCount", processedCount, 
-		"totalPods", cs.metricsStore.Size())
+		"totalPodsInCache", cacheSize)
 }
 
 // calculatePodPower estimates power consumption for a pod based on resource usage

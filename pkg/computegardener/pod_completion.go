@@ -7,6 +7,12 @@ import (
 
 // handlePodCompletion records metrics when a pod completes using time-series metrics
 func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
+	klog.V(2).InfoS("Pod completion handler triggered", 
+		"pod", pod.Name, 
+		"namespace", pod.Namespace,
+		"phase", pod.Status.Phase,
+		"nodeName", pod.Spec.NodeName)
+	
 	// Skip if we don't have the metrics store configured
 	if cs.metricsStore == nil {
 		klog.V(2).InfoS("Skipping pod completion metrics - metrics store not configured",
@@ -75,6 +81,27 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 	}
 
 	// Record final metrics
+	klog.V(2).InfoS("Recording final job metrics to Prometheus", 
+		"pod", podName,
+		"namespace", namespace,
+		"energyKWh", totalEnergyKWh,
+		"carbonEmissions", totalCarbonEmissions,
+		"metricSamples", len(metricsHistory.Records))
+	
+	// Validate values before recording
+	if totalEnergyKWh <= 0 {
+		klog.V(2).InfoS("Warning: Zero or negative energy value being recorded", 
+			"pod", podName, 
+			"namespace", namespace,
+			"value", totalEnergyKWh)
+	}
+	if totalCarbonEmissions <= 0 {
+		klog.V(2).InfoS("Warning: Zero or negative carbon emissions value being recorded", 
+			"pod", podName, 
+			"namespace", namespace,
+			"value", totalCarbonEmissions)
+	}
+	
 	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
 	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
 

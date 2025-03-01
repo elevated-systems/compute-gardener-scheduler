@@ -115,6 +115,11 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		}
 		
 		// Initialize metrics store
+		klog.V(2).InfoS("Creating in-memory metrics store", 
+			"cleanupPeriod", "5m",
+			"retentionTime", retentionTime.String(),
+			"maxSamplesPerPod", cfg.Power.MaxSamplesPerPod)
+			
 		metricsStore = metrics.NewInMemoryStore(
 			5*time.Minute, // Cleanup period
 			retentionTime,
@@ -158,14 +163,29 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	
 	// Start metrics collection worker if enabled
 	if scheduler.config.Power.MetricsSamplingInterval != "" {
+		klog.V(2).InfoS("Starting metrics collection worker", 
+			"samplingInterval", scheduler.config.Power.MetricsSamplingInterval,
+			"metricsStoreInitialized", scheduler.metricsStore != nil,
+			"coreMetricsClientInitialized", scheduler.coreMetricsClient != nil)
 		go scheduler.metricsCollectionWorker(ctx)
+	} else {
+		klog.V(2).InfoS("Metrics collection worker disabled - no sampling interval configured")
 	}
 
 	// Register pod informer to track completion
+	klog.V(2).Info("Registering pod informer handler for pod completion tracking")
 	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
+				oldPod := oldObj.(*v1.Pod)
 				newPod := newObj.(*v1.Pod)
+				
+				// Log all pod updates for debugging
+				klog.V(2).InfoS("Pod update received", 
+					"pod", newPod.Name,
+					"namespace", newPod.Namespace,
+					"oldPhase", oldPod.Status.Phase,
+					"newPhase", newPod.Status.Phase)
 
 				// Check for completion or failure
 				isCompleted := false
