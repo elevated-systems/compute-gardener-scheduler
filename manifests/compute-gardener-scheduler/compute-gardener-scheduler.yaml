@@ -85,7 +85,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: compute-gardener-scheduler-monitor
-  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+  namespace: monitoring  # Standard Prometheus namespace, change if your cluster uses a different one
   # Note: Install Prometheus Operator CRDs before applying this file: 
   # kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
 spec:
@@ -142,6 +142,9 @@ data:
     apiVersion: kubescheduler.config.k8s.io/v1
     kind: KubeSchedulerConfiguration
     profiles:
+      # SCHEDULER MODE:
+      # - Secondary mode (current): Only schedules pods that explicitly request this scheduler
+      # - Primary mode: Change schedulerName to "default-scheduler" to handle ALL pods (not recommended)
       - schedulerName: compute-gardener-scheduler
         plugins:
           preFilter:

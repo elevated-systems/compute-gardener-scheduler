@@ -19,12 +19,13 @@ spec:
     command:
     - /bin/sh
     - -c
-    - "echo 'This pod was scheduled by the {{ .Values.scheduler.name }}' && sleep 30"
+    # Run a longer workload to allow metrics collection if enabled
+    - "echo 'This pod was scheduled by the {{ .Values.scheduler.name }}' && echo 'Running CPU workload to generate metrics (if metrics collection is enabled)...' && i=1; while [ $i -le 60 ]; do echo $(($i*$i)) > /dev/null; sleep 2; i=$(($i+1)); done"
     resources:
       requests:
-        cpu: 10m
-        memory: 10Mi
-      limits:
-        cpu: 20m
+        cpu: 100m
         memory: 20Mi
+      limits:
+        cpu: 200m
+        memory: 40Mi
 {{- end }}

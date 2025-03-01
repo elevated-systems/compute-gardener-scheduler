@@ -25,12 +25,15 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: compute-gardener-scheduler-config
-  namespace: kube-system
+  namespace: compute-gardener
 data:
   compute-gardener-scheduler-config.yaml: |
     apiVersion: kubescheduler.config.k8s.io/v1
     kind: KubeSchedulerConfiguration
     profiles:
+      # SCHEDULER MODE:
+      # - Secondary mode (current): Only schedules pods that explicitly request this scheduler
+      # - Primary mode: Change schedulerName to "default-scheduler" to handle ALL pods (not recommended)
       - schedulerName: compute-gardener-scheduler
         plugins:
           preFilter:
@@ -39,6 +42,12 @@ data:
     leaderElection:
       leaderElect: false
 ```
+
+#### Scheduler Modes
+
+By default, the scheduler runs in **Secondary Mode**, where it only handles pods that explicitly set `schedulerName: compute-gardener-scheduler` in their spec. This is the recommended mode for most environments.
+
+For advanced users, the scheduler can be configured to run in **Primary Mode** by changing the `schedulerName` value to `default-scheduler` in the ConfigMap. In this mode, the scheduler will handle ALL pods in the cluster. This is NOT recommended for most installations as it will cause ALL pods to be subject to carbon/price-based scheduling policies, potentially delaying critical system components.
 
 ### Time-of-Use Pricing Schedules
 
@@ -130,6 +139,13 @@ kubectl apply -f compute-gardener-scheduler.yaml
 kubectl apply -f compute-gardener-scheduler-hw-profiles.yaml
 ```
 
+To uninstall:
+
+```bash
+kubectl delete -f compute-gardener-scheduler.yaml
+kubectl delete -f compute-gardener-scheduler-hw-profiles.yaml
+```
+
 #### 2. Minimal Installation (without Prometheus metrics)
 
 For a more lightweight installation or for clusters without Prometheus:
@@ -146,6 +162,13 @@ kubectl create secret generic compute-gardener-scheduler-secrets \
 # Deploy scheduler without metrics integration
 kubectl apply -f compute-gardener-scheduler-no-metrics.yaml
 kubectl apply -f compute-gardener-scheduler-hw-profiles.yaml
+```
+
+To uninstall:
+
+```bash
+kubectl delete -f compute-gardener-scheduler-no-metrics.yaml
+kubectl delete -f compute-gardener-scheduler-hw-profiles.yaml
 ```
 
 ## Using the Scheduler
@@ -237,7 +260,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: compute-gardener-scheduler-monitor
-  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+  namespace: monitoring  # Standard Prometheus namespace, change if your cluster uses a different one
 spec:
   selector:
     matchLabels:
@@ -287,7 +310,26 @@ kubectl get pod <pod-name> -o yaml | grep schedulerName
 kubectl get secret -n compute-gardener compute-gardener-scheduler-secrets -o yaml
 ```
 
-4. **Carbon-aware scheduling not working**: Check carbon configuration:
+4. **Zero or negative energy values**: If you see log messages like:
+```
+Warning: Zero or negative energy value being recorded
+```
+
+There are several potential causes:
+- The pod ran for too short a duration to collect meaningful metrics
+- Metrics Server is not installed or functioning properly
+- The pod's CPU/memory usage was too low to register significant energy consumption
+
+Solutions:
+- Use the example pods in the `/examples` directory, which run longer workloads
+- Verify Metrics Server is installed and functioning properly:
+```bash
+kubectl get apiservices | grep metrics
+kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes" | jq
+```
+- For testing, increase pod resource requests/limits to generate more measurable metrics
+
+5. **Carbon-aware scheduling not working**: Check carbon configuration:
 ```bash
 # Verify carbon-aware scheduling is enabled
 kubectl get deployment -n compute-gardener compute-gardener-scheduler -o yaml | grep CARBON
@@ -299,7 +341,7 @@ kubectl logs -n compute-gardener -l component=scheduler | grep carbon
 kubectl logs -n compute-gardener -l component=scheduler | grep "carbon intensity"
 ```
 
-5. **TOU pricing not working**: Verify pricing schedules configuration:
+6. **TOU pricing not working**: Verify pricing schedules configuration:
 ```bash
 kubectl get configmap -n compute-gardener compute-gardener-pricing-schedules -o yaml
 
@@ -308,8 +350,16 @@ kubectl get deployment -n compute-gardener compute-gardener-scheduler -o yaml | 
 
 # Check scheduler logs
 kubectl logs -n compute-gardener -l component=scheduler | grep pricing
+```
 
-6. **ServiceMonitor issues**: If you're having issues with Prometheus monitoring:
+7. **Scheduler monitoring pods it shouldn't manage**: This can happen if the scheduler is configured in primary mode. 
+Check the ConfigMap configuration:
+```bash
+kubectl get configmap -n compute-gardener compute-gardener-scheduler-config -o yaml
+```
+If you see `schedulerName: default-scheduler`, the scheduler is running in primary mode. Update the ConfigMap to use `compute-gardener-scheduler` instead for secondary mode operation.
+
+8. **ServiceMonitor issues**: If you're having issues with Prometheus monitoring:
 ```bash
 # Check if ServiceMonitor CRD is installed
 kubectl get crd | grep servicemonitors

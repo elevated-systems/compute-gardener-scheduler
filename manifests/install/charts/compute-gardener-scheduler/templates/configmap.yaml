@@ -8,11 +8,23 @@ data:
     apiVersion: kubescheduler.config.k8s.io/v1
     kind: KubeSchedulerConfiguration
     profiles:
+      {{- if eq .Values.scheduler.mode "primary" }}
+      # PRIMARY MODE: Acts as the default scheduler for ALL pods in the cluster
+      # (not recommended for general use)
+      - schedulerName: default-scheduler
+        plugins:
+          preFilter:
+            enabled:
+              - name: ComputeGardenerScheduler
+      {{- end }}
+      # SECONDARY MODE: Only handles pods that explicitly set schedulerName
       - schedulerName: {{ .Values.scheduler.name }}
         plugins:
           preFilter:
             enabled:
               - name: ComputeGardenerScheduler
+    # Leader election configuration - determines whether this scheduler
+    # participates in leader election with other scheduler instances
     leaderElection:
       leaderElect: {{ .Values.scheduler.leaderElect }}
 {{- if .Values.priceAware.enabled }}

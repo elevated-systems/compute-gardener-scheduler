@@ -61,6 +61,12 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set metrics.enabled=false
 ```
 
+### Uninstall the chart
+
+```bash
+helm uninstall compute-gardener-scheduler --namespace compute-gardener
+```
+
 #### Installation on Managed Kubernetes Services
 
 **Note on Simplified/Managed Cluster Types:**
@@ -199,19 +205,84 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   -f values.yaml
 ```
 
-## Usage Modes
+## Scheduler Configuration
 
-### Second Scheduler Mode (Default)
+### Scheduler Mode
 
-By default, the compute-gardener-scheduler installs as a second scheduler alongside the default Kubernetes scheduler. Pods must explicitly specify the scheduler name to use it:
+#### Secondary Scheduler Mode (Default, Recommended)
+
+By default, the compute-gardener-scheduler installs as a secondary scheduler alongside the default Kubernetes scheduler. Pods must explicitly specify the scheduler name to use it:
 
 ```yaml
 spec:
   schedulerName: compute-gardener-scheduler
 ```
 
-This mode is compatible with all Kubernetes distributions, including managed Kubernetes services.
+This mode is compatible with all Kubernetes distributions, including managed Kubernetes services, and is the recommended approach for most environments.
 
-### Primary Scheduler Mode
+```bash
+# Install as a secondary scheduler (default)
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+```
 
-For clusters that allow replacing the default scheduler, you can modify your deployment to use the compute-gardener-scheduler as the primary scheduler by updating kube-scheduler configuration. This is not compatible with many cloud providers' default cluster configurations.
+**IMPORTANT:** If you see logs for pods that don't explicitly specify this scheduler name, your installation may be incorrectly configured. Check your cluster configuration or reinstall the chart.
+
+#### Primary Scheduler Mode (Advanced, Not Recommended)
+
+**NOT RECOMMENDED FOR MOST INSTALLATIONS**: The scheduler can also be configured to act as the primary scheduler, handling ALL pods in the cluster, even those that don't explicitly specify a schedulerName.
+
+```bash
+# Install as the primary scheduler (NOT RECOMMENDED for most installations)
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set scheduler.mode=primary \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+```
+
+**WARNING**: In primary mode, ALL pods in your cluster will be processed by compute-gardener-scheduler policies, potentially causing:
+- Deployment/StatefulSet/ReplicaSet pods to be delayed due to carbon/price thresholds
+- Unexpected scheduling behavior for system components
+- Conflicts with cloud provider expectations about scheduling behavior
+
+Use primary mode ONLY if:
+- You fully understand the implications for your entire workload set
+- You want ALL containers in your cluster to be subject to carbon/price-aware scheduling
+- You're running in a non-production environment or specialized cluster dedicated to deferrable workloads
+
+To verify which scheduler is handling your pods, you can check the pod events:
+
+```bash
+kubectl describe pod [pod-name] | grep "Successfully assigned"
+```
+
+If you installed in primary mode and need to revert:
+
+```bash
+# Uninstall the compute-gardener-scheduler
+helm uninstall compute-gardener-scheduler --namespace compute-gardener
+# The default Kubernetes scheduler will automatically resume handling all pods
+```
+
+### High Availability Configuration
+
+By default, the scheduler runs as a single replica, which is suitable for most environments. For high-availability deployments:
+
+1. **Leader Election**: Required when running multiple scheduler replicas to ensure only one instance actively makes scheduling decisions.
+
+   The `scheduler.leaderElect` parameter must be set to `true` when using multiple replicas:
+
+   ```bash
+   # High availability configuration with leader election
+   helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+     --namespace compute-gardener \
+     --create-namespace \
+     --set scheduler.leaderElect=true \
+     --set scheduler.replicaCount=2 \
+     --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+   ```
+
+   **CAUTION**: Never increase `replicaCount` without enabling `leaderElect`, as this will cause scheduling conflicts.

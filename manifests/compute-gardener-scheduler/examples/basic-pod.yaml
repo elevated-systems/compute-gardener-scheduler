@@ -2,15 +2,24 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: basic-pod
+  annotations:
+    compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "150.0"
+    compute-gardener-scheduler.kubernetes.io/skip: "false"
 spec:
   schedulerName: compute-gardener-scheduler
+  restartPolicy: Never
   containers:
-  - name: nginx
-    image: nginx:1.14.2
+  - name: metrics-test
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    # Run a longer workload to allow metrics collection if enabled
+    - "echo 'This pod was scheduled by the compute-gardener-scheduler' && echo 'Running CPU workload to generate metrics (if metrics collection is enabled)...' && i=1; while [ $i -le 60 ]; do echo $(($i*$i)) > /dev/null; sleep 2; i=$(($i+1)); done"
     resources:
       requests:
         memory: "64Mi"
-        cpu: "250m"
+        cpu: "100m"
       limits:
         memory: "128Mi"
-        cpu: "500m"
+        cpu: "200m"

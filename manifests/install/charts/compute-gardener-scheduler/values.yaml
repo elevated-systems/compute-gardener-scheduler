@@ -6,8 +6,10 @@
 
 # General scheduler configuration
 scheduler:
-  # By default, runs as a second scheduler alongside the default scheduler
-  # Pods must explicitly set schedulerName: compute-gardener-scheduler to use it
+  # Scheduler mode: "secondary" (default) or "primary"
+  # - secondary: runs alongside default scheduler, only handles pods that explicitly set schedulerName
+  # - primary: acts as the default scheduler for all pods (not recommended for general use)
+  mode: "secondary"
   name: compute-gardener-scheduler
   image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.2-1d5dddd
   imagePullPolicy: IfNotPresent
@@ -76,6 +78,10 @@ metrics:
 
 # Sample pod to demonstrate scheduler usage
 samplePod:
+  # When enabled, creates a sample pod that demonstrates scheduler functionality
+  # The pod also helps validate metrics collection with a longer-running workload
+  # If you see "Zero or negative energy value" warnings in logs, the pod may not 
+  # have run long enough to collect meaningful metrics
   enabled: true
   image: "busybox:latest"
 

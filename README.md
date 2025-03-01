@@ -129,6 +129,12 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
+To uninstall the chart:
+
+```bash
+helm uninstall compute-gardener-scheduler --namespace compute-gardener
+```
+
 For more detailed installation and configuration options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
 
 ### Using YAML Manifests
@@ -139,6 +145,12 @@ Alternatively, you can deploy using the provided YAML manifests:
 # First, update the API key in the manifest
 # Then apply the manifest
 kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
+```
+
+To uninstall using manifests:
+
+```bash
+kubectl delete -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
 ```
 
 ## Hardware Power Profiles
