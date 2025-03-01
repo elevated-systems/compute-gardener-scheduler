@@ -1,0 +1,19 @@
+{{- if .Values.metrics.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.scheduler.name }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    component: scheduler
+    tier: control-plane
+spec:
+  ports:
+  - name: https
+    port: {{ .Values.metrics.service.port }}
+    targetPort: {{ .Values.metrics.port }}
+    protocol: TCP
+  selector:
+    component: scheduler
+    tier: control-plane
+{{- end }}

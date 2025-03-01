@@ -1,0 +1,30 @@
+{{- if .Values.samplePod.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Values.scheduler.name }}-sample-pod
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    component: sample-pod
+  annotations:
+    compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "150.0"
+    compute-gardener-scheduler.kubernetes.io/skip: "false"
+spec:
+  schedulerName: {{ .Values.scheduler.name }}
+  restartPolicy: Never
+  containers:
+  - name: pause
+    image: {{ .Values.samplePod.image }}
+    command:
+    - /bin/sh
+    - -c
+    - "echo 'This pod was scheduled by the {{ .Values.scheduler.name }}' && sleep 30"
+    resources:
+      requests:
+        cpu: 10m
+        memory: 10Mi
+      limits:
+        cpu: 20m
+        memory: 20Mi
+{{- end }}

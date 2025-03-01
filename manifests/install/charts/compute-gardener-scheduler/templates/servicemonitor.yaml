@@ -1,0 +1,23 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.scheduler.name }}-monitor
+  namespace: {{ .Values.metrics.serviceMonitor.namespace }}
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  endpoints:
+  - port: https 
+    scheme: https
+    path: /metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tlsConfig:
+      insecureSkipVerify: {{ .Values.metrics.serviceMonitor.insecureSkipVerify }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+{{- end }}

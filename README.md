@@ -106,6 +106,35 @@ compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"
 compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"
 ```
 
+## Installation
+
+### Using Helm
+
+The recommended way to deploy the Compute Gardener Scheduler is using Helm:
+
+```bash
+# Add the Helm repository
+helm repo add compute-gardener https://elevated-systems.github.io/compute-gardener-scheduler
+helm repo update
+
+# Install the chart
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace kube-system \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+```
+
+For more detailed installation and configuration options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
+
+### Using YAML Manifests
+
+Alternatively, you can deploy using the provided YAML manifests:
+
+```bash
+# First, update the API key in the manifest
+# Then apply the manifest
+kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
+```
+
 ## Metrics
 
 The scheduler exports Prometheus metrics through a dedicated Service and ServiceMonitor:

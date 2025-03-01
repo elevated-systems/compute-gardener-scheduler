@@ -1,0 +1,43 @@
+Thank you for installing {{ .Chart.Name }} version {{ .Chart.Version }}!
+
+Your Compute Gardener Scheduler has been deployed to {{ .Release.Namespace }} namespace.
+
+The scheduler is now available as: {{ .Values.scheduler.name }}
+
+## Using the Scheduler
+
+To use this scheduler for your workloads, add the following to your pod spec:
+```yaml
+spec:
+  schedulerName: {{ .Values.scheduler.name }}
+```
+
+## Carbon-Aware Scheduling
+
+To customize carbon-aware scheduling for specific pods, add annotations:
+```yaml
+metadata:
+  annotations:
+    compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "150.0"
+    compute-gardener-scheduler.kubernetes.io/skip: "false"
+```
+
+{{- if .Values.samplePod.enabled }}
+## Sample Pod
+
+A sample pod has been deployed to demonstrate scheduler usage:
+  kubectl get pod {{ .Values.scheduler.name }}-sample-pod -n {{ .Release.Namespace }}
+{{- end }}
+
+## Monitoring
+
+{{- if .Values.metrics.enabled }}
+Metrics are available at:
+  kubectl port-forward -n {{ .Release.Namespace }} service/{{ .Values.scheduler.name }}-metrics {{ .Values.metrics.service.port }}:{{ .Values.metrics.service.port }}
+
+Then access https://localhost:{{ .Values.metrics.service.port }}/metrics
+{{- else }}
+Metrics are currently disabled. To enable, set metrics.enabled=true
+{{- end }}
+
+For more information, see: https://github.com/elevated-systems/compute-gardener-scheduler

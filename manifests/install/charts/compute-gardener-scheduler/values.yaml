@@ -1,0 +1,79 @@
+# Default values for compute-gardener-scheduler
+# This is a YAML-formatted file
+
+# General scheduler configuration
+scheduler:
+  name: compute-gardener-scheduler
+  namespace: kube-system
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.2-1d5dddd
+  imagePullPolicy: IfNotPresent
+  replicaCount: 1
+  leaderElect: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 400m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  priorityClassName: ""
+  
+  # Probe configuration
+  probes:
+    livenessProbe:
+      initialDelaySeconds: 15
+    readinessProbe:
+      initialDelaySeconds: 15
+
+# Carbon-aware scheduling configuration
+carbonAware:
+  enabled: true
+  carbonIntensityThreshold: 200.0
+  maxSchedulingDelay: "24h"
+  electricityMap:
+    apiKey: "YOUR_ELECTRICITY_MAP_API_KEY" # Change this or use --set-string
+    # Additional electricity map settings can be added here
+
+# Price-aware scheduling configuration
+priceAware:
+  enabled: false
+  provider: "tou" # Time of Use
+  schedules:
+    # Monday-Friday peak pricing periods (4pm-9pm)
+    - dayOfWeek: "1-5"
+      startTime: "16:00"
+      endTime: "21:00"
+      peakRate: 0.30
+      offPeakRate: 0.10
+    # Weekend peak pricing periods (1pm-7pm)
+    - dayOfWeek: "0,6"
+      startTime: "13:00"
+      endTime: "19:00"
+      peakRate: 0.30
+      offPeakRate: 0.10
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 10259
+  service:
+    enabled: true
+    port: 10259
+  serviceMonitor:
+    enabled: true
+    namespace: "cattle-monitoring-system" # Adjust to your Prometheus namespace
+    interval: "30s"
+    insecureSkipVerify: true # For testing only, consider proper CA verification in prod
+
+# Sample pod to demonstrate scheduler usage
+samplePod:
+  enabled: true
+  image: "busybox:latest"
+
+# Additional plugin configuration
+plugins:
+  # Can be expanded with further plugin-specific configuration
+  pluginConfig: []

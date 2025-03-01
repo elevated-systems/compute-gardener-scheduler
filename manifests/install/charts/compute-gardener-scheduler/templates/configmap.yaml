@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scheduler.name }}-config
+  namespace: {{ .Release.Namespace }}
+data:
+  {{ .Values.scheduler.name }}-config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    profiles:
+      - schedulerName: {{ .Values.scheduler.name }}
+        plugins:
+          preFilter:
+            enabled:
+              - name: ComputeGardenerScheduler
+    leaderElection:
+      leaderElect: {{ .Values.scheduler.leaderElect }}
+{{- if .Values.priceAware.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scheduler.name }}-pricing-schedules
+  namespace: {{ .Release.Namespace }}
+data:
+  pricing-schedules.yaml: |
+    schedules:
+      {{- range .Values.priceAware.schedules }}
+      - dayOfWeek: "{{ .dayOfWeek }}"
+        startTime: "{{ .startTime }}"
+        endTime: "{{ .endTime }}"
+        peakRate: {{ .peakRate }}
+        offPeakRate: {{ .offPeakRate }}
+      {{- end }}
+{{- end }}
