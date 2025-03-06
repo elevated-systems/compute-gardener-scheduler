@@ -1,0 +1,166 @@
+{{- if .Values.cpuExporter.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-cpu-exporter
+    component: metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-cpu-exporter
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-cpu-exporter
+        component: metrics
+        part-of: compute-gardener-scheduler
+        {{- include "compute-gardener-scheduler.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.cpuExporter.metricsPort }}"
+    spec:
+      serviceAccountName: compute-gardener-cpu-exporter
+      containers:
+      - name: exporter
+        image: {{ .Values.cpuExporter.image }}
+        imagePullPolicy: {{ .Values.cpuExporter.imagePullPolicy }}
+        args:
+        - --metrics-addr=:{{ .Values.cpuExporter.metricsPort }}
+        - --v={{ .Values.cpuExporter.logLevel }}
+        - --sampling-interval={{ .Values.cpuExporter.samplingInterval }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        resources:
+          {{- toYaml .Values.cpuExporter.resources | nindent 10 }}
+        ports:
+        - containerPort: {{ .Values.cpuExporter.metricsPort }}
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 3
+          periodSeconds: 5
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      # These tolerations ensure the DaemonSet runs on ALL nodes including masters/control-planes
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compute-gardener-cpu-exporter
+  labels:
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-cpu-exporter
+  labels:
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: compute-gardener-cpu-exporter
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-cpu-exporter
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-cpu-exporter
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.cpuExporter.metricsPort }}"
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.cpuExporter.metricsPort }}
+    targetPort: {{ .Values.cpuExporter.metricsPort }}
+    protocol: TCP
+    name: metrics
+  selector:
+    app: compute-gardener-cpu-exporter
+{{- if .Values.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
+  labels:
+    app: compute-gardener-cpu-exporter
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-cpu-exporter
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    path: /metrics
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

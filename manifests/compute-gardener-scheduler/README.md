@@ -100,6 +100,7 @@ Compute Gardener Configuration:
 - `CARBON_ENABLED`: Enable carbon-aware scheduling ("true"/"false", default: "true")
 - `CARBON_INTENSITY_THRESHOLD`: Base carbon intensity threshold (gCO2/kWh)
 - `MAX_SCHEDULING_DELAY`: Maximum time to delay pod scheduling
+- `HARDWARE_PROFILES_PATH`: Path to hardware profiles configuration file
 
 Time-of-Use Pricing Configuration:
 - `PRICING_ENABLED`: Enable price-aware scheduling ("true"/"false", default: "false")
@@ -108,6 +109,36 @@ Time-of-Use Pricing Configuration:
 - `PRICING_PEAK_RATE`: Peak rate multiplier (e.g., 1.5 for 50% higher)
 - `PRICING_MAX_DELAY`: Maximum delay for price-based scheduling
 - `PRICING_SCHEDULES_PATH`: Path to pricing schedules configuration file
+
+### Hardware Profiles
+
+The scheduler uses hardware profiles to estimate power consumption of different CPU and GPU models. These profiles are defined in the `compute-gardener-scheduler-hw-profiles.yaml` ConfigMap:
+
+```yaml
+cpuProfiles:
+  "Intel(R) Xeon(R) Platinum 8275CL":
+    idlePower: 10.5         # Power consumption at idle (watts)
+    maxPower: 120.0         # Power consumption at full load (watts)
+    numCores: 24            # Number of CPU cores
+    baseFrequencyGHz: 2.5   # Base CPU frequency in GHz
+    powerScaling: "quadratic" # Power scaling model (linear, quadratic, cubic)
+    frequencyRangeGHz:      # Supported frequency range
+      min: 1.2
+      max: 3.6
+
+gpuProfiles:
+  "NVIDIA A100":
+    idlePower: 25.0  # Power consumption at idle (watts)
+    maxPower: 400.0  # Power consumption at full load (watts)
+
+memProfiles:
+  "DDR4-2666 ECC":
+    idlePowerPerGB: 0.125   # Idle power per GB of memory (watts)
+    maxPowerPerGB: 0.375    # Max power per GB of memory (watts)
+    baseIdlePower: 1.0      # Base power for memory controller (watts)
+```
+
+The hardware profiles work in conjunction with the CPU frequency exporter to provide more accurate power estimates based on actual CPU frequencies. You can customize these profiles to match your specific hardware or add new profiles for hardware not included in the default configuration.
 
 ## Deployment
 
@@ -275,12 +306,15 @@ spec:
 
 ## Resource Requirements
 
-The scheduler has modest resource requirements:
+The scheduler has modest resource requests/limits:
 ```yaml
 resources:
   requests:
-    cpu: '0.1'
-    memory: '256Mi'
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
 ```
 
 ## Security Context

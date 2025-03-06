@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: energy-policy-webhook
+  namespace: kube-system
+  labels:
+    app: energy-policy-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: energy-policy-webhook
+  template:
+    metadata:
+      labels:
+        app: energy-policy-webhook
+    spec:
+      containers:
+      - name: webhook
+        image: energy-policy-webhook:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - "--port=8443"
+        ports:
+        - containerPort: 8443
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: energy-policy-webhook-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: energy-policy-webhook
+  namespace: kube-system
+spec:
+  selector:
+    app: energy-policy-webhook
+  ports:
+  - port: 443
+    targetPort: 8443
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: energy-policy-webhook
+webhooks:
+- name: energy-policy.compute-gardener-scheduler.kubernetes.io
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  failurePolicy: Ignore
+  clientConfig:
+    service:
+      name: energy-policy-webhook
+      namespace: kube-system
+      path: "/mutate"
+    caBundle: ${CA_BUNDLE}
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+  namespaceSelector:
+    matchExpressions:
+    - key: compute-gardener-scheduler.kubernetes.io/energy-policies
+      operator: In
+      values: ["enabled"]
+---
+# Example namespace with energy policies
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: green-compute
+  labels:
+    compute-gardener-scheduler.kubernetes.io/energy-policies: "enabled"
+  annotations:
+    # Default carbon intensity threshold for all pods in this namespace
+    compute-gardener-scheduler.kubernetes.io/policy-carbon-intensity-threshold: "200"
+    
+    # Default energy budget for batch jobs (in kWh)
+    compute-gardener-scheduler.kubernetes.io/workload-batch-policy-energy-budget-kwh: "5"
+    
+    # Default energy budget for service workloads (in kWh)
+    compute-gardener-scheduler.kubernetes.io/workload-service-policy-energy-budget-kwh: "10"
+    
+    # Default action when budget is exceeded
+    compute-gardener-scheduler.kubernetes.io/policy-energy-budget-action: "notify"
+    
+    # Default GPU workload type for batch jobs
+    compute-gardener-scheduler.kubernetes.io/workload-batch-policy-gpu-workload-type: "training"
+    
+    # Default GPU workload type for services
+    compute-gardener-scheduler.kubernetes.io/workload-service-policy-gpu-workload-type: "inference"

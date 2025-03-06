@@ -2,12 +2,15 @@ package computegardener
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 )
 
@@ -16,19 +19,30 @@ func (cs *ComputeGardenerScheduler) metricsCollectionWorker(ctx context.Context)
 	// Parse sampling interval from config
 	interval, err := time.ParseDuration(cs.config.Metrics.SamplingInterval)
 	if err != nil {
-		klog.ErrorS(err, "Invalid metrics sampling interval, using default of 30s")
-		interval = 30 * time.Second
+		klog.ErrorS(err, "Invalid metrics sampling interval, using default of 15s")
+		interval = 15 * time.Second
 	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	
+	// Create a separate ticker for energy budget tracking updates (every 5 minutes)
+	budgetTicker := time.NewTicker(5 * time.Minute)
+	defer budgetTicker.Stop()
+	
+	klog.V(2).InfoS("Starting metrics collection worker", 
+		"samplingInterval", interval.String(),
+		"budgetTrackingInterval", "5m")
 
 	for {
 		select {
 		case <-cs.stopCh:
+			klog.V(2).InfoS("Stopping metrics collection worker")
 			return
 		case <-ticker.C:
 			cs.collectPodMetrics(ctx)
+		case <-budgetTicker.C:
+			cs.updateEnergyBudgetTracking(ctx)
 		}
 	}
 }
@@ -75,6 +89,11 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			continue
 		}
 
+		// Skip pods not scheduled by our scheduler
+		if pod.Spec.SchedulerName != Name {
+			continue
+		}
+		
 		// Skip pods not assigned to nodes yet
 		nodeName := pod.Spec.NodeName
 		if nodeName == "" {
@@ -150,8 +169,36 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		maxGPUPower = 300  // Default max GPU power (W)
 	}
 
+	// Check if we have frequency data for this node
+	adjustedIdlePower, adjustedMaxPower := idlePower, maxPower
+	
+	if cpuFreqMetric, err := cs.getNodeCPUFrequency(nodeName); err == nil && cpuFreqMetric > 0 {
+		// Get the CPU model and its base frequency from hardware profiles
+		cpuModel, baseFreq, powerScaling := cs.getNodeCPUModelInfo(nodeName)
+		
+		if baseFreq > 0 && cpuFreqMetric > 0 {
+			// Calculate frequency ratio
+			freqRatio := cpuFreqMetric / baseFreq
+			
+			// Apply frequency scaling to power values
+			adjustedIdlePower = metrics.AdjustPowerForFrequency(idlePower, freqRatio, powerScaling)
+			adjustedMaxPower = metrics.AdjustPowerForFrequency(maxPower, freqRatio, powerScaling)
+			
+			klog.V(2).InfoS("Adjusted power values based on CPU frequency",
+				"node", nodeName,
+				"cpuModel", cpuModel,
+				"currentFreq", cpuFreqMetric,
+				"baseFreq", baseFreq,
+				"freqRatio", freqRatio,
+				"originalIdlePower", idlePower,
+				"adjustedIdlePower", adjustedIdlePower,
+				"originalMaxPower", maxPower,
+				"adjustedMaxPower", adjustedMaxPower)
+		}
+	}
+
 	// Linear interpolation between idle and max power based on CPU usage
-	cpuPower := idlePower + (maxPower-idlePower)*cpu
+	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*cpu
 
 	// Add GPU power if utilization > 0
 	gpuPower := 0.0
@@ -162,4 +209,183 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	// Total power is sum of CPU and GPU power
 	// TODO: Add memory power model once we have better data
 	return cpuPower + gpuPower
+}
+
+// getNodeCPUFrequency attempts to get the current CPU frequency for a node from Prometheus
+// NOTE: This is currently UNIMPLEMENTED and will be enhanced when Prometheus metrics client is available
+func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float64, error) {
+	// TODO: Implement Prometheus query to get CPU frequency
+	// This should query for the 'compute_gardener_cpu_frequency_ghz' metric for this node
+	
+	// For now, return not available
+	return 0, fmt.Errorf("CPU frequency data not available - Prometheus integration not yet implemented")
+}
+
+// getNodeCPUModelInfo returns CPU model, base frequency, and power scaling mode
+func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string, float64, string) {
+	// Attempt to get node from informer cache
+	node, err := cs.handle.SharedInformerFactory().Core().V1().Nodes().Lister().Get(nodeName)
+	if err != nil {
+		klog.V(2).InfoS("Failed to get node for CPU model info", "node", nodeName, "error", err)
+		return "", 0.0, "quadratic"
+	}
+	
+	// Try to get CPU model from node annotations
+	cpuModel := ""
+	if model, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+		cpuModel = model
+		klog.V(2).InfoS("Found CPU model from node annotation", "node", nodeName, "model", cpuModel)
+	} else {
+		klog.V(2).InfoS("No CPU model annotation found", "node", nodeName)
+		return "", 0.0, "quadratic"
+	}
+	
+	baseFreq := 0.0
+	powerScaling := "quadratic" // Default power scaling model
+	
+	// Get base frequency from annotation if available
+	if freqStr, ok := node.Annotations[common.AnnotationCPUBaseFrequency]; ok {
+		if freq, err := strconv.ParseFloat(freqStr, 64); err == nil {
+			baseFreq = freq
+			klog.V(2).InfoS("Found base frequency from annotation", "node", nodeName, "freq", baseFreq)
+		}
+	}
+	
+	// If not found in annotation, look up in hardware profiles
+	if baseFreq == 0.0 && cs.config.Power.HardwareProfiles != nil && cpuModel != "" {
+		if profile, exists := cs.config.Power.HardwareProfiles.CPUProfiles[cpuModel]; exists {
+			baseFreq = profile.BaseFrequencyGHz
+			if profile.PowerScaling != "" {
+				powerScaling = profile.PowerScaling
+			}
+			klog.V(2).InfoS("Using hardware profile frequency data", 
+				"node", nodeName, 
+				"cpuModel", cpuModel, 
+				"baseFrequency", baseFreq,
+				"powerScaling", powerScaling)
+		}
+	}
+	
+	return cpuModel, baseFreq, powerScaling
+}
+
+// updateEnergyBudgetTracking calculates and reports real-time energy usage against budgets for running pods
+func (cs *ComputeGardenerScheduler) updateEnergyBudgetTracking(ctx context.Context) {
+	// Skip if metrics store is not configured
+	if cs.metricsStore == nil {
+		return
+	}
+	
+	// Get all pods with energy budget annotations
+	podList, err := cs.handle.ClientSet().CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		klog.ErrorS(err, "Failed to list pods for energy budget tracking")
+		return
+	}
+	
+	totalTracked := 0
+	totalExceeded := 0
+	
+	for _, pod := range podList.Items {
+		// Skip pods that aren't running
+		if pod.Status.Phase != v1.PodRunning {
+			continue
+		}
+		
+		// Check if pod has energy budget annotation
+		budgetStr, hasBudget := pod.Annotations[common.AnnotationEnergyBudgetKWh]
+		if !hasBudget {
+			continue
+		}
+		
+		// Parse budget
+		budget, err := strconv.ParseFloat(budgetStr, 64)
+		if err != nil || budget <= 0 {
+			continue
+		}
+		
+		// Get pod metrics history
+		metricsHistory, found := cs.metricsStore.GetHistory(string(pod.UID))
+		if !found || len(metricsHistory.Records) == 0 {
+			continue
+		}
+		
+		// Calculate current energy usage
+		currentEnergyKWh := 0.0
+		
+		// Integrate over the time series using trapezoid rule
+		for i := 1; i < len(metricsHistory.Records); i++ {
+			current := metricsHistory.Records[i]
+			previous := metricsHistory.Records[i-1]
+			
+			// Time difference in hours
+			deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
+			
+			// Average power during this interval (W)
+			avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
+			
+			// Energy used in this interval (kWh)
+			intervalEnergy := (avgPower * deltaHours) / 1000
+			
+			currentEnergyKWh += intervalEnergy
+		}
+		
+		// Calculate percentage of budget used
+		usagePercent := (currentEnergyKWh / budget) * 100
+		
+		// Record metrics
+		EnergyBudgetTracking.WithLabelValues(pod.Name, pod.Namespace).Set(usagePercent)
+		
+		// Determine owner reference type for metrics
+		ownerKind := "Pod"
+		if len(pod.OwnerReferences) > 0 {
+			ownerKind = pod.OwnerReferences[0].Kind
+		}
+		
+		// Check if budget is exceeded
+		if currentEnergyKWh > budget {
+			// Get action from annotation or default to logging
+			action := common.EnergyBudgetActionLog
+			if actionVal, ok := pod.Annotations[common.AnnotationEnergyBudgetAction]; ok {
+				action = actionVal
+			}
+			
+			// Only log once per pod when crossing threshold, using an annotation to track
+			if _, alreadyExceeded := pod.Annotations[common.AnnotationEnergyBudgetExceeded]; !alreadyExceeded {
+				klog.V(2).InfoS("Running pod exceeded energy budget", 
+					"pod", klog.KObj(&pod),
+					"namespace", pod.Namespace,
+					"budget", budget,
+					"currentUsage", currentEnergyKWh,
+					"usagePercent", usagePercent,
+					"owner", ownerKind)
+				
+				// Execute the action
+				cs.handleEnergyBudgetAction(&pod, action, currentEnergyKWh, budget)
+				
+				// Update counter
+				EnergyBudgetExceeded.WithLabelValues(pod.Namespace, ownerKind, action).Inc()
+				totalExceeded++
+			}
+		}
+		
+		// Log high energy usage (over 80% but not exceeded)
+		if usagePercent >= 80 && usagePercent < 100 {
+			klog.V(2).InfoS("Pod approaching energy budget", 
+				"pod", klog.KObj(&pod),
+				"namespace", pod.Namespace,
+				"budget", budget,
+				"currentUsage", currentEnergyKWh,
+				"usagePercent", usagePercent,
+				"owner", ownerKind)
+		}
+		
+		totalTracked++
+	}
+	
+	if totalTracked > 0 {
+		klog.V(2).InfoS("Energy budget tracking update completed", 
+			"podsTracked", totalTracked, 
+			"podsExceeded", totalExceeded)
+	}
 }

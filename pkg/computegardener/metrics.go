@@ -188,6 +188,61 @@ var (
 		},
 		[]string{"pod", "namespace"},
 	)
+
+	// NodePUE tracks PUE (Power Usage Effectiveness) values for nodes
+	NodePUE = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "node_pue",
+			Help:           "Power Usage Effectiveness for nodes (ratio of total facility energy to IT equipment energy)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"node"},
+	)
+
+	// PowerFilteredNodes counts nodes filtered due to power efficiency reasons
+	PowerFilteredNodes = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "power_filtered_nodes_total",
+			Help:           "Number of nodes filtered due to power or efficiency constraints",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"reason"}, // "max_power", "efficiency", "energy_budget" 
+	)
+
+	// NodeEfficiency tracks calculated efficiency metrics for nodes
+	NodeEfficiency = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "node_efficiency",
+			Help:           "Efficiency metric for nodes (higher is better)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"node"},
+	)
+
+	// EnergyBudgetTracking tracks energy budget usage for workloads
+	EnergyBudgetTracking = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "energy_budget_usage_percent",
+			Help:           "Percentage of energy budget used by workloads",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace"},
+	)
+	
+	// EnergyBudgetExceeded counts workloads that exceeded their energy budget
+	EnergyBudgetExceeded = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "energy_budget_exceeded_total",
+			Help:           "Number of workloads that exceeded their energy budget",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"namespace", "owner_kind", "action"},
+	)
 )
 
 func init() {
@@ -208,4 +263,9 @@ func init() {
 	legacyregistry.MustRegister(PriceBasedDelays)
 	legacyregistry.MustRegister(CarbonBasedDelays)
 	legacyregistry.MustRegister(JobCarbonEmissions)
+	legacyregistry.MustRegister(NodePUE)
+	legacyregistry.MustRegister(PowerFilteredNodes)
+	legacyregistry.MustRegister(NodeEfficiency)
+	legacyregistry.MustRegister(EnergyBudgetTracking)
+	legacyregistry.MustRegister(EnergyBudgetExceeded)
 }

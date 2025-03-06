@@ -13,57 +13,162 @@ data:
       "Intel(R) Xeon(R) Platinum 8275CL":
         idlePower: 10.5
         maxPower: 120.0
+        numCores: 24
+        baseFrequencyGHz: 2.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.6
       "Intel(R) Xeon(R) Platinum 8124M":
         idlePower: 12.0
         maxPower: 150.0
+        numCores: 18
+        baseFrequencyGHz: 3.0
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.5
       "Intel(R) Xeon(R) E5-2686 v4":
         idlePower: 9.0
         maxPower: 95.0
+        numCores: 8
+        baseFrequencyGHz: 2.3
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.0
       "Intel(R) Xeon(R) E5-2676 v3":
         idlePower: 8.5
         maxPower: 85.0
+        numCores: 12
+        baseFrequencyGHz: 2.4
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.3
       "Intel(R) Xeon(R) Gold 6148":
         idlePower: 11.0
         maxPower: 125.0
+        numCores: 20
+        baseFrequencyGHz: 2.4
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.7
       "Intel(R) Xeon(R) Platinum 8168":
         idlePower: 12.5
         maxPower: 155.0
+        numCores: 24
+        baseFrequencyGHz: 2.7
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.7
       
       # Intel CPUs - Consumer/Edge (Homelab)
       "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz":
         idlePower: 5.0
         maxPower: 65.0
+        numCores: 4
+        baseFrequencyGHz: 3.2
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 3.6
+      "Intel(R) Core(TM) i5-6500 CPU @ 2.50GHz":
+        idlePower: 5.0
+        maxPower: 35.0
+        numCores: 4
+        baseFrequencyGHz: 2.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 3.0
       "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz":
         idlePower: 8.0
         maxPower: 95.0
+        numCores: 6
+        baseFrequencyGHz: 3.2
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 4.6
       "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz":
         idlePower: 9.0
         maxPower: 105.0
+        numCores: 8
+        baseFrequencyGHz: 3.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 4.9
       "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz":
         idlePower: 10.0
         maxPower: 125.0
+        numCores: 8
+        baseFrequencyGHz: 3.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 5.0
       
       # AMD CPUs - Server/Cloud
       "AMD EPYC 7R32":
         idlePower: 11.0
         maxPower: 130.0
+        numCores: 32
+        baseFrequencyGHz: 2.9
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.3
       "AMD EPYC 7571":
         idlePower: 10.0
         maxPower: 120.0
+        numCores: 32
+        baseFrequencyGHz: 2.2
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.0
       "AMD EPYC 7R13":
         idlePower: 11.5
         maxPower: 140.0
+        numCores: 32
+        baseFrequencyGHz: 2.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.6
       "AMD EPYC 7763":
         idlePower: 12.5
         maxPower: 160.0
+        numCores: 64
+        baseFrequencyGHz: 2.45
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.5
       
       # AMD CPUs - Consumer/Edge (Homelab)
       "AMD Ryzen 5 3600 6-Core Processor":
         idlePower: 6.0
         maxPower: 65.0
+        numCores: 6
+        baseFrequencyGHz: 3.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 2.2
+          max: 4.2
       "AMD Ryzen 7 5800X 8-Core Processor":
         idlePower: 8.0
         maxPower: 105.0
+        numCores: 8
+        baseFrequencyGHz: 3.8
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 2.8
+          max: 4.7
     
     # GPU power profiles - identifier -> power characteristics
     gpuProfiles:
@@ -139,29 +244,28 @@ data:
         "m5.large":
           cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
           memoryType: "DDR4-2666 ECC"
-          numCPUs: 2
           totalMemory: 8192
           memChannels: 6
         "m5.xlarge":
           cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
-          numCPUs: 4
+          memoryType: "DDR4-2666 ECC"
           totalMemory: 16384
         "m5.2xlarge":
           cpuModel: "Intel(R) Xeon(R) Platinum 8175M"
-          numCPUs: 8
+          memoryType: "DDR4-2666 ECC"
           totalMemory: 32768
         "c5.large":
           cpuModel: "Intel(R) Xeon(R) Platinum 8124M"
-          numCPUs: 2
+          memoryType: "DDR4-2666 ECC"
           totalMemory: 4096
         "c5.xlarge":
           cpuModel: "Intel(R) Xeon(R) Platinum 8124M"
-          numCPUs: 4
+          memoryType: "DDR4-2666 ECC"
           totalMemory: 8192
         "p3.2xlarge":
           cpuModel: "Intel(R) Xeon(R) E5-2686 v4"
           gpuModel: "NVIDIA V100"
-          numCPUs: 8
+          memoryType: "DDR4-2666 ECC"
           numGPUs: 1
           totalMemory: 61440
       
@@ -169,44 +273,49 @@ data:
       gcp:
         "n2-standard-2":
           cpuModel: "Intel(R) Xeon(R) Gold 6148"
-          numCPUs: 2
+          numCores: 2
           totalMemory: 8192
+          memoryType: "DDR4-2666 ECC"
         "n2-standard-4":
           cpuModel: "Intel(R) Xeon(R) Gold 6148"
-          numCPUs: 4
+          numCores: 4
           totalMemory: 16384
+          memoryType: "DDR4-2666 ECC"
         "n2-standard-8":
           cpuModel: "Intel(R) Xeon(R) Gold 6148"
-          numCPUs: 8
+          numCores: 8
           totalMemory: 32768
+          memoryType: "DDR4-2666 ECC"
         "c2-standard-4":
           cpuModel: "Intel(R) Xeon(R) Platinum 8168"
-          numCPUs: 4
+          numCores: 4
           totalMemory: 16384
+          memoryType: "DDR4-2666 ECC"
         "a2-highgpu-1g":
           cpuModel: "AMD EPYC 7B12"
           gpuModel: "NVIDIA A100"
-          numCPUs: 12
+          numCores: 12
           numGPUs: 1
           totalMemory: 86016
+          memoryType: "DDR4-3200 ECC"
       
       # Azure instance types
       azure:
         "Standard_D2s_v3":
           cpuModel: "Intel(R) Xeon(R) E5-2673 v4"
-          numCPUs: 2
+          numCores: 2
           totalMemory: 8192
         "Standard_D4s_v3":
           cpuModel: "Intel(R) Xeon(R) E5-2673 v4"
-          numCPUs: 4
+          numCores: 4
           totalMemory: 16384
         "Standard_F8s_v2":
           cpuModel: "Intel(R) Xeon(R) Platinum 8168"
-          numCPUs: 8
+          numCores: 8
           totalMemory: 16384
         "Standard_NC6s_v3":
           cpuModel: "Intel(R) Xeon(R) E5-2690 v4"
           gpuModel: "NVIDIA V100"
-          numCPUs: 6
+          numCores: 6
           numGPUs: 1
           totalMemory: 114688

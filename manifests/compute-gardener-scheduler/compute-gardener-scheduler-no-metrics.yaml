@@ -165,11 +165,11 @@ spec:
             scheme: HTTPS
         resources:
           requests:
-            cpu: '100m'
-            memory: '128Mi'
+            cpu: 50m
+            memory: 128Mi
           limits:
-            cpu: '400m'
-            memory: '512Mi'
+            cpu: 200m
+            memory: 256Mi
         securityContext:
           privileged: false
         volumeMounts:

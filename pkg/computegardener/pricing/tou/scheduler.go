@@ -9,6 +9,7 @@ import (
 	klog "k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
@@ -56,7 +57,7 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 
 	// Get threshold from pod annotation or use off-peak rate as threshold
 	var threshold float64
-	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
+	if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 		klog.V(2).InfoS("Found price threshold annotation",
 			"pod", pod.Name,
 			"namespace", pod.Namespace,

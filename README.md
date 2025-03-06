@@ -8,10 +8,15 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 
 - **Carbon-Aware Scheduling** (Optional): Schedule pods based on real-time carbon intensity data from Electricity Map API or implement your own intensity source
 - **Price-Aware Scheduling** (Optional): Schedule pods based on time-of-use electricity pricing schedules or implement your own pricing source
-- **Flexible Configuration**: Extensive configuration options for fine-tuning scheduler behavior
+- **Energy Budget Tracking**: Define and monitor energy usage limits for workloads with configurable actions when exceeded
+- **GPU Workload Classification**: Optimize power modeling based on workload type (inference, training, rendering)
+- **Namespace-Level Policies**: Define energy policies at namespace level to automatically apply to all pods
+- **Workload-Type Optimization**: Different policies for batch jobs, services, and stateful workloads
+- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration
+- **CPU Frequency Monitoring** (Optional): DaemonSet for accurate CPU power estimation, by node, based on dynamic frequency scaling
 - **Pod-Level Controls**: Pods can opt-out or specify custom thresholds via annotations
 - **Caching**: Built-in caching of API responses to limit external API calls
-- **Observability**: Prometheus metrics for monitoring carbon intensity, pricing, and scheduling decisions
+- **Observability**: Comprehensive Prometheus metrics for monitoring energy usage, carbon intensity, and cost savings
 
 ## Configuration
 
@@ -20,6 +25,8 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 - **Metrics Server**: Highly recommended but not strictly required. Without Metrics Server, the scheduler won't be able to collect real-time node utilization data, resulting in less accurate energy usage estimates. Core carbon-aware and price-aware scheduling will still function using requested resources rather than actual usage.
 
 - **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation and won't have visibility into the actual emissions and cost reductions achieved.
+
+- **CPU Frequency Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for power calculations. Without it, the scheduler will estimate power based on static CPU models, which may not accurately reflect dynamic frequency scaling behaviors.
 
 ### Environment Variables
 
@@ -92,25 +99,73 @@ schedules:
 Pods can control scheduling behavior using the following annotations:
 
 ```yaml
-# Opt out of compute-gardener scheduling
-compute-gardener-scheduler.kubernetes.io/skip: "true"
+# Basic scheduling controls
+compute-gardener-scheduler.kubernetes.io/skip: "true"                      # Opt out of compute-gardener scheduling
+compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"           # Disable carbon-aware scheduling for this pod
+compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0" # Set custom carbon intensity threshold
+compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"           # Set custom price threshold
+compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"       # Set custom maximum scheduling delay
 
-# Disable carbon-aware scheduling for this pod only
-compute-gardener-scheduler.kubernetes.io/carbon-enabled: "false"
+# Energy budget controls
+compute-gardener-scheduler.kubernetes.io/energy-budget-kwh: "5.0"          # Set energy budget in kilowatt-hours
+compute-gardener-scheduler.kubernetes.io/energy-budget-action: "notify"    # Action when budget exceeded: log, notify, annotate, label
 
-# Set custom carbon intensity threshold
-compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0"
+# Hardware efficiency controls
+compute-gardener-scheduler.kubernetes.io/max-power-watts: "300.0"          # Maximum power consumption threshold
+compute-gardener-scheduler.kubernetes.io/min-efficiency: "0.8"             # Minimum efficiency requirement
+compute-gardener-scheduler.kubernetes.io/gpu-workload-type: "inference"    # GPU workload type (inference, training, rendering)
 
-# Optional node labels for hardware identification (for improved energy profiles)
-node.kubernetes.io/cpu-model: "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz"
-node.kubernetes.io/gpu-model: "NVIDIA GeForce GTX 1660"
+# PUE configuration 
+compute-gardener-scheduler.kubernetes.io/pue: "1.2"                        # Power Usage Effectiveness for datacenter
+compute-gardener-scheduler.kubernetes.io/gpu-pue: "1.15"                   # GPU-specific Power Usage Effectiveness
 
-# Set custom price threshold
-compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"
-
-# Set custom maximum scheduling delay (e.g. "12h", "30m", "1h30m")
-compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"
+# Node hardware labels (for improved energy profiles)
+node.kubernetes.io/cpu-model: "Intel(R) Xeon(R) Platinum 8275CL"
+node.kubernetes.io/gpu-model: "NVIDIA A100"
 ```
+
+### Namespace-Level Energy Policies
+
+The scheduler supports defining energy policies at the namespace level, which automatically apply to all pods in the namespace. This feature requires deploying the Energy Policy Webhook (included in the repo).
+
+To enable namespace-level policies:
+
+1. Label the namespace to enable energy policies:
+   ```yaml
+   labels:
+     compute-gardener-scheduler.kubernetes.io/energy-policies: "enabled"
+   ```
+
+2. Add policy annotations to the namespace:
+   ```yaml
+   annotations:
+     # Default carbon intensity threshold for all pods in this namespace
+     compute-gardener-scheduler.kubernetes.io/policy-carbon-intensity-threshold: "200"
+     
+     # Default energy budget (in kWh) for all pods in this namespace
+     compute-gardener-scheduler.kubernetes.io/policy-energy-budget-kwh: "10"
+     
+     # Default action when budget is exceeded
+     compute-gardener-scheduler.kubernetes.io/policy-energy-budget-action: "notify"
+   ```
+
+3. Add workload-specific policy overrides:
+   ```yaml
+   annotations:
+     # Energy budget for batch jobs (like training jobs)
+     compute-gardener-scheduler.kubernetes.io/workload-batch-policy-energy-budget-kwh: "20"
+     
+     # GPU workload type for batch jobs
+     compute-gardener-scheduler.kubernetes.io/workload-batch-policy-gpu-workload-type: "training"
+     
+     # Price threshold for service workloads (like APIs, web servers)
+     compute-gardener-scheduler.kubernetes.io/workload-service-policy-price-threshold: "0.15"
+     
+     # Energy budget for service workloads
+     compute-gardener-scheduler.kubernetes.io/workload-service-policy-energy-budget-kwh: "5"
+   ```
+
+This allows you to set up clean vs. dirty computing zones in your cluster, with different energy policies applied automatically.
 
 ## Installation
 
@@ -123,16 +178,29 @@ The recommended way to deploy the Compute Gardener Scheduler is using Helm:
 helm repo add compute-gardener https://elevated-systems.github.io/compute-gardener-scheduler
 helm repo update
 
-# Install the chart
+# Install the scheduler
 helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
   --namespace kube-system \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-To uninstall the chart:
+To enable namespace-level energy policies, deploy the Energy Policy Webhook:
 
 ```bash
-helm uninstall compute-gardener-scheduler --namespace compute-gardener
+# First, generate webhook TLS certificates
+./hack/generate-webhook-certs.sh
+
+# Install the webhook
+helm install energy-policy-webhook compute-gardener/energy-policy-webhook \
+  --namespace kube-system \
+  --set caBundle=$(cat webhooks/certs/ca.pem | base64 | tr -d '\n')
+```
+
+To uninstall:
+
+```bash
+helm uninstall compute-gardener-scheduler --namespace kube-system
+helm uninstall energy-policy-webhook --namespace kube-system
 ```
 
 For more detailed installation and configuration options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
@@ -142,15 +210,27 @@ For more detailed installation and configuration options, see the [Helm chart RE
 Alternatively, you can deploy using the provided YAML manifests:
 
 ```bash
-# First, update the API key in the manifest
-# Then apply the manifest
+# Scheduler deployment
 kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
+
+# Energy Policy Webhook (optional)
+# First, generate TLS certificates and create a Secret
+./hack/generate-webhook-certs.sh
+kubectl create secret tls energy-policy-webhook-certs -n kube-system \
+  --cert=webhooks/certs/server.pem \
+  --key=webhooks/certs/server-key.pem
+
+# Then apply the webhook manifest with the CA bundle
+CA_BUNDLE=$(cat webhooks/certs/ca.pem | base64 | tr -d '\n') \
+envsubst < webhooks/energy-policy/deployment.yaml | kubectl apply -f -
 ```
 
-To uninstall using manifests:
+To uninstall:
 
 ```bash
 kubectl delete -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
+kubectl delete -f webhooks/energy-policy/deployment.yaml
+kubectl delete secret energy-policy-webhook-certs -n kube-system
 ```
 
 ## Hardware Power Profiles
@@ -181,9 +261,13 @@ The scheduler uses these labels as a fast path for hardware identification. With
 
 ### Hardware Profile ConfigMap
 
-The hardware profiles are defined in a YAML format:
+The hardware profiles are defined in a YAML format with PUE (Power Usage Effectiveness) considerations:
 
 ```yaml
+# Global PUE defaults
+defaultPUE: 1.1       # Default datacenter PUE (typical range: 1.1-1.6)
+defaultGPUPUE: 1.15   # Default GPU-specific PUE for power conversion losses
+
 # CPU power profiles
 cpuProfiles:
   "Intel(R) Xeon(R) Platinum 8275CL":
@@ -193,20 +277,28 @@ cpuProfiles:
     idlePower: 5.0
     maxPower: 65.0
 
-# GPU power profiles
+# GPU power profiles with workload type coefficients
 gpuProfiles:
   "NVIDIA A100":
-    idlePower: 25.0
-    maxPower: 400.0
+    idlePower: 25.0       # Idle power in watts
+    maxPower: 400.0       # Max power in watts at 100% utilization
+    workloadTypes:        # Power coefficients for different workload types
+      inference: 0.6      # Inference typically uses ~60% of max power at 100% utilization
+      training: 1.0       # Training uses full power
+      rendering: 0.9      # Rendering uses ~90% of max power at 100% utilization
   "NVIDIA GeForce GTX 1660":
     idlePower: 7.0
     maxPower: 125.0
+    workloadTypes:
+      inference: 0.5
+      training: 0.9
+      rendering: 0.8
 
 # Memory power profiles
 memProfiles:
   "DDR4-2666 ECC":
     idlePowerPerGB: 0.125  # Idle power per GB in watts
-    maxPowerPerGB: 0.375   # Max power per GB in watts
+    maxPowerPerGB: 0.375   # Max power per GB in watts at full utilization
     baseIdlePower: 1.0     # Base power overhead in watts
 
 # Cloud instance mappings to hardware components
@@ -217,7 +309,53 @@ cloudInstanceMapping:
       memoryType: "DDR4-2666 ECC"
       numCPUs: 2
       totalMemory: 8192  # in MB
+    "p3.2xlarge":
+      cpuModel: "Intel(R) Xeon(R) E5-2686 v4"
+      gpuModel: "NVIDIA Tesla V100"
+      memoryType: "DDR4-2666 ECC"
+      numCPUs: 8
+      numGPUs: 1
+      totalMemory: 61440  # in MB
+  gcp:
+    "n2-standard-4":
+      cpuModel: "Intel Cascade Lake"
+      memoryType: "DDR4-3200"
+      numCPUs: 4
+      totalMemory: 16384  # in MB
+
+# Node-specific configurations
+nodePowerConfig:
+  "worker-1":
+    idlePower: 80.0   # Idle power in watts
+    maxPower: 350.0   # Max power in watts
+    pue: 1.12         # Custom PUE for this node's datacenter
+  "gpu-worker-1":
+    idlePower: 120.0
+    maxPower: 450.0
+    idleGPUPower: 30.0
+    maxGPUPower: 320.0
+    pue: 1.15
+    gpuPue: 1.18      # GPU-specific PUE for this node
 ```
+
+### How PUE is Applied
+
+The scheduler uses PUE values to calculate the true power consumption of workloads, including datacenter overhead:
+
+1. **Standard PUE**: Applied to CPU and memory power consumption to account for cooling, power distribution, etc.
+2. **GPU-specific PUE**: Applied only to GPU power to account for GPU power conversion losses and additional cooling
+
+This allows for more accurate modeling of total energy consumption, especially for AI/ML workloads that heavily utilize GPUs.
+
+### GPU Workload Classification
+
+The scheduler can optimize power calculations based on GPU workload type:
+
+1. **Inference**: Typically uses less power than the GPU's theoretical maximum, even at 100% utilization
+2. **Training**: Usually consumes maximum GPU power during training operations
+3. **Rendering**: Has specific power profiles between inference and training
+
+Pods can specify their GPU workload type via annotation, or namespaces can set defaults for different workload types.
 
 ## Metrics
 
@@ -228,22 +366,36 @@ The scheduler exports Prometheus metrics through a dedicated Service and Service
 
 The following metrics are available:
 
+**Carbon and Pricing Metrics**
 - `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
 - `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
-- `scheduler_compute_gardener_scheduling_attempt_total`: Number of attempts to schedule pods by result
-- `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts
-- `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
-- `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
 - `scheduler_compute_gardener_carbon_delay_total`: Number of scheduling delays due to carbon intensity thresholds
+- `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
+
+**Energy Budget Metrics**
+- `scheduler_compute_gardener_energy_budget_usage_percent`: Percentage of energy budget used by workloads
+- `scheduler_compute_gardener_energy_budget_exceeded_total`: Number of workloads that exceeded their energy budget
+- `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
+- `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
+
+**Hardware Efficiency Metrics**
+- `scheduler_compute_gardener_node_pue`: Power Usage Effectiveness for nodes
+- `scheduler_compute_gardener_node_efficiency`: Efficiency metric for nodes
+- `scheduler_compute_gardener_power_filtered_nodes_total`: Nodes filtered due to power constraints
+
+**Resource Utilization Metrics**
 - `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes (baseline, current, final)
 - `scheduler_compute_gardener_node_memory_usage_bytes`: Memory usage on nodes (baseline, current, final)
 - `scheduler_compute_gardener_node_gpu_usage`: GPU utilization on nodes (baseline, current, final)
 - `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption (baseline, current, final)
-- `scheduler_compute_gardener_metrics_samples_stored`: Number of pod metrics samples currently stored in cache
-- `scheduler_compute_gardener_metrics_cache_size`: Number of pods being tracked in metrics cache
-- `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
-- `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
+
+**Scheduler Performance Metrics**
+- `scheduler_compute_gardener_scheduling_attempt_total`: Number of attempts to schedule pods by result
+- `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts in seconds
+- `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
 - `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
+- `scheduler_compute_gardener_metrics_samples_stored`: Number of pod metrics samples currently stored
+- `scheduler_compute_gardener_metrics_cache_size`: Number of pods being tracked in metrics cache
 
 ### Metrics Collection
 
@@ -301,24 +453,67 @@ annotations:
 
 The scheduler consists of several key components:
 
-1. **Main Scheduler**: Implements the Kubernetes scheduler framework interfaces
-2. **API Client**: Handles communication with Electricity Map API
-3. **Cache**: Provides caching of API responses to reduce external API calls
-4. **TOU Scheduler**: Manages time-of-use pricing schedules
+1. **Main Scheduler Plugin**: Implements the Kubernetes scheduler framework interfaces
+2. **Energy Policy Webhook**: Applies namespace-level energy policies to pods
+3. **Hardware Profiler**: Accurately models power consumption with PUE considerations
+4. **Energy Budget Tracker**: Monitors real-time energy usage against budgets
+5. **API Client**: Handles communication with Electricity Map API
+6. **Cache**: Provides caching of API responses to reduce external API calls
+7. **TOU Scheduler**: Manages time-of-use pricing schedules
 
 ### Scheduling Logic
 
-The scheduler follows this decision flow:
+The scheduler follows this enhanced decision flow:
 
-1. Check if pod has exceeded maximum scheduling delay
-2. Check for opt-out annotations
-3. If pricing is enabled:
-   - Get current rate from pricing implementation
-   - Compare against threshold
-4. If carbon-aware scheduling is enabled:
-   - Get current carbon intensity from implementation
-   - Compare against threshold
-5. Make scheduling decision
+1. **PreFilter Stage**: 
+   - Check if pod has exceeded maximum scheduling delay
+   - Check for opt-out annotations
+   - Apply namespace energy policy annotations if needed
+
+2. **Filter Stage**:
+   - If pricing is enabled:
+     - Get current rate from pricing implementation
+     - Compare against threshold
+   - If carbon-aware scheduling is enabled:
+     - Get current carbon intensity from implementation
+     - Compare against threshold
+   - If hardware efficiency controls are enabled:
+     - Calculate effective power consumption with PUE
+     - Filter nodes based on power limits and efficiency
+
+3. **Post-scheduling**:
+   - Track energy usage over time
+   - Compare against energy budgets
+   - Take configurable actions when budgets are exceeded
+
+### Energy Policy Webhook
+
+The Energy Policy Webhook automates the application of energy policies to pods:
+
+```
+                           +---------------------+
+                           | Kubernetes API      |
+                           | Server              |
+                           +----------+----------+
+                                      |
+                                      | Pod Creation
+                                      | Request
+                                      v
+                           +----------+----------+
+                           | Energy Policy       |
+                           | Admission Webhook   |
+                           +----------+----------+
+                                      |
+                                      | Add Annotations
+                                      | Based on Namespace
+                                      v
+                           +----------+----------+
+                           | Compute Gardener    |
+                           | Scheduler           |
+                           +---------------------+
+```
+
+This architecture separates policy definition (at namespace level) from policy enforcement (scheduler), making it easier to define energy policies for different workload types and teams.
 
 ## Development
 

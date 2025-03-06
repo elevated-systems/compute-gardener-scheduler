@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: kube-system
+  labels:
+    app: compute-gardener-cpu-exporter
+    component: metrics
+    part-of: compute-gardener-scheduler
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-cpu-exporter
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-cpu-exporter
+        component: metrics
+        part-of: compute-gardener-scheduler
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      serviceAccountName: compute-gardener-cpu-exporter
+      containers:
+      - name: exporter
+        image: docker.io/dmasselink/compute-gardener-cpu-exporter:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --metrics-addr=:9100
+        - --v=2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        ports:
+        - containerPort: 9100
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 3
+          periodSeconds: 5
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      # These tolerations ensure the DaemonSet runs on ALL nodes including masters/control-planes
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: kube-system
+  labels:
+    part-of: compute-gardener-scheduler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compute-gardener-cpu-exporter
+  labels:
+    part-of: compute-gardener-scheduler
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-cpu-exporter
+  labels:
+    part-of: compute-gardener-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: compute-gardener-cpu-exporter
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-cpu-exporter
+  namespace: kube-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-cpu-exporter
+  namespace: kube-system
+  labels:
+    app: compute-gardener-cpu-exporter
+    part-of: compute-gardener-scheduler
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9100
+    targetPort: 9100
+    protocol: TCP
+    name: metrics
+  selector:
+    app: compute-gardener-cpu-exporter

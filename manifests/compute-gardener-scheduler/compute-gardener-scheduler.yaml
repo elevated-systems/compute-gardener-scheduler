@@ -97,7 +97,7 @@ spec:
   - port: https 
     scheme: https
     path: /metrics
-    interval: 30s
+    interval: 15s  # Match the CPU exporter's sampling interval
     bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
     tlsConfig:
       insecureSkipVerify: true  # For testing only, consider using proper CA verification in production
@@ -248,11 +248,11 @@ spec:
             scheme: HTTPS
         resources:
           requests:
-            cpu: '100m'
-            memory: '128Mi'
+            cpu: 50m
+            memory: 128Mi
           limits:
-            cpu: '400m'
-            memory: '512Mi'
+            cpu: 200m
+            memory: 256Mi
         securityContext:
           privileged: false
         volumeMounts:

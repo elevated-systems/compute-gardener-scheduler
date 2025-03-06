@@ -8,6 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing"
 )
 
@@ -32,7 +33,7 @@ func (m *MockPricing) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framewo
 
 	// Get threshold from pod annotation or use 0.15 as default threshold for testing
 	threshold := 0.15 // Default test threshold
-	if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
+	if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 		if t, err := strconv.ParseFloat(val, 64); err == nil {
 			threshold = t
 		} else {

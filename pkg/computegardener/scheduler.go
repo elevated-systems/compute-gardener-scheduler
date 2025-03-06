@@ -17,6 +17,7 @@ import (
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing"
@@ -26,6 +27,18 @@ const (
 	// Name is the name of the plugin used in Registry and configurations.
 	Name = "ComputeGardenerScheduler"
 )
+
+// preFilterState is used to record that a pod passed the PreFilter phase
+type preFilterState struct {
+	passed bool
+}
+
+// Clone implements the StateData interface
+func (s *preFilterState) Clone() framework.StateData {
+	return &preFilterState{
+		passed: s.passed,
+	}
+}
 
 // ComputeGardenerScheduler is a scheduler plugin that implements carbon and price-aware scheduling
 type ComputeGardenerScheduler struct {
@@ -52,6 +65,7 @@ type ComputeGardenerScheduler struct {
 
 var (
 	_ framework.PreFilterPlugin = &ComputeGardenerScheduler{}
+	_ framework.FilterPlugin    = &ComputeGardenerScheduler{}
 	_ framework.Plugin          = &ComputeGardenerScheduler{}
 )
 
@@ -173,35 +187,44 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		klog.V(2).InfoS("Metrics collection worker disabled - no sampling interval configured")
 	}
 
-	// Register pod informer to track completion
+	// Register pod informer with filtering to only track completion for pods using our scheduler
 	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				newPod := newObj.(*v1.Pod)
+		cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				pod, ok := obj.(*v1.Pod)
+				if !ok {
+					return false
+				}
+				return pod.Spec.SchedulerName == Name
+			},
+			Handler: cache.ResourceEventHandlerFuncs{
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					newPod := newObj.(*v1.Pod)
 
-				// Check for completion or failure
-				isCompleted := false
-				switch {
-				case newPod.Status.Phase == v1.PodSucceeded:
-					isCompleted = true
-				case newPod.Status.Phase == v1.PodFailed:
-					isCompleted = true
-				case len(newPod.Status.ContainerStatuses) > 0:
-					allTerminated := true
-					for _, status := range newPod.Status.ContainerStatuses {
-						if status.State.Terminated == nil {
-							allTerminated = false
-							break
+					// Check for completion or failure
+					isCompleted := false
+					switch {
+					case newPod.Status.Phase == v1.PodSucceeded:
+						isCompleted = true
+					case newPod.Status.Phase == v1.PodFailed:
+						isCompleted = true
+					case len(newPod.Status.ContainerStatuses) > 0:
+						allTerminated := true
+						for _, status := range newPod.Status.ContainerStatuses {
+							if status.State.Terminated == nil {
+								allTerminated = false
+								break
+							}
+						}
+						if allTerminated {
+							isCompleted = true
 						}
 					}
-					if allTerminated {
-						isCompleted = true
-					}
-				}
 
-				if isCompleted {
-					scheduler.handlePodCompletion(newPod)
-				}
+					if isCompleted {
+						scheduler.handlePodCompletion(newPod)
+					}
+				},
 			},
 		},
 	)
@@ -234,7 +257,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				}
 				
 				// Refresh hardware profile if node specs changed
-				if scheduler.hardwareProfiler != nil && nodeSpecsChanged(oldNode, newNode) {
+				if scheduler.hardwareProfiler != nil && metrics.NodeSpecsChanged(oldNode, newNode) {
 					klog.V(2).InfoS("Node specs changed, refreshing hardware profile", "node", newNode.Name)
 					scheduler.hardwareProfiler.RefreshNodeCache(newNode)
 				}
@@ -264,7 +287,7 @@ func (cs *ComputeGardenerScheduler) Name() string {
 func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	startTime := cs.clock.Now()
 	defer func() {
-		PodSchedulingLatency.WithLabelValues("total").Observe(cs.clock.Since(startTime).Seconds())
+		PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
 	}()
 
 	// Check if pod has been waiting too long
@@ -278,6 +301,47 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 		SchedulingAttempts.WithLabelValues("skipped").Inc()
 		return nil, framework.NewStatus(framework.Success, "")
 	}
+	
+	// Apply namespace-level energy budget if pod doesn't have one
+	if err := cs.applyNamespaceEnergyBudget(ctx, pod); err != nil {
+		klog.ErrorS(err, "Failed to apply namespace energy budget", "pod", klog.KObj(pod))
+	}
+
+	// Store any pod-specific information in cycle state for Filter stage
+	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
+	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
+
+	return nil, framework.NewStatus(framework.Success, "")
+}
+
+// PreFilterExtensions returns nil as this plugin does not need extensions
+func (cs *ComputeGardenerScheduler) PreFilterExtensions() framework.PreFilterExtensions {
+	return nil
+}
+
+// Filter implements the Filter interface
+func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	startTime := cs.clock.Now()
+	defer func() {
+		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
+	}()
+
+	// Verify the pod passed PreFilter (should always be true, but check anyway)
+	v, err := state.Read("compute-gardener-passed-prefilter")
+	if err != nil || v == nil {
+		klog.V(2).InfoS("Pod did not pass prefilter stage", "pod", klog.KObj(pod))
+		return framework.NewStatus(framework.Error, "Pod did not pass prefilter stage")
+	}
+	s, ok := v.(*preFilterState)
+	if !ok || !s.passed {
+		klog.V(2).InfoS("Invalid or failed prefilter state", "pod", klog.KObj(pod))
+		return framework.NewStatus(framework.Error, "Invalid prefilter state")
+	}
+
+	node := nodeInfo.Node()
+	if node == nil {
+		return framework.NewStatus(framework.Error, "node not found")
+	}
 
 	// Check pricing constraints if enabled
 	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
@@ -285,7 +349,7 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 			// Record metrics for price-based delay
 			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
 			threshold := cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
-			if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/price-threshold"]; ok {
+			if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
 				}
@@ -300,20 +364,20 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 			EstimatedSavings.WithLabelValues("cost", "dollars").Add(savings)
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
-			return nil, status
+			return status
 		}
 	}
 
 	// Check carbon intensity constraints if enabled
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
 		// Check if pod has annotation to disable carbon-aware scheduling
-		if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-enabled"]; ok && val == "false" {
+		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
 		} else {
 			// Get threshold from pod annotation or use configured threshold
 			threshold := cs.config.Carbon.IntensityThreshold
 
-			if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold"]; ok {
+			if val, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
 				} else {
@@ -321,7 +385,7 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 						"pod", pod.Name,
 						"namespace", pod.Namespace,
 						"value", val)
-					return nil, framework.NewStatus(framework.Error, "invalid carbon intensity threshold annotation")
+					return framework.NewStatus(framework.Error, "invalid carbon intensity threshold annotation")
 				}
 			}
 
@@ -335,17 +399,99 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 						EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
 					}
 				}
-				return nil, status
+				return status
 			}
 		}
 	}
 
-	return nil, framework.NewStatus(framework.Success, "")
-}
+	// Check hardware profile energy efficiency if available
+	if cs.hardwareProfiler != nil {
+		// Get node's power profile
+		powerProfile, err := cs.hardwareProfiler.GetNodePowerProfile(node)
+		if err == nil && powerProfile != nil {
+			// Record PUE metric for the node
+			NodePUE.WithLabelValues(node.Name).Set(powerProfile.PUE)
+			
+			// Calculate and record node efficiency
+			nodeEfficiency := metrics.CalculateNodeEfficiency(node, powerProfile)
+			NodeEfficiency.WithLabelValues(node.Name).Set(nodeEfficiency)
+			
+			// If pod has energy efficiency annotations, check if this node meets requirements
+			if val, ok := pod.Annotations[common.AnnotationMaxPowerWatts]; ok {
+				maxPower, err := strconv.ParseFloat(val, 64)
+				if err == nil {
+					// Check if pod has a GPU workload type specified
+					workloadType := ""
+					if wt, ok := pod.Annotations[common.AnnotationGPUWorkloadType]; ok {
+						workloadType = wt
+					}
+					
+					// Calculate effective power with PUE, considering workload type
+					effectiveMaxPower := cs.hardwareProfiler.GetEffectivePower(powerProfile, false)
+					
+					// Apply workload type coefficient if specified
+					if workloadType != "" && powerProfile.GPUWorkloadTypes != nil {
+						if coefficient, ok := powerProfile.GPUWorkloadTypes[workloadType]; ok && coefficient > 0 {
+							// Adjust GPU power based on workload type coefficient
+							if powerProfile.MaxGPUPower > 0 {
+								// Calculate adjusted max power by applying coefficient to GPU power only
+								adjustedGPUPower := powerProfile.MaxGPUPower * coefficient
+								klog.V(2).InfoS("Adjusting GPU power for workload type", 
+									"node", node.Name,
+									"workloadType", workloadType,
+									"originalGPUPower", powerProfile.MaxGPUPower,
+									"adjustedGPUPower", adjustedGPUPower,
+									"coefficient", coefficient)
+								
+								// Recalculate effective power with workload-adjusted GPU power
+								effectiveMaxPower = (powerProfile.MaxPower * powerProfile.PUE) + 
+									(adjustedGPUPower * powerProfile.GPUPUE)
+							}
+						}
+					}
+					
+					if effectiveMaxPower > maxPower {
+						// Node's max power exceeds pod's requirement
+						klog.V(2).InfoS("Filtered node due to power requirements", 
+							"node", node.Name, 
+							"nodePower", effectiveMaxPower, 
+							"podMaxPower", maxPower,
+							"basePower", powerProfile.MaxPower,
+							"pue", powerProfile.PUE,
+							"workloadType", workloadType)
+						
+						// Record the filtering in metrics
+						PowerFilteredNodes.WithLabelValues("max_power").Inc()
+						
+						return framework.NewStatus(framework.Unschedulable, 
+							fmt.Sprintf("node power profile (%v W) exceeds pod max power requirement (%v W)", 
+								effectiveMaxPower, maxPower))
+					}
+				}
+			}
 
-// PreFilterExtensions returns nil as this plugin does not need extensions
-func (cs *ComputeGardenerScheduler) PreFilterExtensions() framework.PreFilterExtensions {
-	return nil
+			// Check power efficiency ratio if specified
+			if val, ok := pod.Annotations[common.AnnotationMinEfficiency]; ok {
+				minEfficiency, err := strconv.ParseFloat(val, 64)
+				if err == nil {
+					if nodeEfficiency < minEfficiency {
+						klog.V(2).InfoS("Filtered node due to efficiency requirements", 
+							"node", node.Name, 
+							"nodeEfficiency", nodeEfficiency, 
+							"minEfficiency", minEfficiency)
+						
+						// Record the filtering in metrics
+						PowerFilteredNodes.WithLabelValues("efficiency").Inc()
+						
+						return framework.NewStatus(framework.Unschedulable, 
+							"node efficiency below pod's minimum requirement")
+					}
+				}
+			}
+		}
+	}
+
+	return framework.NewStatus(framework.Success, "")
 }
 
 // Close cleans up resources
@@ -362,54 +508,7 @@ func (cs *ComputeGardenerScheduler) Close() error {
 	return nil
 }
 
-// nodeSpecsChanged determines if any node specs changed that might affect hardware profile
-func nodeSpecsChanged(oldNode, newNode *v1.Node) bool {
-	// Check for instance type changes
-	if oldNode.Labels["node.kubernetes.io/instance-type"] != newNode.Labels["node.kubernetes.io/instance-type"] {
-		return true
-	}
-	
-	// Check for architecture changes
-	if oldNode.Labels["kubernetes.io/arch"] != newNode.Labels["kubernetes.io/arch"] {
-		return true
-	}
-	
-	// Check for capacity changes
-	oldCPU := oldNode.Status.Capacity.Cpu().Value()
-	newCPU := newNode.Status.Capacity.Cpu().Value()
-	if oldCPU != newCPU {
-		return true
-	}
-	
-	oldMem := oldNode.Status.Capacity.Memory().Value()
-	newMem := newNode.Status.Capacity.Memory().Value()
-	if oldMem != newMem {
-		return true
-	}
-	
-	// Check for GPU changes
-	oldGPU, oldHasGPU := oldNode.Status.Capacity["nvidia.com/gpu"]
-	newGPU, newHasGPU := newNode.Status.Capacity["nvidia.com/gpu"]
-	
-	if oldHasGPU != newHasGPU {
-		return true
-	}
-	
-	if oldHasGPU && newHasGPU && oldGPU.Value() != newGPU.Value() {
-		return true
-	}
-	
-	// CPU/GPU model labels changed
-	if oldNode.Labels["node.kubernetes.io/cpu-model"] != newNode.Labels["node.kubernetes.io/cpu-model"] {
-		return true
-	}
-	
-	if oldNode.Labels["node.kubernetes.io/gpu-model"] != newNode.Labels["node.kubernetes.io/gpu-model"] {
-		return true
-	}
-	
-	return false
-}
+
 
 // createMetricsClient creates a client for the Kubernetes metrics API
 func createMetricsClient(handle framework.Handle) (metricsv1beta1client.PodMetricsInterface, error) {
@@ -425,11 +524,18 @@ func createMetricsClient(handle framework.Handle) (metricsv1beta1client.PodMetri
 	return metricsClient.PodMetricses(""), nil
 }
 
+// applyNamespaceEnergyBudget checks for namespace level energy budget policies and applies them to the pod if needed
+func (cs *ComputeGardenerScheduler) applyNamespaceEnergyBudget(ctx context.Context, pod *v1.Pod) error {
+	// TODO: Implement namespace energy budget policy application
+	// This is a placeholder implementation
+	return nil
+}
+
 func (cs *ComputeGardenerScheduler) hasExceededMaxDelay(pod *v1.Pod) bool {
 	if creationTime := pod.CreationTimestamp; !creationTime.IsZero() {
 		// Check for pod-level max delay annotation
 		maxDelay := cs.config.Scheduling.MaxSchedulingDelay
-		if val, ok := pod.Annotations["compute-gardener-scheduler.kubernetes.io/max-scheduling-delay"]; ok {
+		if val, ok := pod.Annotations[common.AnnotationMaxSchedulingDelay]; ok {
 			if d, err := time.ParseDuration(val); err == nil {
 				maxDelay = d
 			} else {
@@ -445,7 +551,7 @@ func (cs *ComputeGardenerScheduler) hasExceededMaxDelay(pod *v1.Pod) bool {
 }
 
 func (cs *ComputeGardenerScheduler) isOptedOut(pod *v1.Pod) bool {
-	return pod.Annotations["compute-gardener-scheduler.kubernetes.io/skip"] == "true"
+	return pod.Annotations[common.AnnotationSkip] == "true"
 }
 
 func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {

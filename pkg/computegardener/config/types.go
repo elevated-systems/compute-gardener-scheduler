@@ -5,12 +5,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	
+	"k8s.io/klog/v2"
 )
 
 // PowerConfig holds power consumption settings for nodes
 type PowerConfig struct {
 	DefaultIdlePower float64              `yaml:"defaultIdlePower"` // Default idle power in watts
 	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`  // Default max power in watts
+	DefaultPUE       float64              `yaml:"defaultPUE"`       // Default Power Usage Effectiveness (typically 1.1-1.6)
+	DefaultGPUPUE    float64              `yaml:"defaultGPUPUE"`    // Default GPU Power Usage Effectiveness (typically 1.15-1.25)
 	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`  // Per-node power settings
 	HardwareProfiles *HardwareProfiles    `yaml:"hardwareProfiles,omitempty"` // Hardware profile registry
 }
@@ -28,8 +32,14 @@ type HardwareProfiles struct {
 
 // PowerProfile defines power characteristics for a hardware component
 type PowerProfile struct {
-	IdlePower float64 `yaml:"idlePower"` // Idle power in watts
-	MaxPower  float64 `yaml:"maxPower"`  // Max power in watts
+	IdlePower         float64 `yaml:"idlePower"`                   // Idle power in watts
+	MaxPower          float64 `yaml:"maxPower"`                    // Max power in watts
+	BaseFrequencyGHz  float64 `yaml:"baseFrequencyGHz,omitempty"` // Base/nominal CPU frequency in GHz
+	PowerScaling      string  `yaml:"powerScaling,omitempty"`      // Power scaling model: "linear", "quadratic", etc.
+	FrequencyRangeGHz struct {
+		Min float64 `yaml:"min,omitempty"` // Minimum operating frequency in GHz
+		Max float64 `yaml:"max,omitempty"` // Maximum operating frequency (turbo) in GHz
+	} `yaml:"frequencyRangeGHz,omitempty"` // Frequency operating range if applicable
 }
 
 // MemoryPowerProfile defines power characteristics for memory components
@@ -41,13 +51,15 @@ type MemoryPowerProfile struct {
 
 // HardwareComponents defines the hardware composition of a node or instance
 type HardwareComponents struct {
-	CPUModel       string `yaml:"cpuModel"`              // CPU model identifier
-	GPUModel       string `yaml:"gpuModel,omitempty"`    // GPU model identifier, if present
-	MemoryType     string `yaml:"memoryType,omitempty"`  // Memory type identifier
-	NumCPUs        int    `yaml:"numCPUs,omitempty"`     // Number of CPU cores/threads
-	NumGPUs        int    `yaml:"numGPUs,omitempty"`     // Number of GPUs, if present
-	TotalMemory    int    `yaml:"totalMemory,omitempty"` // Total memory in MB
-	MemoryChannels int    `yaml:"memChannels,omitempty"` // Number of memory channels
+	CPUModel         string  `yaml:"cpuModel"`                    // CPU model identifier
+	GPUModel         string  `yaml:"gpuModel,omitempty"`          // GPU model identifier, if present
+	MemoryType       string  `yaml:"memoryType,omitempty"`        // Memory type identifier
+	NumCPUs          int     `yaml:"numCPUs,omitempty"`           // Number of CPU cores/threads
+	NumGPUs          int     `yaml:"numGPUs,omitempty"`           // Number of GPUs, if present
+	TotalMemory      int     `yaml:"totalMemory,omitempty"`       // Total memory in MB
+	MemoryChannels   int     `yaml:"memChannels,omitempty"`       // Number of memory channels
+	CurrentFreqGHz   float64 `yaml:"currentFreqGHz,omitempty"`    // Current CPU frequency in GHz
+	CPU_TDP_Watts    float64 `yaml:"cpuTdpWatts,omitempty"`       // TDP rating of CPU in watts
 }
 
 // MetricsConfig holds configuration for metrics collection and storage
@@ -65,6 +77,11 @@ type NodePower struct {
 	// Optional GPU-specific power settings
 	IdleGPUPower float64 `yaml:"idleGPUPower,omitempty"` // Idle GPU power in watts
 	MaxGPUPower  float64 `yaml:"maxGPUPower,omitempty"`  // Max GPU power in watts
+	// Power Usage Effectiveness factors
+	PUE         float64 `yaml:"pue,omitempty"`          // Power Usage Effectiveness (default: 1.1)
+	GPUPUE      float64 `yaml:"gpuPue,omitempty"`       // GPU-specific Power Usage Effectiveness (default: 1.15)
+	// Workload type classification hints
+	GPUWorkloadTypes map[string]float64 `yaml:"gpuWorkloadTypes,omitempty"` // Workload type (e.g. "inference", "training") to power coefficient mappings
 }
 
 // Config holds all configuration for the compute-gardener scheduler
@@ -147,6 +164,27 @@ func (c *Config) Validate() error {
 	}
 	if c.Power.DefaultMaxPower <= c.Power.DefaultIdlePower {
 		return fmt.Errorf("default max power must be greater than idle power")
+	}
+	// Validate PUE if provided, or set default
+	if c.Power.DefaultPUE == 0 {
+		// Set default PUE if not specified
+		c.Power.DefaultPUE = 1.1 // Typical efficient datacenter
+	} else if c.Power.DefaultPUE < 1.0 {
+		return fmt.Errorf("default PUE must be at least 1.0 (100%% efficiency)")
+	} else if c.Power.DefaultPUE > 2.0 {
+		// Warn but don't error if PUE seems unusually high
+		klog.V(2).InfoS("Unusually high default PUE specified", "pue", c.Power.DefaultPUE)
+	}
+	
+	// Validate GPU PUE if provided, or set default
+	if c.Power.DefaultGPUPUE == 0 {
+		// Set default GPU PUE if not specified  
+		c.Power.DefaultGPUPUE = 1.15 // Accounts for power conversion losses and auxiliary components
+	} else if c.Power.DefaultGPUPUE < 1.0 {
+		return fmt.Errorf("default GPU PUE must be at least 1.0 (100%% efficiency)")
+	} else if c.Power.DefaultGPUPUE > 1.5 {
+		// Warn but don't error if GPU PUE seems unusually high
+		klog.V(2).InfoS("Unusually high default GPU PUE specified", "gpuPue", c.Power.DefaultGPUPUE)
 	}
 	for node, power := range c.Power.NodePowerConfig {
 		if power.IdlePower <= 0 {

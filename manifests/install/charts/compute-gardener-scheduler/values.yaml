@@ -4,6 +4,26 @@
 # Note: Use Helm's --namespace and --create-namespace flags 
 # to specify the installation namespace
 
+# CPU frequency exporter configuration
+cpuExporter:
+  # Enable the CPU frequency exporter DaemonSet for more accurate CPU power measurements
+  enabled: false
+  image: docker.io/dmasselink/compute-gardener-cpu-exporter:latest
+  imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 10m
+      memory: 20Mi
+    limits:
+      cpu: 100m
+      memory: 100Mi
+  # Port for metrics endpoint
+  metricsPort: 9100
+  # How often to collect CPU frequency (in seconds)
+  samplingInterval: 15
+  # Log verbosity level (0-5)
+  logLevel: 2
+
 # General scheduler configuration
 scheduler:
   # Scheduler mode: "secondary" (default) or "primary"
@@ -17,11 +37,11 @@ scheduler:
   leaderElect: false
   resources:
     requests:
-      cpu: 100m
+      cpu: 50m
       memory: 128Mi
     limits:
-      cpu: 400m
-      memory: 512Mi
+      cpu: 200m
+      memory: 256Mi
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -73,7 +93,7 @@ metrics:
   serviceMonitor:
     enabled: true
     namespace: "monitoring" # Default Prometheus namespace, change to match your setup
-    interval: "30s"
+    interval: "15s" # Match the CPU exporter's sampling interval
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
 
 # Sample pod to demonstrate scheduler usage

@@ -21,6 +21,7 @@ set -o pipefail
 SCRIPT_ROOT=$(realpath $(dirname "${BASH_SOURCE[@]}")/..)
 
 SCHEDULER_DIR="${SCRIPT_ROOT}"/build/scheduler
+CPU_EXPORTER_DIR="${SCRIPT_ROOT}"/build/cpu-exporter
 
 # -t is the Docker engine default
 TAG_FLAG="-t"
@@ -47,6 +48,8 @@ fi
 
 # DOCKER_BUILDX_CMD is an env variable set in CI (valued as "/buildx-entrypoint")
 # If it's set, use it; otherwise use "$BUILDER buildx"
+
+# Build scheduler image
 ${IMAGE_BUILD_CMD} build \
   --platform=${PLATFORMS} \
   -f ${SCHEDULER_DIR}/Dockerfile \
@@ -55,6 +58,19 @@ ${IMAGE_BUILD_CMD} build \
   --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
   --build-arg CGO_ENABLED=0 \
   ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/${IMAGE} .
+
+# Build CPU exporter image if requested
+if [[ "${BUILD_CPU_EXPORTER:-true}" == "true" ]]; then
+  echo "Building CPU exporter image..."
+  ${IMAGE_BUILD_CMD} build \
+    --platform=${PLATFORMS} \
+    -f ${CPU_EXPORTER_DIR}/Dockerfile \
+    --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
+    --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
+    --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
+    --build-arg CGO_ENABLED=0 \
+    ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/compute-gardener-cpu-exporter:${RELEASE_VERSION#v} .
+fi
 
 if [[ ! -z $BLD_INSTANCE ]]; then
   ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} rm $BLD_INSTANCE
