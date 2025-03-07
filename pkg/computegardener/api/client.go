@@ -106,6 +106,12 @@ func (c *Client) doRequest(ctx context.Context, region string) (*ElectricityData
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
+	// Log the exact URL being used for debugging
+	klog.V(2).InfoS("Making carbon API request", 
+		"url", req.URL.String(), 
+		"region", region,
+		"hasApiKey", c.apiConfig.APIKey != "")
+
 	// Add headers
 	req.Header.Set("auth-token", c.apiConfig.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -162,6 +168,11 @@ func (c *Client) getBackoffDuration(attempt int) time.Duration {
 	// Add jitter (±20%)
 	jitter := time.Duration(float64(backoff) * (0.8 + 0.4*float64(time.Now().UnixNano()%100)/100.0))
 	return jitter
+}
+
+// GetURL returns the base URL used for API requests
+func (c *Client) GetURL() string {
+	return c.apiConfig.URL
 }
 
 // Close cleans up client resources

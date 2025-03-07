@@ -241,10 +241,16 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				if scheduler.hardwareProfiler != nil {
 					// Automatically detect hardware and update cache
 					if profile, err := scheduler.hardwareProfiler.DetectNodePowerProfile(node); err == nil {
+						cpuModel, gpuModel := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
+						memGB := float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024)
 						klog.V(2).InfoS("Automatically detected node hardware profile", 
 							"node", node.Name, 
 							"idlePower", profile.IdlePower, 
-							"maxPower", profile.MaxPower)
+							"maxPower", profile.MaxPower,
+							"cpuModel", cpuModel,
+							"gpuModel", gpuModel != "" && gpuModel != "none",
+							"pue", profile.PUE,
+							"memGB", int(memGB))
 					}
 				}
 			},
