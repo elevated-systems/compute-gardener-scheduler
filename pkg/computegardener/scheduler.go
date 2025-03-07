@@ -46,9 +46,9 @@ type ComputeGardenerScheduler struct {
 	config *config.Config
 
 	// Components
-	apiClient   *api.Client
-	cache       *schedulercache.Cache
-	pricingImpl pricing.Implementation
+	apiClient        *api.Client
+	cache            *schedulercache.Cache
+	pricingImpl      pricing.Implementation
 	carbonImpl       carbon.Implementation
 	clock            clock.Clock
 	hardwareProfiler *metrics.HardwareProfiler
@@ -77,18 +77,21 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		return nil, fmt.Errorf("failed to load config: %v", err)
 	}
 
-	// Initialize components
+	// Initialize components - create cache first so it can be used by API client
+	dataCache := schedulercache.New(cfg.Cache.CacheTTL, cfg.Cache.MaxCacheAge)
+	
+	// Initialize API client with cache
 	apiClient := api.NewClient(
 		cfg.Carbon.APIConfig,
 		cfg.Cache,
+		api.WithCache(dataCache),
 	)
-	dataCache := schedulercache.New(cfg.Cache.CacheTTL, cfg.Cache.MaxCacheAge)
-	
+
 	// Initialize hardware profiler if hardware profiles are configured
 	var hardwareProfiler *metrics.HardwareProfiler
 	if cfg.Power.HardwareProfiles != nil {
 		hardwareProfiler = metrics.NewHardwareProfiler(cfg.Power.HardwareProfiles)
-		klog.V(2).InfoS("Hardware profiler initialized with profiles", 
+		klog.V(2).InfoS("Hardware profiler initialized with profiles",
 			"cpuProfiles", len(cfg.Power.HardwareProfiles.CPUProfiles),
 			"gpuProfiles", len(cfg.Power.HardwareProfiles.GPUProfiles),
 			"memProfiles", len(cfg.Power.HardwareProfiles.MemProfiles))
@@ -222,6 +225,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					}
 
 					if isCompleted {
+						klog.V(2).InfoS("Pod completed, handling completion", 
+							"pod", klog.KObj(newPod),
+							"phase", newPod.Status.Phase, 
+							"nodeName", newPod.Spec.NodeName)
 						scheduler.handlePodCompletion(newPod)
 					}
 				},
@@ -239,13 +246,13 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				}
 				// Initialize node with hardware profile if needed
 				if scheduler.hardwareProfiler != nil {
-					// Automatically detect hardware and update cache
-					if profile, err := scheduler.hardwareProfiler.DetectNodePowerProfile(node); err == nil {
+					// Get node power profile with defaults applied
+					if profile, err := scheduler.hardwareProfiler.GetNodePowerProfile(node); err == nil {
 						cpuModel, gpuModel := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
 						memGB := float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024)
-						klog.V(2).InfoS("Automatically detected node hardware profile", 
-							"node", node.Name, 
-							"idlePower", profile.IdlePower, 
+						klog.V(2).InfoS("Automatically detected node hardware profile",
+							"node", node.Name,
+							"idlePower", profile.IdlePower,
 							"maxPower", profile.MaxPower,
 							"cpuModel", cpuModel,
 							"gpuModel", gpuModel != "" && gpuModel != "none",
@@ -261,7 +268,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				if !ok1 || !ok2 {
 					return
 				}
-				
+
 				// Refresh hardware profile if node specs changed
 				if scheduler.hardwareProfiler != nil && metrics.NodeSpecsChanged(oldNode, newNode) {
 					klog.V(2).InfoS("Node specs changed, refreshing hardware profile", "node", newNode.Name)
@@ -274,7 +281,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					// Could clean up any node-specific cached data here if needed
 					klog.V(2).InfoS("Node deleted", "node", node.Name)
 				}
-				
+
 				klog.V(2).InfoS("Handling shutdown", "plugin", scheduler.Name())
 				scheduler.Close()
 			},
@@ -307,7 +314,7 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 		SchedulingAttempts.WithLabelValues("skipped").Inc()
 		return nil, framework.NewStatus(framework.Success, "")
 	}
-	
+
 	// Apply namespace-level energy budget if pod doesn't have one
 	if err := cs.applyNamespaceEnergyBudget(ctx, pod); err != nil {
 		klog.ErrorS(err, "Failed to apply namespace energy budget", "pod", klog.KObj(pod))
@@ -328,9 +335,9 @@ func (cs *ComputeGardenerScheduler) PreFilterExtensions() framework.PreFilterExt
 // Filter implements the Filter interface
 func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	// Log start of filter for debugging
-	klog.V(2).InfoS("Filter starting", 
-		"pod", klog.KObj(pod), 
-		"node", nodeInfo.Node().Name, 
+	klog.V(2).InfoS("Filter starting",
+		"pod", klog.KObj(pod),
+		"node", nodeInfo.Node().Name,
 		"schedulerName", pod.Spec.SchedulerName)
 	startTime := cs.clock.Now()
 	defer func() {
@@ -381,13 +388,13 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	// Check carbon intensity constraints if enabled
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		klog.V(2).InfoS("Checking carbon intensity constraints", 
-			"pod", klog.KObj(pod), 
+		klog.V(2).InfoS("Checking carbon intensity constraints",
+			"pod", klog.KObj(pod),
 			"region", cs.config.Carbon.APIConfig.Region,
 			"enabled", cs.config.Carbon.Enabled,
 			"schedulerName", pod.Spec.SchedulerName,
 			"useOurScheduler", pod.Spec.SchedulerName == Name)
-			
+
 		// Check if pod is using our scheduler
 		if pod.Spec.SchedulerName != Name {
 			klog.V(2).InfoS("Skipping carbon check for pod using different scheduler",
@@ -404,8 +411,8 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
-					klog.V(2).InfoS("Using custom carbon threshold from annotation", 
-						"pod", klog.KObj(pod), 
+					klog.V(2).InfoS("Using custom carbon threshold from annotation",
+						"pod", klog.KObj(pod),
 						"threshold", threshold)
 				} else {
 					klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
@@ -418,61 +425,60 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 			// Get current intensity for debugging
 			if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
-				klog.V(2).InfoS("Current carbon intensity", 
+				klog.V(2).InfoS("Current carbon intensity",
 					"region", cs.config.Carbon.APIConfig.Region,
-					"intensity", intensity, 
+					"intensity", intensity,
 					"threshold", threshold,
 					"exceeds", intensity > threshold)
-				
+
 				// Record the intensity in metrics regardless of decision
 				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
 			} else {
-				klog.ErrorS(err, "Failed to get carbon intensity", 
+				klog.ErrorS(err, "Failed to get carbon intensity",
 					"region", cs.config.Carbon.APIConfig.Region)
 			}
 
 			// First get the current intensity directly to log it
 			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 			if err == nil {
-				klog.V(2).InfoS("Carbon intensity check decision", 
+				klog.V(2).InfoS("Carbon intensity check decision",
 					"pod", klog.KObj(pod),
-					"intensity", intensity, 
+					"intensity", intensity,
 					"threshold", threshold,
 					"exceeded", intensity > threshold)
-				
+
 				// Direct comparison for better clarity in logs
 				if intensity > threshold {
-					klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold", 
+					klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold",
 						"pod", klog.KObj(pod),
-						"intensity", intensity, 
+						"intensity", intensity,
 						"threshold", threshold)
 					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 					savings := intensity - threshold
 					EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
-					
+
 					// Return unschedulable status directly
 					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
 					return framework.NewStatus(framework.Unschedulable, msg)
 				} else {
-					klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold", 
+					klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold",
 						"pod", klog.KObj(pod),
-						"intensity", intensity, 
+						"intensity", intensity,
 						"threshold", threshold)
 				}
 			} else {
 				// Fall back to implementation check if direct check failed
-				klog.ErrorS(err, "Direct intensity check failed, falling back to implementation", 
+				klog.ErrorS(err, "Direct intensity check failed, falling back to implementation",
 					"pod", klog.KObj(pod))
-				
+
 				if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
 					return status
 				}
 			}
-			}
 		}
 	} else {
 		klog.V(2).InfoS("Carbon awareness check skipped", "pod", klog.KObj(pod),
-			"carbonEnabled", cs.config.Carbon.Enabled, 
+			"carbonEnabled", cs.config.Carbon.Enabled,
 			"carbonImplNil", cs.carbonImpl == nil)
 	}
 
@@ -483,11 +489,11 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		if err == nil && powerProfile != nil {
 			// Record PUE metric for the node
 			NodePUE.WithLabelValues(node.Name).Set(powerProfile.PUE)
-			
+
 			// Calculate and record node efficiency
 			nodeEfficiency := metrics.CalculateNodeEfficiency(node, powerProfile)
 			NodeEfficiency.WithLabelValues(node.Name).Set(nodeEfficiency)
-			
+
 			// If pod has energy efficiency annotations, check if this node meets requirements
 			if val, ok := pod.Annotations[common.AnnotationMaxPowerWatts]; ok {
 				maxPower, err := strconv.ParseFloat(val, 64)
@@ -497,10 +503,10 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 					if wt, ok := pod.Annotations[common.AnnotationGPUWorkloadType]; ok {
 						workloadType = wt
 					}
-					
+
 					// Calculate effective power with PUE, considering workload type
 					effectiveMaxPower := cs.hardwareProfiler.GetEffectivePower(powerProfile, false)
-					
+
 					// Apply workload type coefficient if specified
 					if workloadType != "" && powerProfile.GPUWorkloadTypes != nil {
 						if coefficient, ok := powerProfile.GPUWorkloadTypes[workloadType]; ok && coefficient > 0 {
@@ -508,35 +514,35 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							if powerProfile.MaxGPUPower > 0 {
 								// Calculate adjusted max power by applying coefficient to GPU power only
 								adjustedGPUPower := powerProfile.MaxGPUPower * coefficient
-								klog.V(2).InfoS("Adjusting GPU power for workload type", 
+								klog.V(2).InfoS("Adjusting GPU power for workload type",
 									"node", node.Name,
 									"workloadType", workloadType,
 									"originalGPUPower", powerProfile.MaxGPUPower,
 									"adjustedGPUPower", adjustedGPUPower,
 									"coefficient", coefficient)
-								
+
 								// Recalculate effective power with workload-adjusted GPU power
-								effectiveMaxPower = (powerProfile.MaxPower * powerProfile.PUE) + 
+								effectiveMaxPower = (powerProfile.MaxPower * powerProfile.PUE) +
 									(adjustedGPUPower * powerProfile.GPUPUE)
 							}
 						}
 					}
-					
+
 					if effectiveMaxPower > maxPower {
 						// Node's max power exceeds pod's requirement
-						klog.V(2).InfoS("Filtered node due to power requirements", 
-							"node", node.Name, 
-							"nodePower", effectiveMaxPower, 
+						klog.V(2).InfoS("Filtered node due to power requirements",
+							"node", node.Name,
+							"nodePower", effectiveMaxPower,
 							"podMaxPower", maxPower,
 							"basePower", powerProfile.MaxPower,
 							"pue", powerProfile.PUE,
 							"workloadType", workloadType)
-						
+
 						// Record the filtering in metrics
 						PowerFilteredNodes.WithLabelValues("max_power").Inc()
-						
-						return framework.NewStatus(framework.Unschedulable, 
-							fmt.Sprintf("node power profile (%v W) exceeds pod max power requirement (%v W)", 
+
+						return framework.NewStatus(framework.Unschedulable,
+							fmt.Sprintf("node power profile (%v W) exceeds pod max power requirement (%v W)",
 								effectiveMaxPower, maxPower))
 					}
 				}
@@ -547,15 +553,15 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 				minEfficiency, err := strconv.ParseFloat(val, 64)
 				if err == nil {
 					if nodeEfficiency < minEfficiency {
-						klog.V(2).InfoS("Filtered node due to efficiency requirements", 
-							"node", node.Name, 
-							"nodeEfficiency", nodeEfficiency, 
+						klog.V(2).InfoS("Filtered node due to efficiency requirements",
+							"node", node.Name,
+							"nodeEfficiency", nodeEfficiency,
 							"minEfficiency", minEfficiency)
-						
+
 						// Record the filtering in metrics
 						PowerFilteredNodes.WithLabelValues("efficiency").Inc()
-						
-						return framework.NewStatus(framework.Unschedulable, 
+
+						return framework.NewStatus(framework.Unschedulable,
 							"node efficiency below pod's minimum requirement")
 					}
 				}
@@ -586,8 +592,6 @@ func (cs *ComputeGardenerScheduler) Close() error {
 
 	return nil
 }
-
-
 
 // createMetricsClient creates a client for the Kubernetes metrics API
 func createMetricsClient(handle framework.Handle) (metricsv1beta1client.PodMetricsInterface, error) {

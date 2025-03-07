@@ -39,14 +39,19 @@ func (c *carbonImpl) GetCurrentIntensity(ctx context.Context) (float64, error) {
 		"region", c.config.APIConfig.Region,
 		"apiKey", c.config.APIConfig.APIKey != "")
 
+	// The API client will check cache first and only make a request if needed
 	data, err := c.apiClient.GetCarbonIntensity(ctx, c.config.APIConfig.Region)
 	if err != nil {
 		klog.V(2).InfoS("Failed to get carbon intensity data", "error", err)
 		return 0, fmt.Errorf("failed to get carbon intensity data: %v", err)
 	}
+	
+	// We only log at this point if we actually made an API request
+	// Cache hits are logged by the API client itself
 	klog.V(2).InfoS("Carbon intensity data retrieved",
 		"region", c.config.APIConfig.Region,
 		"intensity", data.CarbonIntensity)
+	
 	return data.CarbonIntensity, nil
 }
 

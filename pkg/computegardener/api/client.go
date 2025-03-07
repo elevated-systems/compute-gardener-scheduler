@@ -22,6 +22,7 @@ type Client struct {
 	cacheConfig config.APICacheConfig
 	httpClient  HTTPClient
 	rateLimiter *time.Ticker
+	cache       CacheInterface // Added cache interface
 }
 
 // ElectricityData represents the response from the API
@@ -37,6 +38,19 @@ type ClientOption func(*Client)
 func WithHTTPClient(client HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = client
+	}
+}
+
+// WithCache allows injecting a custom cache
+type CacheInterface interface {
+	Get(region string) (*ElectricityData, bool)
+	Set(region string, data *ElectricityData)
+}
+
+// WithCache adds a cache to the client
+func WithCache(cache CacheInterface) ClientOption {
+	return func(c *Client) {
+		c.cache = cache
 	}
 }
 
@@ -61,6 +75,17 @@ func NewClient(apiCfg config.ElectricityMapsAPIConfig, cacheCfg config.APICacheC
 
 // GetCarbonIntensity fetches carbon intensity data with retries and circuit breaking
 func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*ElectricityData, error) {
+	// First check the cache if available
+	if c.cache != nil {
+		if data, fresh := c.cache.Get(region); fresh {
+			klog.V(2).InfoS("Using cached carbon intensity data", 
+				"region", region, 
+				"intensity", data.CarbonIntensity)
+			return data, nil
+		}
+	}
+
+	// Cache miss or no cache configured, fetch from API
 	var lastErr error
 	for attempt := 0; attempt <= c.cacheConfig.MaxRetries; attempt++ {
 		select {
@@ -69,6 +94,13 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 		case <-c.rateLimiter.C:
 			data, err := c.doRequest(ctx, region)
 			if err == nil {
+				// Store successful result in cache if available
+				if c.cache != nil {
+					c.cache.Set(region, data)
+					klog.V(2).InfoS("Stored carbon intensity data in cache", 
+						"region", region, 
+						"intensity", data.CarbonIntensity)
+				}
 				return data, nil
 			}
 			lastErr = err
