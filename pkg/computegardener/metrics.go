@@ -268,4 +268,7 @@ func init() {
 	legacyregistry.MustRegister(NodeEfficiency)
 	legacyregistry.MustRegister(EnergyBudgetTracking)
 	legacyregistry.MustRegister(EnergyBudgetExceeded)
+	
+	// Add a static test value for the carbon intensity gauge to verify it shows up in metrics
+	CarbonIntensityGauge.WithLabelValues("test-region").Set(100.0)
 }
