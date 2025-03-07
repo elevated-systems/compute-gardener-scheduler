@@ -122,6 +122,15 @@ data:
           max: 5.0
       
       # AMD CPUs - Server/Cloud
+      "AMD EPYC 7B12":
+        idlePower: 10.5
+        maxPower: 125.0
+        numCores: 24
+        baseFrequencyGHz: 2.45
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.3
       "AMD EPYC 7R32":
         idlePower: 11.0
         maxPower: 130.0

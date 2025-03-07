@@ -31,7 +31,6 @@ spec:
         args:
         - --metrics-addr=:{{ .Values.cpuExporter.metricsPort }}
         - --v={{ .Values.cpuExporter.logLevel }}
-        - --sampling-interval={{ .Values.cpuExporter.samplingInterval }}
         securityContext:
           # The cpu exporter needs access to /proc and /sys and may need apparmor modifications
           privileged: true
