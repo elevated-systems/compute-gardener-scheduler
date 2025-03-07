@@ -166,6 +166,12 @@ func (hp *HardwareProfiler) cacheNodeProfile(nodeUID string, profile *config.Nod
 	hp.profileCache[nodeUID] = profile
 }
 
+// GetNodeHardwareInfo returns CPU and GPU models for a node
+// This is a public method that can be used for logging and debugging
+func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModel string) {
+	return hp.detectNodeHardwareInfoFromSystem(node)
+}
+
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
 // Uses annotations if available, otherwise checks and caches details at runtime
 func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {

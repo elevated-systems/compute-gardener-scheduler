@@ -327,6 +327,11 @@ func (cs *ComputeGardenerScheduler) PreFilterExtensions() framework.PreFilterExt
 
 // Filter implements the Filter interface
 func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	// Log start of filter for debugging
+	klog.V(2).InfoS("Filter starting", 
+		"pod", klog.KObj(pod), 
+		"node", nodeInfo.Node().Name, 
+		"schedulerName", pod.Spec.SchedulerName)
 	startTime := cs.clock.Now()
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
@@ -379,10 +384,17 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		klog.V(2).InfoS("Checking carbon intensity constraints", 
 			"pod", klog.KObj(pod), 
 			"region", cs.config.Carbon.APIConfig.Region,
-			"enabled", cs.config.Carbon.Enabled)
+			"enabled", cs.config.Carbon.Enabled,
+			"schedulerName", pod.Spec.SchedulerName,
+			"useOurScheduler", pod.Spec.SchedulerName == Name)
 			
-		// Check if pod has annotation to disable carbon-aware scheduling
-		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
+		// Check if pod is using our scheduler
+		if pod.Spec.SchedulerName != Name {
+			klog.V(2).InfoS("Skipping carbon check for pod using different scheduler",
+				"pod", klog.KObj(pod),
+				"schedulerName", pod.Spec.SchedulerName,
+				"ourSchedulerName", Name)
+		} else if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
 			klog.V(2).InfoS("Carbon check disabled by pod annotation", "pod", klog.KObj(pod))
 		} else {
@@ -419,24 +431,43 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 					"region", cs.config.Carbon.APIConfig.Region)
 			}
 
-			if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
-				// Record metrics for carbon-based delay
-				if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
-					if intensity > threshold {
-						klog.V(2).InfoS("Delaying pod due to carbon intensity", 
-							"pod", klog.KObj(pod),
-							"intensity", intensity, 
-							"threshold", threshold,
-							"region", cs.config.Carbon.APIConfig.Region)
-						CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-						savings := intensity - threshold
-						EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
-					}
+			// First get the current intensity directly to log it
+			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+			if err == nil {
+				klog.V(2).InfoS("Carbon intensity check decision", 
+					"pod", klog.KObj(pod),
+					"intensity", intensity, 
+					"threshold", threshold,
+					"exceeded", intensity > threshold)
+				
+				// Direct comparison for better clarity in logs
+				if intensity > threshold {
+					klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold", 
+						"pod", klog.KObj(pod),
+						"intensity", intensity, 
+						"threshold", threshold)
+					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+					savings := intensity - threshold
+					EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
+					
+					// Return unschedulable status directly
+					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
+					return framework.NewStatus(framework.Unschedulable, msg)
+				} else {
+					klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold", 
+						"pod", klog.KObj(pod),
+						"intensity", intensity, 
+						"threshold", threshold)
 				}
-				return status
 			} else {
-				klog.V(2).InfoS("Carbon intensity within threshold, pod can proceed", 
+				// Fall back to implementation check if direct check failed
+				klog.ErrorS(err, "Direct intensity check failed, falling back to implementation", 
 					"pod", klog.KObj(pod))
+				
+				if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
+					return status
+				}
+			}
 			}
 		}
 	} else {
