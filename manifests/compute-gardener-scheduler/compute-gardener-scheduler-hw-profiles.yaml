@@ -10,6 +10,15 @@ data:
     # CPU power profiles - identifier -> power characteristics
     cpuProfiles:
       # Intel CPUs - Server/Cloud
+      "Intel(R) Xeon(R) Platinum 8175M":
+        idlePower: 10.0
+        maxPower: 115.0
+        numCores: 24
+        baseFrequencyGHz: 2.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.5
       "Intel(R) Xeon(R) Platinum 8275CL":
         idlePower: 10.5
         maxPower: 120.0
@@ -46,6 +55,24 @@ data:
         frequencyRangeGHz:
           min: 1.2
           max: 3.3
+      "Intel(R) Xeon(R) E5-2673 v4":
+        idlePower: 8.8
+        maxPower: 90.0
+        numCores: 20
+        baseFrequencyGHz: 2.3
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.5
+      "Intel(R) Xeon(R) E5-2690 v4":
+        idlePower: 9.2
+        maxPower: 100.0
+        numCores: 14
+        baseFrequencyGHz: 2.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.5
       "Intel(R) Xeon(R) Gold 6148":
         idlePower: 11.0
         maxPower: 125.0
@@ -113,6 +140,15 @@ data:
           max: 5.0
       
       # AMD CPUs - Server/Cloud
+      "AMD EPYC 7B12":
+        idlePower: 10.5
+        maxPower: 125.0
+        numCores: 24
+        baseFrequencyGHz: 2.45
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.5
+          max: 3.3
       "AMD EPYC 7R32":
         idlePower: 11.0
         maxPower: 130.0
