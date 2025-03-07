@@ -73,6 +73,9 @@ data:
           preFilter:
             enabled:
               - name: ComputeGardenerScheduler
+          filter:
+            enabled:
+              - name: ComputeGardenerScheduler
     leaderElection:
       leaderElect: false
 ---
@@ -135,12 +138,6 @@ spec:
             secretKeyRef:
               name: compute-gardener-scheduler-secrets
               key: electricity-map-api-key
-        - name: CARBON_INTENSITY_THRESHOLD
-          value: "200.0"
-        - name: MAX_SCHEDULING_DELAY
-          value: "24h"
-        - name: PRICING_ENABLED
-          value: "false"
         - name: PRICING_PROVIDER
           value: "tou"
         - name: PRICING_SCHEDULES_PATH

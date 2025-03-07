@@ -26,6 +26,8 @@ import (
 const (
 	// Name is the name of the plugin used in Registry and configurations.
 	Name = "ComputeGardenerScheduler"
+	// SchedulerName is the name used in pod specs to request this scheduler
+	SchedulerName = "compute-gardener-scheduler"
 )
 
 // preFilterState is used to record that a pod passed the PreFilter phase
@@ -403,20 +405,21 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			"region", cs.config.Carbon.APIConfig.Region,
 			"enabled", cs.config.Carbon.Enabled,
 			"schedulerName", pod.Spec.SchedulerName,
-			"useOurScheduler", pod.Spec.SchedulerName == Name)
+			"useOurScheduler", pod.Spec.SchedulerName == SchedulerName)
 
 		// Check if pod is using our scheduler
 		klog.V(2).InfoS("DECISION PATH - Scheduler name check",
 			"pod", klog.KObj(pod),
 			"podSchedulerName", pod.Spec.SchedulerName,
 			"pluginName", Name,
-			"match", pod.Spec.SchedulerName == Name)
+			"schedulerName", SchedulerName,
+			"match", pod.Spec.SchedulerName == SchedulerName)
 		
-		if pod.Spec.SchedulerName != Name {
+		if pod.Spec.SchedulerName != SchedulerName {
 			klog.V(2).InfoS("DECISION PATH - Skipping carbon check for pod using different scheduler",
 				"pod", klog.KObj(pod),
 				"schedulerName", pod.Spec.SchedulerName,
-				"ourSchedulerName", Name,
+				"ourSchedulerName", SchedulerName,
 				"result", "SKIPPED")
 		} else if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
