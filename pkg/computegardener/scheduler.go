@@ -370,9 +370,15 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	// Check carbon intensity constraints if enabled
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+		klog.V(2).InfoS("Checking carbon intensity constraints", 
+			"pod", klog.KObj(pod), 
+			"region", cs.config.Carbon.APIConfig.Region,
+			"enabled", cs.config.Carbon.Enabled)
+			
 		// Check if pod has annotation to disable carbon-aware scheduling
 		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
+			klog.V(2).InfoS("Carbon check disabled by pod annotation", "pod", klog.KObj(pod))
 		} else {
 			// Get threshold from pod annotation or use configured threshold
 			threshold := cs.config.Carbon.IntensityThreshold
@@ -380,6 +386,9 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
+					klog.V(2).InfoS("Using custom carbon threshold from annotation", 
+						"pod", klog.KObj(pod), 
+						"threshold", threshold)
 				} else {
 					klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
 						"pod", pod.Name,
@@ -389,19 +398,45 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 				}
 			}
 
+			// Get current intensity for debugging
+			if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
+				klog.V(2).InfoS("Current carbon intensity", 
+					"region", cs.config.Carbon.APIConfig.Region,
+					"intensity", intensity, 
+					"threshold", threshold,
+					"exceeds", intensity > threshold)
+				
+				// Record the intensity in metrics regardless of decision
+				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
+			} else {
+				klog.ErrorS(err, "Failed to get carbon intensity", 
+					"region", cs.config.Carbon.APIConfig.Region)
+			}
+
 			if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
 				// Record metrics for carbon-based delay
 				if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
-					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
 					if intensity > threshold {
+						klog.V(2).InfoS("Delaying pod due to carbon intensity", 
+							"pod", klog.KObj(pod),
+							"intensity", intensity, 
+							"threshold", threshold,
+							"region", cs.config.Carbon.APIConfig.Region)
 						CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 						savings := intensity - threshold
 						EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
 					}
 				}
 				return status
+			} else {
+				klog.V(2).InfoS("Carbon intensity within threshold, pod can proceed", 
+					"pod", klog.KObj(pod))
 			}
 		}
+	} else {
+		klog.V(2).InfoS("Carbon awareness check skipped", "pod", klog.KObj(pod),
+			"carbonEnabled", cs.config.Carbon.Enabled, 
+			"carbonImplNil", cs.carbonImpl == nil)
 	}
 
 	// Check hardware profile energy efficiency if available
@@ -487,6 +522,13 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							"node efficiency below pod's minimum requirement")
 					}
 				}
+			}
+		} else {
+			if !cs.config.Carbon.Enabled {
+				klog.V(2).InfoS("Carbon-aware scheduling disabled in config", "pod", klog.KObj(pod))
+			}
+			if cs.carbonImpl == nil {
+				klog.V(2).InfoS("Carbon implementation is nil", "pod", klog.KObj(pod))
 			}
 		}
 	}

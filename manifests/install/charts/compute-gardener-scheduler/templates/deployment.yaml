@@ -47,8 +47,10 @@ spec:
               key: electricity-map-api-key
         - name: CARBON_INTENSITY_THRESHOLD
           value: "{{ .Values.carbonAware.carbonIntensityThreshold }}"
+        - name: ELECTRICITY_MAP_API_REGION
+          value: "{{ .Values.carbonAware.electricityMap.region }}"
         - name: MAX_SCHEDULING_DELAY
-          value: "{{ .Values.carbonAware.maxSchedulingDelay }}"
+          value: "{{ .Values.scheduler.maxSchedulingDelay }}"
         {{- end }}
         {{- if .Values.priceAware.enabled }}
         - name: PRICING_ENABLED
