@@ -69,7 +69,7 @@ if [[ "${BUILD_CPU_EXPORTER:-true}" == "true" ]]; then
     --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
     --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
     --build-arg CGO_ENABLED=0 \
-    ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/compute-gardener-cpu-exporter:${RELEASE_VERSION#v} .
+    ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/compute-gardener-cpu-exporter:${RELEASE_VERSION} .
 fi
 
 if [[ ! -z $BLD_INSTANCE ]]; then

@@ -24,7 +24,7 @@ spec:
       serviceAccountName: compute-gardener-cpu-exporter
       containers:
       - name: exporter
-        image: docker.io/dmasselink/compute-gardener-cpu-exporter:latest
+        image: docker.io/dmasselink/compute-gardener-cpu-exporter:v0.1.3-alpha-5a67f00
         imagePullPolicy: IfNotPresent
         args:
         - --metrics-addr=:9100
