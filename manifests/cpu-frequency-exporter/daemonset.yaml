@@ -30,13 +30,10 @@ spec:
         - --metrics-addr=:9100
         - --v=2
         securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 65532
+          # The cpu exporter needs access to /proc and /sys and may need apparmor modifications
+          privileged: true
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: false
         volumeMounts:
         - name: proc
           mountPath: /proc

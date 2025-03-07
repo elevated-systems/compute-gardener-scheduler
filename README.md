@@ -426,7 +426,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: compute-gardener-scheduler-monitor
-  namespace: cattle-monitoring-system  # Adjust to your Prometheus namespace
+  namespace: monitoring  # Adjust to your Prometheus namespace
 spec:
   selector:
     matchLabels:

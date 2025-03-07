@@ -10,6 +10,15 @@ data:
     # CPU power profiles - identifier -> power characteristics
     cpuProfiles:
       # Intel CPUs - Server/Cloud
+      "Intel(R) Xeon(R) Platinum 8175M":
+        idlePower: 10.0
+        maxPower: 115.0
+        numCores: 24
+        baseFrequencyGHz: 2.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.5
       "Intel(R) Xeon(R) Platinum 8275CL":
         idlePower: 10.5
         maxPower: 120.0

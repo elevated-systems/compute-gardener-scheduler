@@ -19,7 +19,6 @@ spec:
         app: compute-gardener-cpu-exporter
         component: metrics
         part-of: compute-gardener-scheduler
-        {{- include "compute-gardener-scheduler.selectorLabels" . | nindent 8 }}
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.cpuExporter.metricsPort }}"
@@ -34,13 +33,10 @@ spec:
         - --v={{ .Values.cpuExporter.logLevel }}
         - --sampling-interval={{ .Values.cpuExporter.samplingInterval }}
         securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop: ["ALL"]
-          readOnlyRootFilesystem: true
-          runAsNonRoot: true
-          runAsUser: 65532
-          runAsGroup: 65532
+          # The cpu exporter needs access to /proc and /sys and may need apparmor modifications
+          privileged: true
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: false
         volumeMounts:
         - name: proc
           mountPath: /proc
