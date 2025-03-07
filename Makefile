@@ -37,7 +37,7 @@ build-scheduler:
 
 .PHONY: build-cpu-exporter
 build-cpu-exporter:
-	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/cpu-exporter cmd/cpu-frequency-exporter/main.go
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/cpu-exporter cmd/cpu-info-exporter/main.go
 
 .PHONY: build-image
 build-image:

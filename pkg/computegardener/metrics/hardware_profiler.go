@@ -173,38 +173,34 @@ func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string,
 }
 
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
-// Uses annotations if available, otherwise checks and caches details at runtime
+// Uses annotations if available, or basic architecture information if annotations not present
 func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
-	// Extract CPU info from node annotations or make educated guesses based on capacity
-	// For Kubernetes, node annotations provide the most accurate identification
-
-	// Check if node has CPU information in its annotations
+	// Extract CPU info from node annotations - this is the most accurate method
+	// The cpu-info-exporter DaemonSet is responsible for populating these annotations
 	if model, ok := node.Annotations[common.AnnotationCPUModel]; ok {
 		cpuModel = model
-	} else if arch, ok := node.Labels["kubernetes.io/arch"]; ok {
-		// Make an educated guess based on architecture and capacity
+		klog.V(2).InfoS("Using CPU model from annotation", "node", node.Name, "model", cpuModel)
+	} else {
+		// Provide a generic fallback based on architecture and core count
+		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
+		arch, _ := node.Labels["kubernetes.io/arch"]
 		cpuCores := node.Status.Capacity.Cpu().Value()
+		
+		// Use very generic model names that indicate architecture but not specific model
+		// (this encourages users to deploy the cpu-info-exporter for accuracy)
 		switch arch {
 		case "amd64":
-			// These are placeholder mappings, a real implementation would be more sophisticated
-			if cpuCores >= 32 {
-				cpuModel = "AMD EPYC 7763" // High core count suggests EPYC
-			} else if cpuCores >= 16 {
-				cpuModel = "AMD EPYC 7571"
-			} else {
-				cpuModel = "AMD EPYC 7R13"
-			}
+			cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		case "arm64":
-			cpuModel = "ARM Neoverse N1"
+			cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		default:
-			// Default to a common Intel CPU model based on core count
-			if cpuCores >= 32 {
-				cpuModel = "Intel(R) Xeon(R) Platinum 8168"
-			} else if cpuCores >= 16 {
-				cpuModel = "Intel(R) Xeon(R) Platinum 8124M"
-			} else {
-				cpuModel = "Intel(R) Xeon(R) E5-2686 v4"
-			}
+			cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		}
 	}
 

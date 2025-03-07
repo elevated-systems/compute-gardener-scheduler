@@ -2,21 +2,25 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -308,16 +312,129 @@ func recordMetrics(nodeName string) {
 	}
 }
 
+// getCPUModelInfo retrieves detailed CPU model information
+func getCPUModelInfo() (model, vendor, family string, err error) {
+	// Try to get CPU model info from lscpu if available (more structured)
+	lscpuPath, err := exec.LookPath("lscpu")
+	if err == nil {
+		cmd := exec.Command(lscpuPath)
+		output, err := cmd.Output()
+		if err == nil {
+			scanner := bufio.NewScanner(strings.NewReader(string(output)))
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.Contains(line, "Vendor ID:") {
+					vendor = strings.TrimSpace(strings.Split(line, ":")[1])
+				} else if strings.Contains(line, "Model name:") {
+					model = strings.TrimSpace(strings.Split(line, ":")[1])
+				} else if strings.Contains(line, "CPU family:") {
+					family = strings.TrimSpace(strings.Split(line, ":")[1])
+				}
+			}
+			
+			if model != "" {
+				return model, vendor, family, nil
+			}
+		}
+	}
+	
+	// Fallback to /proc/cpuinfo
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to read /proc/cpuinfo: %v", err)
+	}
+	
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "model name") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				model = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "vendor_id") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				vendor = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "cpu family") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				family = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	
+	if model == "" {
+		return "", "", "", fmt.Errorf("could not determine CPU model")
+	}
+	
+	return model, vendor, family, nil
+}
+
+// annotateCPUModel adds CPU model information to the node as annotations
+func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
+	// Get CPU model info
+	cpuModel, cpuVendor, cpuFamily, err := getCPUModelInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get CPU model info: %v", err)
+	}
+	
+	// Log what we found
+	klog.InfoS("Detected CPU information", 
+		"node", nodeName,
+		"model", cpuModel,
+		"vendor", cpuVendor,
+		"family", cpuFamily)
+	
+	// Get node
+	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
+	}
+	
+	// Check if annotations already exist and match
+	if val, exists := node.Annotations[common.AnnotationCPUModel]; exists && val == cpuModel {
+		klog.V(2).InfoS("Node already has correct CPU model annotation", 
+			"node", nodeName, 
+			"model", cpuModel)
+		return nil
+	}
+	
+	// Create a copy of the node with updated annotations
+	nodeCopy := node.DeepCopy()
+	if nodeCopy.Annotations == nil {
+		nodeCopy.Annotations = make(map[string]string)
+	}
+	
+	// Add annotations
+	nodeCopy.Annotations[common.AnnotationCPUModel] = cpuModel
+	
+	// Update the node
+	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update node annotations: %v", err)
+	}
+	
+	klog.InfoS("Successfully annotated node with CPU model information", 
+		"node", nodeName, 
+		"model", cpuModel)
+	
+	return nil
+}
+
 func main() {
 	var (
 		metricsAddr   string
 		kubeconfig    string
 		nodeName      string
+		annotateOnly  bool
 	)
 	
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9100", "The address the metric endpoint binds to")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (not needed in cluster)")
 	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to hostname)")
+	flag.BoolVar(&annotateOnly, "annotate-only", false, "Only annotate CPU info and exit")
 	klog.InitFlags(nil)
 	flag.Parse()
 	
@@ -332,9 +449,10 @@ func main() {
 	}
 	
 	// Log startup
-	klog.InfoS("Starting CPU frequency exporter", 
+	klog.InfoS("Starting CPU information exporter", 
 		"node", nodeName,
-		"metricsAddr", metricsAddr)
+		"metricsAddr", metricsAddr,
+		"annotateOnly", annotateOnly)
 	
 	// Create Kubernetes client
 	var config *rest.Config
@@ -356,10 +474,22 @@ func main() {
 		}
 	}
 	
-	_, err = kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create Kubernetes client")
 		os.Exit(1)
+	}
+	
+	// Annotate the node with CPU model info
+	if err := annotateCPUModel(clientset, nodeName); err != nil {
+		klog.ErrorS(err, "Failed to annotate node with CPU model information")
+		// Continue running even if annotation fails
+	}
+	
+	// If annotate-only mode, exit after annotation
+	if annotateOnly {
+		klog.InfoS("Annotation completed, exiting (annotate-only mode)")
+		os.Exit(0)
 	}
 	
 	// Start collecting metrics
