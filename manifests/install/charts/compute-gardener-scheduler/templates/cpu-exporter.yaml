@@ -31,6 +31,11 @@ spec:
         args:
         - --metrics-addr=:{{ .Values.cpuExporter.metricsPort }}
         - --v={{ .Values.cpuExporter.logLevel }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         securityContext:
           # The cpu exporter needs access to /proc and /sys and may need apparmor modifications
           privileged: true
@@ -96,7 +101,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

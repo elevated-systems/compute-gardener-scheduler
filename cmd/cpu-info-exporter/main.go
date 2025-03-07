@@ -433,19 +433,27 @@ func main() {
 	
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9100", "The address the metric endpoint binds to")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (not needed in cluster)")
-	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to hostname)")
+	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to environment variable NODE_NAME)")
 	flag.BoolVar(&annotateOnly, "annotate-only", false, "Only annotate CPU info and exit")
 	klog.InitFlags(nil)
 	flag.Parse()
 	
-	// Get node name from hostname if not provided
+	// Get node name from environment variable if not provided
 	if nodeName == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			klog.ErrorS(err, "Failed to get hostname")
-			os.Exit(1)
+		// In Kubernetes, the downward API can set this environment variable
+		nodeName = os.Getenv("NODE_NAME")
+		
+		// If still empty, try getting the hostname as last resort
+		if nodeName == "" {
+			hostname, err := os.Hostname()
+			if err != nil {
+				klog.ErrorS(err, "Failed to get hostname")
+				os.Exit(1)
+			}
+			// Warn that this is not reliable in Kubernetes
+			klog.WarningS(nil, "Using hostname as node name - this may not be correct in Kubernetes. Use NODE_NAME env var or --node-name flag instead.", "hostname", hostname)
+			nodeName = hostname
 		}
-		nodeName = hostname
 	}
 	
 	// Log startup
