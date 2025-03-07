@@ -340,8 +340,18 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		"node", nodeInfo.Node().Name,
 		"schedulerName", pod.Spec.SchedulerName)
 	startTime := cs.clock.Now()
+	var returnStatus *framework.Status
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
+		if returnStatus != nil {
+			klog.V(2).InfoS("Filter function return status",
+				"pod", klog.KObj(pod),
+				"status", returnStatus.Message(),
+				"code", returnStatus.Code().String())
+		} else {
+			klog.V(2).InfoS("Filter function returning success (nil status)",
+				"pod", klog.KObj(pod))
+		}
 	}()
 
 	// Verify the pod passed PreFilter (should always be true, but check anyway)
@@ -396,14 +406,23 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			"useOurScheduler", pod.Spec.SchedulerName == Name)
 
 		// Check if pod is using our scheduler
+		klog.V(2).InfoS("DECISION PATH - Scheduler name check",
+			"pod", klog.KObj(pod),
+			"podSchedulerName", pod.Spec.SchedulerName,
+			"pluginName", Name,
+			"match", pod.Spec.SchedulerName == Name)
+		
 		if pod.Spec.SchedulerName != Name {
-			klog.V(2).InfoS("Skipping carbon check for pod using different scheduler",
+			klog.V(2).InfoS("DECISION PATH - Skipping carbon check for pod using different scheduler",
 				"pod", klog.KObj(pod),
 				"schedulerName", pod.Spec.SchedulerName,
-				"ourSchedulerName", Name)
+				"ourSchedulerName", Name,
+				"result", "SKIPPED")
 		} else if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
-			klog.V(2).InfoS("Carbon check disabled by pod annotation", "pod", klog.KObj(pod))
+			klog.V(2).InfoS("DECISION PATH - Carbon check disabled by pod annotation", 
+				"pod", klog.KObj(pod),
+				"result", "DISABLED_BY_ANNOTATION")
 		} else {
 			// Get threshold from pod annotation or use configured threshold
 			threshold := cs.config.Carbon.IntensityThreshold
@@ -423,57 +442,55 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 				}
 			}
 
-			// Get current intensity for debugging
-			if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
-				klog.V(2).InfoS("Current carbon intensity",
-					"region", cs.config.Carbon.APIConfig.Region,
-					"intensity", intensity,
-					"threshold", threshold,
-					"exceeds", intensity > threshold)
-
-				// Record the intensity in metrics regardless of decision
-				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
-			} else {
+			// Get carbon intensity for both metrics and decision making
+			klog.V(2).InfoS("DECISION PATH - Getting carbon intensity",
+				"pod", klog.KObj(pod))
+			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+			
+			if err != nil {
 				klog.ErrorS(err, "Failed to get carbon intensity",
 					"region", cs.config.Carbon.APIConfig.Region)
+				// Skip the rest of the carbon check
+				return framework.NewStatus(framework.Success, "")
 			}
-
-			// First get the current intensity directly to log it
-			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-			if err == nil {
-				klog.V(2).InfoS("Carbon intensity check decision",
+			
+			// Record the intensity in metrics regardless of decision
+			klog.V(2).InfoS("Current carbon intensity",
+				"region", cs.config.Carbon.APIConfig.Region,
+				"intensity", intensity,
+				"threshold", threshold,
+				"exceeds", intensity > threshold)
+			CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
+			
+			// Now make the scheduling decision based on the intensity
+			klog.V(2).InfoS("DECISION PATH - Making carbon intensity decision",
+				"pod", klog.KObj(pod),
+				"intensity", intensity,
+				"threshold", threshold,
+				"shouldBlock", intensity > threshold)
+				
+			if intensity > threshold {
+				klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold",
 					"pod", klog.KObj(pod),
 					"intensity", intensity,
-					"threshold", threshold,
-					"exceeded", intensity > threshold)
+					"threshold", threshold)
+				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+				savings := intensity - threshold
+				EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
 
-				// Direct comparison for better clarity in logs
-				if intensity > threshold {
-					klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold",
-						"pod", klog.KObj(pod),
-						"intensity", intensity,
-						"threshold", threshold)
-					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-					savings := intensity - threshold
-					EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
-
-					// Return unschedulable status directly
-					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
-					return framework.NewStatus(framework.Unschedulable, msg)
-				} else {
-					klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold",
-						"pod", klog.KObj(pod),
-						"intensity", intensity,
-						"threshold", threshold)
-				}
+				// Return unschedulable status directly
+				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
+				klog.V(2).InfoS("RETURNING UNSCHEDULABLE: Carbon intensity exceeds threshold",
+					"pod", klog.KObj(pod),
+					"node", nodeInfo.Node().Name,
+					"intensity", intensity, 
+					"threshold", threshold)
+				return framework.NewStatus(framework.Unschedulable, msg)
 			} else {
-				// Fall back to implementation check if direct check failed
-				klog.ErrorS(err, "Direct intensity check failed, falling back to implementation",
-					"pod", klog.KObj(pod))
-
-				if status := cs.carbonImpl.CheckIntensityConstraints(ctx, threshold); !status.IsSuccess() {
-					return status
-				}
+				klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold",
+					"pod", klog.KObj(pod),
+					"intensity", intensity,
+					"threshold", threshold)
 			}
 		}
 	} else {
