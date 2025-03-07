@@ -12,8 +12,15 @@ import (
 
 // handlePodCompletion records metrics when a pod completes using time-series metrics
 func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
+	klog.V(2).InfoS("Starting pod completion handling", 
+		"pod", klog.KObj(pod),
+		"phase", pod.Status.Phase,
+		"nodeName", pod.Spec.NodeName)
+		
 	// Skip if we don't have the metrics store configured
 	if cs.metricsStore == nil {
+		klog.V(2).InfoS("Metrics store not configured, skipping pod completion handling", 
+			"pod", klog.KObj(pod))
 		return
 	}
 
@@ -27,9 +34,24 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 
 	// Get pod metrics history
 	metricsHistory, found := cs.metricsStore.GetHistory(podUID)
-	if !found || len(metricsHistory.Records) == 0 {
+	if !found {
+		klog.V(2).InfoS("No metrics history found for pod", 
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
 		return
 	}
+	
+	if len(metricsHistory.Records) == 0 {
+		klog.V(2).InfoS("Metrics history is empty for pod", 
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
+		return
+	}
+	
+	klog.V(2).InfoS("Found metrics history for pod", 
+		"pod", klog.KObj(pod),
+		"podUID", podUID,
+		"recordCount", len(metricsHistory.Records))
 
 	// Calculate energy usage by numerical integration (trapezoid rule)
 	totalEnergyKWh := 0.0

@@ -150,6 +150,9 @@ data:
           preFilter:
             enabled:
               - name: ComputeGardenerScheduler
+          filter:
+            enabled:
+              - name: ComputeGardenerScheduler
     leaderElection:
       leaderElect: false
 ---
