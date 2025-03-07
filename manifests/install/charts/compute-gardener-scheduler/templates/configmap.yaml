@@ -33,16 +33,6 @@ data:
     # participates in leader election with other scheduler instances
     leaderElection:
       leaderElect: {{ .Values.scheduler.leaderElect }}
-    # Metrics collection configuration
-    metricsBindAddress: ":{{ .Values.metrics.port }}"
-    {{- if .Values.metrics.samplingInterval }}
-    # Custom metrics collection settings
-    metrics:
-      samplingInterval: "{{ .Values.metrics.samplingInterval }}"
-      maxSamplesPerPod: {{ .Values.metrics.maxSamplesPerPod }}
-      podRetention: "{{ .Values.metrics.podRetention }}"
-      downsamplingStrategy: "{{ .Values.metrics.downsamplingStrategy }}"
-    {{- end }}
 {{- if .Values.priceAware.enabled }}
 ---
 apiVersion: v1
