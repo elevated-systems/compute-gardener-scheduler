@@ -81,7 +81,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Initialize components - create cache first so it can be used by API client
 	dataCache := schedulercache.New(cfg.Cache.CacheTTL, cfg.Cache.MaxCacheAge)
-	
+
 	// Initialize API client with cache
 	apiClient := api.NewClient(
 		cfg.Carbon.APIConfig,
@@ -227,9 +227,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					}
 
 					if isCompleted {
-						klog.V(2).InfoS("Pod completed, handling completion", 
+						klog.V(2).InfoS("Pod completed, handling completion",
 							"pod", klog.KObj(newPod),
-							"phase", newPod.Status.Phase, 
+							"phase", newPod.Status.Phase,
 							"nodeName", newPod.Spec.NodeName)
 						scheduler.handlePodCompletion(newPod)
 					}
@@ -408,22 +408,16 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			"useOurScheduler", pod.Spec.SchedulerName == SchedulerName)
 
 		// Check if pod is using our scheduler
-		klog.V(2).InfoS("DECISION PATH - Scheduler name check",
-			"pod", klog.KObj(pod),
-			"podSchedulerName", pod.Spec.SchedulerName,
-			"pluginName", Name,
-			"schedulerName", SchedulerName,
-			"match", pod.Spec.SchedulerName == SchedulerName)
-		
+
 		if pod.Spec.SchedulerName != SchedulerName {
-			klog.V(2).InfoS("DECISION PATH - Skipping carbon check for pod using different scheduler",
+			klog.V(4).InfoS("Skipping carbon check for pod using different scheduler",
 				"pod", klog.KObj(pod),
 				"schedulerName", pod.Spec.SchedulerName,
 				"ourSchedulerName", SchedulerName,
 				"result", "SKIPPED")
 		} else if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
-			klog.V(2).InfoS("DECISION PATH - Carbon check disabled by pod annotation", 
+			klog.V(3).InfoS("Carbon check disabled by pod annotation",
 				"pod", klog.KObj(pod),
 				"result", "DISABLED_BY_ANNOTATION")
 		} else {
@@ -433,7 +427,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
-					klog.V(2).InfoS("Using custom carbon threshold from annotation",
+					klog.V(3).InfoS("Using custom carbon threshold from annotation",
 						"pod", klog.KObj(pod),
 						"threshold", threshold)
 				} else {
@@ -446,17 +440,17 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			}
 
 			// Get carbon intensity for both metrics and decision making
-			klog.V(2).InfoS("DECISION PATH - Getting carbon intensity",
+			klog.V(4).InfoS("Getting carbon intensity",
 				"pod", klog.KObj(pod))
 			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-			
+
 			if err != nil {
 				klog.ErrorS(err, "Failed to get carbon intensity",
 					"region", cs.config.Carbon.APIConfig.Region)
 				// Skip the rest of the carbon check
 				return framework.NewStatus(framework.Success, "")
 			}
-			
+
 			// Record the intensity in metrics regardless of decision
 			klog.V(2).InfoS("Current carbon intensity",
 				"region", cs.config.Carbon.APIConfig.Region,
@@ -464,16 +458,16 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 				"threshold", threshold,
 				"exceeds", intensity > threshold)
 			CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
-			
+
 			// Now make the scheduling decision based on the intensity
-			klog.V(2).InfoS("DECISION PATH - Making carbon intensity decision",
+			klog.V(3).InfoS("Making carbon intensity decision",
 				"pod", klog.KObj(pod),
 				"intensity", intensity,
 				"threshold", threshold,
 				"shouldBlock", intensity > threshold)
-				
+
 			if intensity > threshold {
-				klog.V(2).InfoS("BLOCKING POD: Carbon intensity exceeds threshold",
+				klog.V(3).InfoS("Carbon intensity exceeds threshold",
 					"pod", klog.KObj(pod),
 					"intensity", intensity,
 					"threshold", threshold)
@@ -483,14 +477,14 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 				// Return unschedulable status directly
 				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
-				klog.V(2).InfoS("RETURNING UNSCHEDULABLE: Carbon intensity exceeds threshold",
+				klog.V(3).InfoS("Carbon intensity exceeds threshold",
 					"pod", klog.KObj(pod),
 					"node", nodeInfo.Node().Name,
-					"intensity", intensity, 
+					"intensity", intensity,
 					"threshold", threshold)
 				return framework.NewStatus(framework.Unschedulable, msg)
 			} else {
-				klog.V(2).InfoS("ALLOWING POD: Carbon intensity within threshold",
+				klog.V(3).InfoS("Carbon intensity within threshold",
 					"pod", klog.KObj(pod),
 					"intensity", intensity,
 					"threshold", threshold)

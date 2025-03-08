@@ -485,7 +485,30 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 		return true
 	}
 
-	// CPU/GPU model labels changed
+	// Check for CPU model annotations changed
+	oldCPUModel, oldHasCPUModel := oldNode.Annotations[common.AnnotationCPUModel]
+	newCPUModel, newHasCPUModel := newNode.Annotations[common.AnnotationCPUModel]
+	
+	if oldHasCPUModel != newHasCPUModel {
+		if newHasCPUModel {
+			klog.V(2).InfoS("CPU model annotation added to node", 
+				"node", newNode.Name, 
+				"model", newCPUModel,
+				"annotationKey", common.AnnotationCPUModel)
+		}
+		return true
+	}
+	
+	if oldHasCPUModel && newHasCPUModel && oldCPUModel != newCPUModel {
+		klog.V(2).InfoS("CPU model annotation changed on node", 
+			"node", newNode.Name, 
+			"oldModel", oldCPUModel,
+			"newModel", newCPUModel,
+			"annotationKey", common.AnnotationCPUModel)
+		return true
+	}
+
+	// CPU/GPU model labels changed (legacy)
 	if oldNode.Labels["node.kubernetes.io/cpu-model"] != newNode.Labels["node.kubernetes.io/cpu-model"] {
 		return true
 	}

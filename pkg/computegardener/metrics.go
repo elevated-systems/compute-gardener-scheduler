@@ -208,7 +208,7 @@ var (
 			Help:           "Number of nodes filtered due to power or efficiency constraints",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"reason"}, // "max_power", "efficiency", "energy_budget" 
+		[]string{"reason"}, // "max_power", "efficiency", "energy_budget"
 	)
 
 	// NodeEfficiency tracks calculated efficiency metrics for nodes
@@ -232,7 +232,7 @@ var (
 		},
 		[]string{"pod", "namespace"},
 	)
-	
+
 	// EnergyBudgetExceeded counts workloads that exceeded their energy budget
 	EnergyBudgetExceeded = metrics.NewCounterVec(
 		&metrics.CounterOpts{
@@ -268,7 +268,4 @@ func init() {
 	legacyregistry.MustRegister(NodeEfficiency)
 	legacyregistry.MustRegister(EnergyBudgetTracking)
 	legacyregistry.MustRegister(EnergyBudgetExceeded)
-	
-	// Add a static test value for the carbon intensity gauge to verify it shows up in metrics
-	CarbonIntensityGauge.WithLabelValues("test-region").Set(100.0)
 }

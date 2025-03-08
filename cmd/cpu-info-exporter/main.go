@@ -16,11 +16,11 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -39,7 +39,7 @@ var (
 		},
 		[]string{"cpu", "node"},
 	)
-	
+
 	cpuFrequencyStatic = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -60,7 +60,7 @@ func init() {
 // getStaticCPUFrequencyInfo retrieves static CPU frequency information
 func getStaticCPUFrequencyInfo() (map[string]float64, error) {
 	result := make(map[string]float64)
-	
+
 	// First try to get min/max from cpufreq interface
 	cpuDirs, err := filepath.Glob("/sys/devices/system/cpu/cpu*/cpufreq")
 	if err == nil && len(cpuDirs) > 0 {
@@ -75,7 +75,7 @@ func getStaticCPUFrequencyInfo() (map[string]float64, error) {
 				}
 			}
 		}
-		
+
 		// Get max frequency
 		maxFiles, err := filepath.Glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq")
 		if err == nil && len(maxFiles) > 0 {
@@ -87,7 +87,7 @@ func getStaticCPUFrequencyInfo() (map[string]float64, error) {
 				}
 			}
 		}
-		
+
 		// Get base frequency (cpuinfo_base_freq if available)
 		baseFiles, err := filepath.Glob("/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_base_freq")
 		if err == nil && len(baseFiles) > 0 {
@@ -104,11 +104,11 @@ func getStaticCPUFrequencyInfo() (map[string]float64, error) {
 		}
 	} else {
 		// Fallback - estimate from CPU info
-		result["min"] = 0.8  // Common minimum for desktop/server CPUs
+		result["min"] = 0.8 // Common minimum for desktop/server CPUs
 		result["max"] = estimateMaxFrequencyFromCPUInfo()
 		result["base"] = estimateBaseFrequencyFromCPUInfo()
 	}
-	
+
 	return result, nil
 }
 
@@ -119,7 +119,7 @@ func getCPUCount() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to read /proc/cpuinfo: %v", err)
 	}
-	
+
 	// Count "processor" lines
 	count := 0
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
@@ -129,11 +129,11 @@ func getCPUCount() (int, error) {
 			count++
 		}
 	}
-	
+
 	if count == 0 {
 		return 0, fmt.Errorf("no CPU processors found in /proc/cpuinfo")
 	}
-	
+
 	return count, nil
 }
 
@@ -148,21 +148,21 @@ func getCurrentCPUFrequency(cpuID int) (float64, error) {
 			return freq / 1000000, nil
 		}
 	}
-	
+
 	// Fall back to /proc/cpuinfo
 	data, err = os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		return 0, fmt.Errorf("unable to read /proc/cpuinfo: %v", err)
 	}
-	
+
 	// Find the frequency for the specific CPU
 	cpuFound := false
 	var cpuFreq float64
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Check for processor ID
 		if strings.HasPrefix(line, "processor") {
 			parts := strings.Split(line, ":")
@@ -172,7 +172,7 @@ func getCurrentCPUFrequency(cpuID int) (float64, error) {
 				}
 			}
 		}
-		
+
 		// If we found the CPU we're looking for, check for its frequency
 		if cpuFound && strings.Contains(line, "cpu MHz") {
 			parts := strings.Split(line, ":")
@@ -185,7 +185,7 @@ func getCurrentCPUFrequency(cpuID int) (float64, error) {
 			}
 		}
 	}
-	
+
 	return 0, fmt.Errorf("unable to determine CPU frequency for CPU %d", cpuID)
 }
 
@@ -195,7 +195,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 	if err != nil {
 		return 0
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -221,7 +221,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 					}
 				}
 			}
-			
+
 			// If we can't find an explicit frequency, make an educated guess based on model
 			if strings.Contains(modelName, "i9") {
 				return 3.6
@@ -236,7 +236,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 			}
 		}
 	}
-	
+
 	// Default fallback
 	return 2.0
 }
@@ -248,7 +248,7 @@ func estimateMaxFrequencyFromCPUInfo() float64 {
 	if base <= 0 {
 		return 3.0 // Default fallback
 	}
-	
+
 	// Typical turbo boost is about 10-20% over base
 	return base * 1.15
 }
@@ -261,7 +261,7 @@ func recordMetrics(nodeName string) {
 		klog.ErrorS(err, "Failed to get CPU count")
 		cpuCount = 1 // Assume at least one CPU
 	}
-	
+
 	// Get static frequency information (only once at startup)
 	staticInfo, err := getStaticCPUFrequencyInfo()
 	if err != nil {
@@ -271,23 +271,23 @@ func recordMetrics(nodeName string) {
 		for i := 0; i < cpuCount; i++ {
 			cpuID := fmt.Sprintf("%d", i)
 			for freqType, value := range staticInfo {
-				klog.V(2).InfoS("Recorded static CPU frequency", 
-					"cpu", cpuID, 
-					"type", freqType, 
+				klog.V(2).InfoS("Recorded static CPU frequency",
+					"cpu", cpuID,
+					"type", freqType,
 					"frequency", value)
 				cpuFrequencyStatic.With(prometheus.Labels{
-					"cpu": cpuID,
+					"cpu":  cpuID,
 					"node": nodeName,
 					"type": freqType,
 				}).Set(value)
 			}
 		}
 	}
-	
+
 	// Start periodic collection of current frequency
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -298,13 +298,13 @@ func recordMetrics(nodeName string) {
 					klog.V(2).ErrorS(err, "Failed to get current CPU frequency", "cpu", i)
 					continue
 				}
-				
+
 				cpuID := fmt.Sprintf("%d", i)
-				klog.V(2).InfoS("Recorded current CPU frequency", 
-					"cpu", cpuID, 
+				klog.V(2).InfoS("Recorded current CPU frequency",
+					"cpu", cpuID,
 					"frequency", freq)
 				cpuFrequency.With(prometheus.Labels{
-					"cpu": cpuID,
+					"cpu":  cpuID,
 					"node": nodeName,
 				}).Set(freq)
 			}
@@ -331,19 +331,19 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 					family = strings.TrimSpace(strings.Split(line, ":")[1])
 				}
 			}
-			
+
 			if model != "" {
 				return model, vendor, family, nil
 			}
 		}
 	}
-	
+
 	// Fallback to /proc/cpuinfo
 	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to read /proc/cpuinfo: %v", err)
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -364,11 +364,11 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 			}
 		}
 	}
-	
+
 	if model == "" {
 		return "", "", "", fmt.Errorf("could not determine CPU model")
 	}
-	
+
 	return model, vendor, family, nil
 }
 
@@ -379,70 +379,70 @@ func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get CPU model info: %v", err)
 	}
-	
+
 	// Log what we found
-	klog.InfoS("Detected CPU information", 
+	klog.InfoS("Detected CPU information",
 		"node", nodeName,
 		"model", cpuModel,
 		"vendor", cpuVendor,
 		"family", cpuFamily)
-	
+
 	// Get node
 	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
 	}
-	
+
 	// Check if annotations already exist and match
 	if val, exists := node.Annotations[common.AnnotationCPUModel]; exists && val == cpuModel {
-		klog.V(2).InfoS("Node already has correct CPU model annotation", 
-			"node", nodeName, 
+		klog.V(2).InfoS("Node already has correct CPU model annotation",
+			"node", nodeName,
 			"model", cpuModel)
 		return nil
 	}
-	
+
 	// Create a copy of the node with updated annotations
 	nodeCopy := node.DeepCopy()
 	if nodeCopy.Annotations == nil {
 		nodeCopy.Annotations = make(map[string]string)
 	}
-	
+
 	// Add annotations
 	nodeCopy.Annotations[common.AnnotationCPUModel] = cpuModel
-	
+
 	// Update the node
 	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update node annotations: %v", err)
 	}
-	
-	klog.InfoS("Successfully annotated node with CPU model information", 
-		"node", nodeName, 
+
+	klog.InfoS("Successfully annotated node with CPU model information",
+		"node", nodeName,
 		"model", cpuModel)
-	
+
 	return nil
 }
 
 func main() {
 	var (
-		metricsAddr   string
-		kubeconfig    string
-		nodeName      string
-		annotateOnly  bool
+		metricsAddr  string
+		kubeconfig   string
+		nodeName     string
+		annotateOnly bool
 	)
-	
+
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9100", "The address the metric endpoint binds to")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (not needed in cluster)")
 	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to environment variable NODE_NAME)")
 	flag.BoolVar(&annotateOnly, "annotate-only", false, "Only annotate CPU info and exit")
 	klog.InitFlags(nil)
 	flag.Parse()
-	
+
 	// Get node name from environment variable if not provided
 	if nodeName == "" {
 		// In Kubernetes, the downward API can set this environment variable
 		nodeName = os.Getenv("NODE_NAME")
-		
+
 		// If still empty, try getting the hostname as last resort
 		if nodeName == "" {
 			hostname, err := os.Hostname()
@@ -451,21 +451,21 @@ func main() {
 				os.Exit(1)
 			}
 			// Warn that this is not reliable in Kubernetes
-			klog.WarningS(nil, "Using hostname as node name - this may not be correct in Kubernetes. Use NODE_NAME env var or --node-name flag instead.", "hostname", hostname)
+			klog.Warning("Using hostname as node name - this may not be correct in Kubernetes. Use NODE_NAME env var or --node-name flag instead.", "hostname", hostname)
 			nodeName = hostname
 		}
 	}
-	
+
 	// Log startup
-	klog.InfoS("Starting CPU information exporter", 
+	klog.InfoS("Starting CPU information exporter",
 		"node", nodeName,
 		"metricsAddr", metricsAddr,
 		"annotateOnly", annotateOnly)
-	
+
 	// Create Kubernetes client
 	var config *rest.Config
 	var err error
-	
+
 	if kubeconfig == "" {
 		// In-cluster configuration
 		config, err = rest.InClusterConfig()
@@ -481,34 +481,34 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.ErrorS(err, "Failed to create Kubernetes client")
 		os.Exit(1)
 	}
-	
+
 	// Annotate the node with CPU model info
 	if err := annotateCPUModel(clientset, nodeName); err != nil {
 		klog.ErrorS(err, "Failed to annotate node with CPU model information")
 		// Continue running even if annotation fails
 	}
-	
+
 	// If annotate-only mode, exit after annotation
 	if annotateOnly {
 		klog.InfoS("Annotation completed, exiting (annotate-only mode)")
 		os.Exit(0)
 	}
-	
+
 	// Start collecting metrics
 	go recordMetrics(nodeName)
-	
+
 	// Start HTTP server for metrics endpoint
 	http.Handle("/metrics", promhttp.Handler())
 	server := &http.Server{
 		Addr: metricsAddr,
 	}
-	
+
 	klog.InfoS("Starting metrics server", "addr", metricsAddr)
 	if err := server.ListenAndServe(); err != nil {
 		klog.ErrorS(err, "Failed to start metrics server")

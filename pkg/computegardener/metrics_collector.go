@@ -76,6 +76,9 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		return
 	}
 
+	klog.V(3).InfoS("Retrieved pod metrics from metrics server",
+		"podCount", len(podMetricsList))
+
 	// Get GPU utilization for all pods if GPU metrics client is configured
 	gpuUtilizations := make(map[string]float64)
 	if cs.gpuMetricsClient != nil {
@@ -87,26 +90,40 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	}
 
 	processedCount := 0
+	skippedDifferentScheduler := 0
+	skippedNoNode := 0
+	skippedNotRunning := 0
+
 	for _, podMetrics := range podMetricsList {
 		// Get pod details
 		pod, err := cs.handle.ClientSet().CoreV1().Pods(podMetrics.Namespace).Get(ctx, podMetrics.Name, metav1.GetOptions{})
 		if err != nil {
+			klog.V(2).InfoS("Failed to get pod details",
+				"namespace", podMetrics.Namespace,
+				"name", podMetrics.Name,
+				"error", err)
 			continue
 		}
 
 		// Skip pods not scheduled by our scheduler
-		if pod.Spec.SchedulerName != Name {
+		if pod.Spec.SchedulerName != SchedulerName {
+			skippedDifferentScheduler++
 			continue
 		}
 
 		// Skip pods not assigned to nodes yet
 		nodeName := pod.Spec.NodeName
 		if nodeName == "" {
+			skippedNoNode++
 			continue
 		}
 
 		// Skip pods not in Running phase
 		if pod.Status.Phase != v1.PodRunning {
+			skippedNotRunning++
+			klog.V(3).InfoS("Skipping pod not in Running phase",
+				"pod", klog.KObj(pod),
+				"phase", pod.Status.Phase)
 			continue
 		}
 
@@ -153,6 +170,17 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		if hist, found := cs.metricsStore.GetHistory(string(podMetrics.UID)); found {
 			MetricsSamplesStored.WithLabelValues(podMetrics.Name, podMetrics.Namespace).Set(float64(len(hist.Records)))
 		}
+	}
+
+	// Log metrics collection stats with less frequency (only every 5 minutes or when we've processed pods)
+	if processedCount > 0 || time.Now().Minute()%5 == 0 {
+		klog.V(2).InfoS("Metrics collection completed",
+			"totalPodsFromMetricsAPI", len(podMetricsList),
+			"processedPods", processedCount,
+			"skippedDifferentScheduler", skippedDifferentScheduler,
+			"skippedNoNode", skippedNoNode,
+			"skippedNotRunning", skippedNotRunning,
+			"cacheSize", cacheSize)
 	}
 
 }
