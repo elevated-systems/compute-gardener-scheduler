@@ -102,7 +102,7 @@ data:
         frequencyRangeGHz:
           min: 0.8
           max: 3.6
-      "Intel(R) Core(TM) i5-6500 CPU @ 2.50GHz":
+      "Intel(R) Core(TM) i5-6500T CPU @ 2.50GHz":
         idlePower: 5.0
         maxPower: 35.0
         numCores: 4
