@@ -300,6 +300,16 @@ func (cs *ComputeGardenerScheduler) Name() string {
 
 // PreFilter implements the PreFilter interface
 func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	// Log with high visibility to ensure we see it for all pods
+	klog.InfoS("*** PREFILTER BEING CALLED ***", 
+		"pod", klog.KObj(pod),
+		"schedulerName", pod.Spec.SchedulerName,
+		"hasGPU", hasGPURequest(pod))
+		
+	klog.V(2).InfoS("PreFilter starting", 
+		"pod", klog.KObj(pod),
+		"schedulerName", pod.Spec.SchedulerName)
+	
 	startTime := cs.clock.Now()
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
@@ -324,8 +334,15 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
-	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
-
+	err = state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
+	if err != nil {
+		klog.ErrorS(err, "Failed to write prefilter state", "pod", klog.KObj(pod))
+		return nil, framework.NewStatus(framework.Error, "Failed to write prefilter state")
+	}
+	
+	klog.V(2).InfoS("PreFilter completed successfully", 
+		"pod", klog.KObj(pod), 
+		"schedulerName", pod.Spec.SchedulerName)
 	return nil, framework.NewStatus(framework.Success, "")
 }
 
@@ -356,16 +373,29 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		}
 	}()
 
-	// Verify the pod passed PreFilter (should always be true, but check anyway)
+	// Perform a soft check for prefilter state, but continue even if missing
 	v, err := state.Read("compute-gardener-passed-prefilter")
 	if err != nil || v == nil {
-		klog.V(2).InfoS("Pod did not pass prefilter stage", "pod", klog.KObj(pod))
-		return framework.NewStatus(framework.Error, "Pod did not pass prefilter stage")
+		// Log the issue but continue instead of failing
+		klog.V(2).InfoS("Missing prefilter state but continuing with filter evaluation",
+			"pod", klog.KObj(pod),
+			"error", err,
+			"stateFound", v != nil)
+	} else {
+		// If state exists, check if it's valid
+		s, ok := v.(*preFilterState)
+		if !ok || !s.passed {
+			klog.V(2).InfoS("Invalid prefilter state but continuing with filter evaluation", 
+				"pod", klog.KObj(pod),
+				"correctType", ok,
+				"passed", ok && s.passed)
+		}
 	}
-	s, ok := v.(*preFilterState)
-	if !ok || !s.passed {
-		klog.V(2).InfoS("Invalid or failed prefilter state", "pod", klog.KObj(pod))
-		return framework.NewStatus(framework.Error, "Invalid prefilter state")
+	
+	// Check for opt-out annotation directly since we might not have prefilter state
+	if cs.isOptedOut(pod) {
+		klog.V(2).InfoS("Pod opted out of scheduling constraints", "pod", klog.KObj(pod))
+		return framework.NewStatus(framework.Success, "")
 	}
 
 	node := nodeInfo.Node()
@@ -709,4 +739,14 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// hasGPURequest checks if a pod is requesting GPU resources
+func hasGPURequest(pod *v1.Pod) bool {
+	for _, container := range pod.Spec.Containers {
+		if gpu, ok := container.Resources.Requests["nvidia.com/gpu"]; ok && \!gpu.IsZero() {
+			return true
+		}
+	}
+	return false
 }
