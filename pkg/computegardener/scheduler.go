@@ -334,11 +334,7 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
-	err = state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
-	if err != nil {
-		klog.ErrorS(err, "Failed to write prefilter state", "pod", klog.KObj(pod))
-		return nil, framework.NewStatus(framework.Error, "Failed to write prefilter state")
-	}
+	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
 	
 	klog.V(2).InfoS("PreFilter completed successfully", 
 		"pod", klog.KObj(pod), 
@@ -744,7 +740,7 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 // hasGPURequest checks if a pod is requesting GPU resources
 func hasGPURequest(pod *v1.Pod) bool {
 	for _, container := range pod.Spec.Containers {
-		if gpu, ok := container.Resources.Requests["nvidia.com/gpu"]; ok && \!gpu.IsZero() {
+		if gpu, ok := container.Resources.Requests["nvidia.com/gpu"]; ok && !gpu.IsZero() {
 			return true
 		}
 	}
