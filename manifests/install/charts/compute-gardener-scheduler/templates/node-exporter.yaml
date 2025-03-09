@@ -8,7 +8,7 @@ metadata:
     app: compute-gardener-node-exporter
     component: metrics
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
@@ -128,7 +128,7 @@ metadata:
   labels:
     app: compute-gardener-node-exporter
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
@@ -152,7 +152,7 @@ metadata:
   labels:
     app: compute-gardener-node-exporter
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:

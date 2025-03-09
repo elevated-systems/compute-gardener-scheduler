@@ -13,6 +13,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion }}
 {{- end -}}
 
+{{/* Define exporter labels without overriding app label */}}
+{{- define "compute-gardener-scheduler.exporterLabels" -}}
+helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/version: {{ .Chart.AppVersion }}
+{{- end -}}
+
 {{/* Define common selector labels */}}
 {{- define "compute-gardener-scheduler.selectorLabels" -}}
 app: {{ .Values.scheduler.name }}

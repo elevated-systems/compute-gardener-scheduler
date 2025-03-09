@@ -8,7 +8,7 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
@@ -75,7 +75,7 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
@@ -100,7 +100,7 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
