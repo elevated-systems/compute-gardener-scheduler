@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -416,11 +417,25 @@ func hasNvidiaGPU() bool {
 
 	// Try to get GPU count
 	cmd := exec.Command(nvidiaSmi, "--query-gpu=count", "--format=csv,noheader")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {
+		// Log detailed error information
 		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs", 
 			"path", nvidiaSmi, 
-			"error", err)
+			"error", err,
+			"stderr", stderr.String(),
+			"exitCode", cmd.ProcessState.ExitCode())
+		
+		// Additional debugging - check if we're running in the nvidia runtime
+		runtimeCmd := exec.Command("bash", "-c", "cat /proc/self/mountinfo | grep nvidia")
+		runtimeOutput, _ := runtimeCmd.CombinedOutput()
+		klog.V(2).InfoS("Nvidia runtime check", "found", len(runtimeOutput) > 0)
+		if len(runtimeOutput) > 0 {
+			klog.V(3).InfoS("Runtime details", "output", string(runtimeOutput))
+		}
+		
 		return false
 	}
 
@@ -431,7 +446,7 @@ func hasNvidiaGPU() bool {
 		return false
 	}
 
-	klog.InfoS("NVIDIA GPUs detected", "count", count)
+	klog.V(2).InfoS("NVIDIA GPUs detected", "count", count)
 	return true
 }
 
@@ -627,7 +642,7 @@ func getCurrentGPUMetrics() ([]map[string]float64, error) {
 func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error {
 	// Check if NVIDIA GPUs are available
 	if !hasNvidiaGPU() {
-		klog.InfoS("No NVIDIA GPUs detected, skipping GPU annotations")
+		klog.V(2).InfoS("No NVIDIA GPUs detected, skipping GPU annotations")
 		return nil
 	}
 
@@ -694,7 +709,7 @@ func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error
 		return fmt.Errorf("failed to update node annotations: %v", err)
 	}
 
-	klog.InfoS("Successfully annotated node with GPU information",
+	klog.V(2).InfoS("Successfully annotated node with GPU information",
 		"node", nodeName,
 		"gpuCount", gpuCount,
 		"gpuModels", gpuModels,
@@ -1051,7 +1066,7 @@ func main() {
 		Addr: metricsAddr,
 	}
 
-	klog.InfoS("Starting metrics server", "addr", metricsAddr)
+	klog.V(1).InfoS("Starting metrics server", "addr", metricsAddr)
 	if err := server.ListenAndServe(); err != nil {
 		klog.ErrorS(err, "Failed to start metrics server")
 		os.Exit(1)

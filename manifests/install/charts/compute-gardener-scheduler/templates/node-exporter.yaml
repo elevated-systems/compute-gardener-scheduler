@@ -24,6 +24,9 @@ spec:
         prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
     spec:
       serviceAccountName: compute-gardener-node-exporter
+      {{- if .Values.nodeExporter.runtimeClassName }}
+      runtimeClassName: {{ .Values.nodeExporter.runtimeClassName }}
+      {{- end }}
       containers:
       - name: exporter
         image: {{ .Values.nodeExporter.image }}

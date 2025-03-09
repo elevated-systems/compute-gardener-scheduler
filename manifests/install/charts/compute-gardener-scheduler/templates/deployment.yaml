@@ -36,6 +36,7 @@ spec:
         - --authentication-skip-lookup=true
         - --authentication-tolerate-lookup-failure=true
         - --authorization-always-allow-paths=/metrics
+        - --v={{ .Values.scheduler.logLevel }}
         image: {{ .Values.scheduler.image }}
         imagePullPolicy: {{ .Values.scheduler.imagePullPolicy }}
         env:
