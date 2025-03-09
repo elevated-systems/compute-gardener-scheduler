@@ -22,6 +22,7 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+        prometheus.io/path: "/metrics"
     spec:
       nodeSelector:
         {{- toYaml .Values.metrics.dcgmExporter.nodeSelector | nindent 8 }}
@@ -78,6 +79,7 @@ metadata:
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:

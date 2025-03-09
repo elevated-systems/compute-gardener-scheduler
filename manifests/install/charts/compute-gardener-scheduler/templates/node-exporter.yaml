@@ -22,6 +22,7 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: compute-gardener-node-exporter
       containers:
@@ -31,7 +32,6 @@ spec:
         args:
         - --metrics-addr=:{{ .Values.nodeExporter.metricsPort }}
         - --v={{ .Values.nodeExporter.logLevel }}
-        - --mode=cpu
         env:
         - name: NODE_NAME
           valueFrom:
@@ -132,6 +132,7 @@ metadata:
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:
