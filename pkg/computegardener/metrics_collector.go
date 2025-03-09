@@ -83,7 +83,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	gpuUtilizations := make(map[string]float64)
 	if cs.gpuMetricsClient != nil {
 		if utils, err := cs.gpuMetricsClient.ListPodsGPUUtilization(ctx); err == nil {
-				klog.V(1).InfoS("Retrieved GPU utilizations", "count", len(gpuUtilizations), "values", gpuUtilizations)
+			klog.V(1).InfoS("Retrieved GPU utilizations", "count", len(gpuUtilizations), "values", gpuUtilizations)
 			gpuUtilizations = utils
 		} else {
 			klog.ErrorS(err, "Failed to list GPU utilizations")
@@ -144,26 +144,26 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 
 		// Get GPU utilization for this pod
-			// Get GPU utilization for this pod
-			gpuUtilization := 0.0
-			key := podMetrics.Namespace + "/" + podMetrics.Name
-			if util, exists := gpuUtilizations[key]; exists {
-				gpuUtilization = util
-				klog.V(1).InfoS("Found GPU utilization for pod", "pod", key, "utilization", gpuUtilization)
-			} else {
-				// Also check for GPU ID based metrics (format: gpu/UUID)
-				for gpuKey, gpuUtil := range gpuUtilizations {
-					klog.V(1).InfoS("Checking GPU utilization", "gpuKey", gpuKey, "podKey", key)
-					
-					// If this pod uses nvidia runtime, attribute GPU to it
-					if pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == "nvidia" {
-						gpuUtilization = gpuUtil
-						klog.V(1).InfoS("Attributed GPU to pod with nvidia runtime", 
-							"pod", key, "gpuKey", gpuKey, "utilization", gpuUtil)
-						break
-					}
+		// Get GPU utilization for this pod
+		gpuUtilization := 0.0
+		key := podMetrics.Namespace + "/" + podMetrics.Name
+		if util, exists := gpuUtilizations[key]; exists {
+			gpuUtilization = util
+			klog.V(1).InfoS("Found GPU utilization for pod", "pod", key, "utilization", gpuUtilization)
+		} else {
+			// Also check for GPU ID based metrics (format: gpu/UUID)
+			for gpuKey, gpuUtil := range gpuUtilizations {
+				klog.V(1).InfoS("Checking GPU utilization", "gpuKey", gpuKey, "podKey", key)
+
+				// If this pod uses nvidia runtime, attribute GPU to it
+				if pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == "nvidia" {
+					gpuUtilization = gpuUtil
+					klog.V(1).InfoS("Attributed GPU to pod with nvidia runtime",
+						"pod", key, "gpuKey", gpuKey, "utilization", gpuUtil)
+					break
 				}
 			}
+		}
 
 		// Calculate pod metrics record
 		record := metrics.CalculatePodMetrics(
@@ -219,18 +219,14 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 // calculatePodPower estimates power consumption for a pod based on resource usage
 func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memory, gpu float64) float64 {
 	// Get node power configuration
-	var idlePower, maxPower, idleGPUPower, maxGPUPower float64
+	var idlePower, maxPower float64
 	if nodePower, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
 		idlePower = nodePower.IdlePower
 		maxPower = nodePower.MaxPower
-		idleGPUPower = nodePower.IdleGPUPower
-		maxGPUPower = nodePower.MaxGPUPower
 	} else {
 		idlePower = cs.config.Power.DefaultIdlePower
 		maxPower = cs.config.Power.DefaultMaxPower
 		// Default GPU power settings (only used if GPU utilization > 0)
-		idleGPUPower = 50 // Default idle GPU power (W)
-		maxGPUPower = 300 // Default max GPU power (W)
 	}
 
 	// Check if we have frequency data for this node
@@ -264,25 +260,18 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	// Linear interpolation between idle and max power based on CPU usage
 	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*cpu
 
-	// Add GPU power if utilization > 0
+	// Add GPU power for NVIDIA runtime pods
 	gpuPower := 0.0
 	if gpu > 0 {
-		gpuPower = idleGPUPower + (maxGPUPower-idleGPUPower)*gpu
-		klog.V(1).InfoS("Calculated GPU power contribution", 
-			"node", nodeName,
-			"gpuUtilization", gpu,
-			"idleGPUPower", idleGPUPower,
-			"maxGPUPower", maxGPUPower,
-			"calculatedGPUPower", gpuPower)
-	} else {
-		klog.V(1).InfoS("No GPU utilization reported", "node", nodeName, "gpuUtilization", gpu)
+		gpuPower = gpu
+		klog.V(1).InfoS("GPU power", "node", nodeName, "power", gpuPower)
 	}
 
 	totalPower := cpuPower + gpuPower
-	
-	klog.V(1).InfoS("Power calculation breakdown", 
+
+	klog.V(1).InfoS("Power calculation breakdown",
 		"node", nodeName,
-		"cpuUtilization", cpu, 
+		"cpuUtilization", cpu,
 		"gpuUtilization", gpu,
 		"cpuPower", cpuPower,
 		"gpuPower", gpuPower,
