@@ -718,9 +718,8 @@ func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error
 	return nil
 }
 
-// recordMetrics collects and records hardware metrics (CPU and GPU)
-func recordMetrics(nodeName string) {
-	// === CPU METRICS ===
+// recordCPUMetrics collects and records CPU-specific metrics
+func recordCPUMetrics(nodeName string) {
 	// Get CPU count
 	cpuCount, err := getCPUCount()
 	if err != nil {
@@ -750,51 +749,6 @@ func recordMetrics(nodeName string) {
 		}
 	}
 
-	// === GPU METRICS ===
-	// Check if there are NVIDIA GPUs
-	hasGPU := hasNvidiaGPU()
-	
-	// If GPUs are available, get static information
-	var gpuStatic []map[string]float64
-	
-	if hasGPU {
-		// Get GPU count and set metric
-		count, err := getGPUCount()
-		if err != nil {
-			klog.ErrorS(err, "Failed to get GPU count")
-		} else {
-			gpuCount.Set(float64(count))
-			klog.InfoS("Set GPU count metric", "count", count)
-		}
-		
-		// Get static GPU information
-		gpuStatic, err = getGPUStaticInfo()
-		if err != nil {
-			klog.ErrorS(err, "Failed to get static GPU information")
-		} else {
-			// Record static information for each GPU
-			for i, info := range gpuStatic {
-				gpuID := fmt.Sprintf("%d", i)
-				
-				if maxMem, ok := info["maxMemory"]; ok {
-					gpuMaxMemory.With(prometheus.Labels{
-						"gpu":  gpuID,
-						"node": nodeName,
-					}).Set(maxMem)
-					klog.V(2).InfoS("Recorded static GPU memory", "gpu", gpuID, "maxMemory", maxMem)
-				}
-				
-				if maxPower, ok := info["maxPower"]; ok {
-					gpuMaxPower.With(prometheus.Labels{
-						"gpu":  gpuID,
-						"node": nodeName,
-					}).Set(maxPower)
-					klog.V(2).InfoS("Recorded static GPU power limit", "gpu", gpuID, "maxPower", maxPower)
-				}
-			}
-		}
-	}
-
 	// Start periodic collection of current metrics
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -802,7 +756,6 @@ func recordMetrics(nodeName string) {
 	for {
 		select {
 		case <-ticker.C:
-			// === CPU METRICS ===
 			// Record current frequency for each CPU
 			for i := 0; i < cpuCount; i++ {
 				freq, err := getCurrentCPUFrequency(i)
@@ -820,33 +773,86 @@ func recordMetrics(nodeName string) {
 					"node": nodeName,
 				}).Set(freq)
 			}
+		}
+	}
+}
+
+// recordGPUMetrics collects and records GPU-specific metrics
+func recordGPUMetrics(nodeName string) {
+	// Verify that NVIDIA GPUs are available
+	if !hasNvidiaGPU() {
+		klog.ErrorS(fmt.Errorf("no NVIDIA GPUs detected"), "Cannot collect GPU metrics in GPU mode")
+		// We'll still keep running, but won't collect any metrics
+		select {} // Block forever
+		return
+	}
+	
+	// Get GPU count and set metric
+	count, err := getGPUCount()
+	if err != nil {
+		klog.ErrorS(err, "Failed to get GPU count")
+	} else {
+		gpuCount.Set(float64(count))
+		klog.V(2).InfoS("Set GPU count metric", "count", count)
+	}
+	
+	// Get static GPU information
+	gpuStatic, err := getGPUStaticInfo()
+	if err != nil {
+		klog.ErrorS(err, "Failed to get static GPU information")
+	} else {
+		// Record static information for each GPU
+		for i, info := range gpuStatic {
+			gpuID := fmt.Sprintf("%d", i)
 			
-			// === GPU METRICS ===
-			// Only collect GPU metrics if GPUs are available
-			if hasGPU {
-				gpuMetrics, err := getCurrentGPUMetrics()
-				if err != nil {
-					klog.V(2).ErrorS(err, "Failed to get current GPU metrics")
-					continue
+			if maxMem, ok := info["maxMemory"]; ok {
+				gpuMaxMemory.With(prometheus.Labels{
+					"gpu":  gpuID,
+					"node": nodeName,
+				}).Set(maxMem)
+				klog.V(2).InfoS("Recorded static GPU memory", "gpu", gpuID, "maxMemory", maxMem)
+			}
+			
+			if maxPower, ok := info["maxPower"]; ok {
+				gpuMaxPower.With(prometheus.Labels{
+					"gpu":  gpuID,
+					"node": nodeName,
+				}).Set(maxPower)
+				klog.V(2).InfoS("Recorded static GPU power limit", "gpu", gpuID, "maxPower", maxPower)
+			}
+		}
+	}
+
+	// Start periodic collection of current metrics
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			gpuMetrics, err := getCurrentGPUMetrics()
+			if err != nil {
+				klog.V(2).ErrorS(err, "Failed to get current GPU metrics")
+				continue
+			}
+			
+			// Record metrics for each GPU
+			for i, metrics := range gpuMetrics {
+				gpuID := fmt.Sprintf("%d", i)
+				
+				if util, ok := metrics["utilization"]; ok {
+					gpuUtilization.With(prometheus.Labels{
+						"gpu":  gpuID,
+						"node": nodeName,
+					}).Set(util)
+					klog.V(2).InfoS("Recorded GPU utilization", "gpu", gpuID, "utilization", util)
 				}
 				
-				// Record metrics for each GPU
-				for i, metrics := range gpuMetrics {
-					gpuID := fmt.Sprintf("%d", i)
-					
-					if util, ok := metrics["utilization"]; ok {
-						gpuUtilization.With(prometheus.Labels{
-							"gpu":  gpuID,
-							"node": nodeName,
-						}).Set(util)
-						klog.V(2).InfoS("Recorded GPU utilization", "gpu", gpuID, "utilization", util)
-					}
-					
-					if memUtil, ok := metrics["memoryUtilization"]; ok {
-						gpuMemoryUtilization.With(prometheus.Labels{
-							"gpu":  gpuID,
-							"node": nodeName,
-						}).Set(memUtil)
+				if memUtil, ok := metrics["memoryUtilization"]; ok {
+					gpuMemoryUtilization.With(prometheus.Labels{
+						"gpu":  gpuID,
+						"node": nodeName,
+					}).Set(memUtil)
 						klog.V(2).InfoS("Recorded GPU memory utilization", "gpu", gpuID, "memoryUtilization", memUtil)
 					}
 					
@@ -980,12 +986,14 @@ func main() {
 		kubeconfig   string
 		nodeName     string
 		annotateOnly bool
+		mode         string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9100", "The address the metric endpoint binds to")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (not needed in cluster)")
 	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to environment variable NODE_NAME)")
 	flag.BoolVar(&annotateOnly, "annotate-only", false, "Only annotate CPU info and exit")
+	flag.StringVar(&mode, "mode", "cpu", "Operation mode: 'cpu' for CPU metrics or 'gpu' for GPU metrics")
 	klog.InitFlags(nil)
 	flag.Parse()
 
@@ -1008,10 +1016,11 @@ func main() {
 	}
 
 	// Log startup
-	klog.InfoS("Starting CPU information exporter",
+	klog.InfoS("Starting node exporter",
 		"node", nodeName,
 		"metricsAddr", metricsAddr,
-		"annotateOnly", annotateOnly)
+		"annotateOnly", annotateOnly,
+		"mode", mode)
 
 	// Create Kubernetes client
 	var config *rest.Config
@@ -1039,16 +1048,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Annotate the node with CPU model info
-	if err := annotateCPUModel(clientset, nodeName); err != nil {
-		klog.ErrorS(err, "Failed to annotate node with CPU model information")
-		// Continue running even if annotation fails
-	}
-	
-	// Annotate the node with GPU info if available
-	if err := annotateNodeGPUInfo(clientset, nodeName); err != nil {
-		klog.ErrorS(err, "Failed to annotate node with GPU information")
-		// Continue running even if annotation fails
+	// Decide which annotations to make based on mode
+	if mode == "cpu" {
+		// In CPU mode: Annotate CPU information only
+		if err := annotateCPUModel(clientset, nodeName); err != nil {
+			klog.ErrorS(err, "Failed to annotate node with CPU model information")
+			// Continue running even if annotation fails
+		}
+	} else if mode == "gpu" {
+		// In GPU mode: Annotate GPU information only
+		if err := annotateNodeGPUInfo(clientset, nodeName); err != nil {
+			klog.ErrorS(err, "Failed to annotate node with GPU information")
+			// Continue running even if annotation fails
+		}
+	} else {
+		klog.ErrorS(fmt.Errorf("invalid mode: %s", mode), "Unknown operation mode, must be 'cpu' or 'gpu'")
+		os.Exit(1)
 	}
 
 	// If annotate-only mode, exit after annotation
@@ -1057,8 +1072,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Start collecting metrics
-	go recordMetrics(nodeName)
+	// Start collecting metrics based on mode
+	if mode == "cpu" {
+		// In CPU mode: Collect CPU metrics only
+		go recordCPUMetrics(nodeName)
+		klog.V(2).InfoS("Running in CPU mode, collecting CPU metrics only")
+	} else if mode == "gpu" {
+		// In GPU mode: Collect GPU metrics only
+		go recordGPUMetrics(nodeName)
+		klog.V(2).InfoS("Running in GPU mode, collecting GPU metrics only")
+	}
 
 	// Start HTTP server for metrics endpoint
 	http.Handle("/metrics", promhttp.Handler())

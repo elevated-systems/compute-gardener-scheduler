@@ -1,0 +1,94 @@
+{{- if and .Values.nodeExporter.enabled .Values.nodeExporter.gpu.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: compute-gardener-gpu-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-gpu-exporter
+    component: gpu-metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-gpu-exporter
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-gpu-exporter
+        component: gpu-metrics
+        part-of: compute-gardener-scheduler
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
+    spec:
+      serviceAccountName: compute-gardener-node-exporter
+      nodeSelector:
+        {{- toYaml .Values.nodeExporter.gpu.nodeSelector | nindent 8 }}
+      runtimeClassName: {{ .Values.nodeExporter.gpu.runtimeClassName }}
+      containers:
+      - name: exporter
+        image: {{ .Values.nodeExporter.image }}
+        imagePullPolicy: {{ .Values.nodeExporter.imagePullPolicy }}
+        args:
+        - --metrics-addr=:{{ .Values.nodeExporter.metricsPort }}
+        - --v={{ .Values.nodeExporter.logLevel }}
+        - --mode=gpu
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        securityContext:
+          privileged: true
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: false
+        volumeMounts:
+        - name: proc
+          mountPath: /proc
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        resources:
+          {{- if .Values.nodeExporter.gpu.requestZeroGpu }}
+          limits:
+            nvidia.com/gpu: "0"
+          requests:
+            nvidia.com/gpu: "0"
+          {{- end }}
+          {{- with .Values.nodeExporter.resources }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        ports:
+        - containerPort: {{ .Values.nodeExporter.metricsPort }}
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 3
+          periodSeconds: 5
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      # These tolerations ensure the DaemonSet runs on GPU nodes, which might have taints
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+{{- end }}

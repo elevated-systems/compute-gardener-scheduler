@@ -24,9 +24,6 @@ spec:
         prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
     spec:
       serviceAccountName: compute-gardener-node-exporter
-      {{- if .Values.nodeExporter.runtimeClassName }}
-      runtimeClassName: {{ .Values.nodeExporter.runtimeClassName }}
-      {{- end }}
       containers:
       - name: exporter
         image: {{ .Values.nodeExporter.image }}
@@ -34,6 +31,7 @@ spec:
         args:
         - --metrics-addr=:{{ .Values.nodeExporter.metricsPort }}
         - --v={{ .Values.nodeExporter.logLevel }}
+        - --mode=cpu
         env:
         - name: NODE_NAME
           valueFrom:
