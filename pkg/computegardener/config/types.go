@@ -76,6 +76,11 @@ type PrometheusConfig struct {
 	URL             string `yaml:"url"`             // Prometheus server URL, e.g. "http://prometheus.monitoring:9090"
 	QueryTimeout    string `yaml:"queryTimeout"`    // Prometheus query timeout, e.g. "30s"
 	CompletionDelay string `yaml:"completionDelay"` // Delay after pod completion before collecting final metrics, e.g. "30s"
+	
+	// DCGM exporter integration
+	UseDCGM         bool   `yaml:"useDCGM"`         // Whether to use DCGM exporter metrics (default: true)
+	DCGMPowerMetric string `yaml:"dcgmPowerMetric"` // DCGM power metric name (default: DCGM_FI_DEV_POWER_USAGE)
+	DCGMUtilMetric  string `yaml:"dcgmUtilMetric"`  // DCGM utilization metric name (default: DCGM_FI_DEV_GPU_UTIL)
 }
 
 // NodePower holds power settings for a specific node

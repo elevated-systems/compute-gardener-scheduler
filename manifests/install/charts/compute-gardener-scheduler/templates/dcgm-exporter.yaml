@@ -1,0 +1,114 @@
+{{- if and .Values.metrics.enabled .Values.metrics.dcgmExporter.enabled (not .Values.metrics.dcgmExporter.external) }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: compute-gardener-dcgm-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dcgm-exporter
+    component: gpu-metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dcgm-exporter
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-dcgm-exporter
+        component: gpu-metrics
+        part-of: compute-gardener-scheduler
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.metrics.dcgmExporter.nodeSelector | nindent 8 }}
+      runtimeClassName: nvidia
+      containers:
+      - name: exporter
+        image: {{ .Values.metrics.dcgmExporter.image }}
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "utility"
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          privileged: true
+        ports:
+        - containerPort: {{ .Values.metrics.dcgmExporter.port }}
+          name: metrics
+          protocol: TCP
+        volumeMounts:
+        - name: nvidia-driver
+          mountPath: /usr/local/nvidia
+        - name: nvidia-driver-run
+          mountPath: /run/nvidia/driver
+        - name: dev
+          mountPath: /dev
+      volumes:
+      - name: nvidia-driver
+        hostPath:
+          path: /usr/local/nvidia
+      - name: nvidia-driver-run
+        hostPath:
+          path: /run/nvidia/driver
+      - name: dev
+        hostPath:
+          path: /dev
+      # These tolerations ensure the DaemonSet runs on GPU nodes, which might have taints
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-dcgm-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dcgm-exporter
+    component: gpu-metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.metrics.dcgmExporter.port }}
+    targetPort: {{ .Values.metrics.dcgmExporter.port }}
+    protocol: TCP
+    name: metrics
+  selector:
+    app: compute-gardener-dcgm-exporter
+{{- if and .Values.metrics.dcgmExporter.serviceMonitor.enabled .Values.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-dcgm-exporter
+  namespace: {{ .Values.metrics.serviceMonitor.namespace | default .Release.Namespace }}
+  labels:
+    app: compute-gardener-dcgm-exporter
+    component: gpu-metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dcgm-exporter
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.dcgmExporter.serviceMonitor.interval }}
+    path: /metrics
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

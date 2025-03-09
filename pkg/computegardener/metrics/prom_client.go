@@ -16,9 +16,42 @@ type PrometheusGPUMetricsClient struct {
 	client       v1.API
 	queryTimeout time.Duration
 	metricsPrefix string // The prefix for metrics (e.g., compute_gardener_gpu)
+	// DCGM-specific settings
+	useDCGM        bool   // Whether to use DCGM exporter metrics
+	dcgmPowerMetric string // DCGM power metric name
+	dcgmUtilMetric  string // DCGM utilization metric name
+}
+
+// SetUseDCGM configures whether to use DCGM metrics
+func (c *PrometheusGPUMetricsClient) SetUseDCGM(use bool) {
+	c.useDCGM = use
+	klog.V(2).InfoS("DCGM metrics usage configured", "useDCGM", use)
+}
+
+// SetDCGMPowerMetric sets the DCGM power metric name
+func (c *PrometheusGPUMetricsClient) SetDCGMPowerMetric(metric string) {
+	c.dcgmPowerMetric = metric
+	klog.V(2).InfoS("DCGM power metric configured", "metric", metric)
+}
+
+// SetDCGMUtilMetric sets the DCGM utilization metric name
+func (c *PrometheusGPUMetricsClient) SetDCGMUtilMetric(metric string) {
+	c.dcgmUtilMetric = metric
+	klog.V(2).InfoS("DCGM utilization metric configured", "metric", metric)
+}
+
+// GetDCGMPowerMetric returns the current DCGM power metric name
+func (c *PrometheusGPUMetricsClient) GetDCGMPowerMetric() string {
+	return c.dcgmPowerMetric
+}
+
+// GetDCGMUtilMetric returns the current DCGM utilization metric name
+func (c *PrometheusGPUMetricsClient) GetDCGMUtilMetric() string {
+	return c.dcgmUtilMetric
 }
 
 // NewPrometheusGPUMetricsClient creates a new Prometheus-based GPU metrics client
+// By default, it uses DCGM metrics if available
 func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
 	// Initialize Prometheus client
 	cfg := api.Config{
@@ -30,10 +63,48 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 		return nil, fmt.Errorf("error creating Prometheus client: %v", err)
 	}
 	
+	// Create with DCGM metrics enabled by default
+	metricsClient := &PrometheusGPUMetricsClient{
+		client:        v1.NewAPI(client),
+		queryTimeout:  30 * time.Second,
+		metricsPrefix: "compute_gardener_gpu", // Still useful as fallback
+		
+		// Enable DCGM metrics by default
+		useDCGM:         true,
+		dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE",
+		dcgmUtilMetric:  "DCGM_FI_DEV_GPU_UTIL",
+	}
+	
+	klog.InfoS("Created Prometheus GPU metrics client", 
+		"prometheusURL", prometheusURL,
+		"usingDCGM", true,
+		"powerMetric", metricsClient.dcgmPowerMetric,
+		"utilMetric", metricsClient.dcgmUtilMetric)
+	
+	return metricsClient, nil
+}
+
+// NewLegacyPrometheusGPUMetricsClient creates a Prometheus client that uses the legacy
+// custom metrics format instead of DCGM metrics
+func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
+	// Initialize Prometheus client
+	cfg := api.Config{
+		Address: prometheusURL,
+	}
+	
+	client, err := api.NewClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating Prometheus client: %v", err)
+	}
+	
+	klog.InfoS("Created legacy Prometheus GPU metrics client (without DCGM)", 
+		"prometheusURL", prometheusURL)
+	
 	return &PrometheusGPUMetricsClient{
-		client:       v1.NewAPI(client),
-		queryTimeout: 30 * time.Second,
-		metricsPrefix: "compute_gardener_gpu", // Default prefix for our metrics
+		client:        v1.NewAPI(client),
+		queryTimeout:  30 * time.Second,
+		metricsPrefix: "compute_gardener_gpu",
+		useDCGM:       false,
 	}, nil
 }
 
@@ -44,8 +115,16 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, n
 	defer cancel()
 	
 	// Construct the query for the specific pod's GPU utilization
-	query := fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
-		c.metricsPrefix, name, namespace)
+	var query string
+	if c.useDCGM {
+		// DCGM metrics query
+		query = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
+			c.dcgmUtilMetric, name, namespace)
+	} else {
+		// Custom metrics query
+		query = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
+			c.metricsPrefix, name, namespace)
+	}
 	
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
@@ -85,7 +164,15 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context)
 	defer cancel()
 	
 	// Query that gets average GPU utilization for each pod
-	query := fmt.Sprintf(`avg by (pod, namespace) (%s_utilization_percent)`, c.metricsPrefix)
+	var query string
+	if c.useDCGM {
+		// DCGM metrics query
+		query = fmt.Sprintf(`avg by (pod, namespace) (%s)`, c.dcgmUtilMetric)
+		klog.V(2).InfoS("Using DCGM utilization metric", "metric", c.dcgmUtilMetric)
+	} else {
+		// Custom metrics query
+		query = fmt.Sprintf(`avg by (pod, namespace) (%s_utilization_percent)`, c.metricsPrefix)
+	}
 	
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
@@ -136,8 +223,16 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespa
 	defer cancel()
 	
 	// Construct the query for the specific pod's GPU power
-	query := fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
-		c.metricsPrefix, name, namespace)
+	var query string
+	if c.useDCGM {
+		// DCGM metrics query
+		query = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
+			c.dcgmPowerMetric, name, namespace)
+	} else {
+		// Custom metrics query
+		query = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
+			c.metricsPrefix, name, namespace)
+	}
 	
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
@@ -177,7 +272,15 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[
 	defer cancel()
 	
 	// Query that gets average GPU power for each pod
-	query := fmt.Sprintf(`avg by (pod, namespace) (%s_power_watts)`, c.metricsPrefix)
+	var query string
+	if c.useDCGM {
+		// DCGM metrics query
+		query = fmt.Sprintf(`avg by (pod, namespace) (%s)`, c.dcgmPowerMetric)
+		klog.V(2).InfoS("Using DCGM power metric", "metric", c.dcgmPowerMetric)
+	} else {
+		// Custom metrics query
+		query = fmt.Sprintf(`avg by (pod, namespace) (%s_power_watts)`, c.metricsPrefix)
+	}
 	
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
@@ -240,12 +343,29 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 		step = 5 * time.Minute
 	}
 	
-	// Create range queries for utilization and power
-	utilizationQuery := fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
-		c.metricsPrefix, name, namespace)
+	var utilizationQuery, powerQuery string
 	
-	powerQuery := fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
-		c.metricsPrefix, name, namespace)
+	if c.useDCGM {
+		// Use DCGM metrics - these come with pod label directly from DCGM exporter
+		utilizationQuery = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
+			c.dcgmUtilMetric, name, namespace)
+		
+		powerQuery = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
+			c.dcgmPowerMetric, name, namespace)
+		
+		klog.V(2).InfoS("Using DCGM metrics for historical GPU data", 
+			"pod", name, 
+			"namespace", namespace,
+			"powerMetric", c.dcgmPowerMetric, 
+			"utilMetric", c.dcgmUtilMetric)
+	} else {
+		// Use our custom metrics
+		utilizationQuery = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
+			c.metricsPrefix, name, namespace)
+		
+		powerQuery = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
+			c.metricsPrefix, name, namespace)
+	}
 	
 	// Execute utilization range query
 	utilizationResult, warnings, err := c.client.QueryRange(

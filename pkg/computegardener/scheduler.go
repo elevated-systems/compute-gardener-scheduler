@@ -164,13 +164,33 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			klog.InfoS("Initializing Prometheus GPU metrics client", 
 				"url", cfg.Metrics.Prometheus.URL)
 			
-			prometheusClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
+			promClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
 				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
 				gpuMetricsClient = metrics.NewNullGPUMetricsClient()
 			} else {
-				gpuMetricsClient = prometheusClient
-				klog.InfoS("Prometheus GPU metrics client initialized successfully")
+				// Configure DCGM metrics if settings are provided
+				if cfg.Metrics.Prometheus.DCGMPowerMetric != "" {
+					promClient.SetDCGMPowerMetric(cfg.Metrics.Prometheus.DCGMPowerMetric)
+				}
+				if cfg.Metrics.Prometheus.DCGMUtilMetric != "" {
+					promClient.SetDCGMUtilMetric(cfg.Metrics.Prometheus.DCGMUtilMetric)
+				}
+				
+				// Set useDCGM based on config (default to true if not explicitly disabled)
+				useDCGM := true // Default to true
+				// Only change if explicitly set to false
+				if cfg.Metrics.Prometheus.UseDCGM == false {
+					useDCGM = false
+				}
+				promClient.SetUseDCGM(useDCGM)
+				
+				klog.InfoS("Prometheus GPU metrics client configured with DCGM", 
+					"useDCGM", useDCGM,
+					"powerMetric", promClient.GetDCGMPowerMetric(),
+					"utilMetric", promClient.GetDCGMUtilMetric())
+				
+				gpuMetricsClient = promClient
 			}
 		} else {
 			// Initialize a null GPU metrics client as fallback
