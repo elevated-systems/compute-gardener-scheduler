@@ -25,6 +25,12 @@ type GPUMetricsClient interface {
 	
 	// ListPodsGPUUtilization gets GPU utilization for all pods with GPUs
 	ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) // key: namespace/name
+	
+	// GetPodGPUPower gets average GPU power use in watts for a specific pod
+	GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error)
+	
+	// ListPodsGPUPower gets average GPU power for all pods with GPUs
+	ListPodsGPUPower(ctx context.Context) (map[string]float64, error) // key: namespace/name
 }
 
 // K8sMetricsClient implements CoreMetricsClient using the Kubernetes metrics API
@@ -63,6 +69,16 @@ func (c *NullGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, namespa
 
 // ListPodsGPUUtilization returns an empty map
 func (c *NullGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) {
+	return make(map[string]float64), nil
+}
+
+// GetPodGPUPower always returns 0 for GPU power
+func (c *NullGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
+	return 0, nil
+}
+
+// ListPodsGPUPower returns an empty map
+func (c *NullGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
 	return make(map[string]float64), nil
 }
 
@@ -110,12 +126,14 @@ func (c *MockCoreMetricsClient) AddPodMetrics(pod *metricsv1beta1.PodMetrics) {
 // MockGPUMetricsClient implements GPUMetricsClient for testing
 type MockGPUMetricsClient struct {
 	utilization map[string]float64 // key: namespace/name
+	power       map[string]float64 // key: namespace/name
 }
 
 // NewMockGPUMetricsClient creates a new mock GPU metrics client
 func NewMockGPUMetricsClient() *MockGPUMetricsClient {
 	return &MockGPUMetricsClient{
 		utilization: make(map[string]float64),
+		power:       make(map[string]float64),
 	}
 }
 
@@ -138,10 +156,35 @@ func (c *MockGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[
 	return result, nil
 }
 
+// GetPodGPUPower gets GPU power for a specific pod
+func (c *MockGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
+	key := namespace + "/" + name
+	if power, exists := c.power[key]; exists {
+		return power, nil
+	}
+	return 0, nil
+}
+
+// ListPodsGPUPower gets GPU power for all pods
+func (c *MockGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
+	// Return a copy to prevent modification
+	result := make(map[string]float64, len(c.power))
+	for k, v := range c.power {
+		result[k] = v
+	}
+	return result, nil
+}
+
 // SetPodGPUUtilization sets the GPU utilization for a pod in the mock
 func (c *MockGPUMetricsClient) SetPodGPUUtilization(namespace, name string, utilization float64) {
 	key := namespace + "/" + name
 	c.utilization[key] = utilization
+}
+
+// SetPodGPUPower sets the GPU power for a pod in the mock
+func (c *MockGPUMetricsClient) SetPodGPUPower(namespace, name string, power float64) {
+	key := namespace + "/" + name
+	c.power[key] = power
 }
 
 // CalculatePodMetrics converts Kubernetes metrics to our internal format

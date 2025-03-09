@@ -18,7 +18,7 @@ BUILDER ?= docker
 REGISTRY?=docker.io/dmasselink
 RELEASE_VERSION?=$(shell git tag -l "v*" --sort=-committerdate | head -n 1)-$(shell git rev-parse --short HEAD)
 RELEASE_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
-CPU_EXPORTER_IMAGE:=compute-gardener-cpu-exporter:$(RELEASE_VERSION)
+NODE_EXPORTER_IMAGE:=compute-gardener-node-exporter:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 
@@ -29,15 +29,15 @@ VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 all: build
 
 .PHONY: build
-build: build-scheduler build-cpu-exporter
+build: build-scheduler build-node-exporter
 
 .PHONY: build-scheduler
 build-scheduler:
 	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-cpu-exporter
-build-cpu-exporter:
-	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/cpu-exporter cmd/cpu-info-exporter/main.go
+.PHONY: build-node-exporter
+build-node-exporter:
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/node-exporter cmd/node-exporter/main.go
 
 .PHONY: build-image
 build-image:
@@ -52,7 +52,7 @@ build-image:
 
 .PHONY: build-push-image
 build-push-image: EXTRA_ARGS="--push"
-build-push-image: BUILD_CPU_EXPORTER=false
+build-push-image: BUILD_NODE_EXPORTER=false
 build-push-image: build-image
 
 .PHONY: build-push-images

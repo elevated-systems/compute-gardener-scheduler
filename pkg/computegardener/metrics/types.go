@@ -54,3 +54,67 @@ type DownsamplingStrategy interface {
 	// Downsample reduces the number of data points while preserving trend
 	Downsample(records []PodMetricsRecord, targetCount int) []PodMetricsRecord
 }
+
+// CalculateTotalEnergy calculates the total energy used by a pod in kWh
+// using the trapezoid rule for numerical integration
+func CalculateTotalEnergy(records []PodMetricsRecord) float64 {
+	if len(records) < 2 {
+		return 0
+	}
+
+	totalEnergyKWh := 0.0
+
+	// Integrate over the time series using trapezoid rule
+	for i := 1; i < len(records); i++ {
+		current := records[i]
+		previous := records[i-1]
+
+		// Time difference in hours
+		deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
+
+		// Average power during this interval (W)
+		avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
+
+		// Energy used in this interval (kWh)
+		intervalEnergy := (avgPower * deltaHours) / 1000
+
+		totalEnergyKWh += intervalEnergy
+	}
+
+	return totalEnergyKWh
+}
+
+// CalculateTotalCarbonEmissions calculates the total carbon emissions in gCO2eq
+// using the trapezoid rule for numerical integration
+func CalculateTotalCarbonEmissions(records []PodMetricsRecord) float64 {
+	if len(records) < 2 {
+		return 0
+	}
+
+	totalCarbonEmissions := 0.0
+
+	// Integrate over the time series using trapezoid rule
+	for i := 1; i < len(records); i++ {
+		current := records[i]
+		previous := records[i-1]
+
+		// Time difference in hours
+		deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
+
+		// Average power during this interval (W)
+		avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
+
+		// Energy used in this interval (kWh)
+		intervalEnergy := (avgPower * deltaHours) / 1000
+
+		// Average carbon intensity during this interval (gCO2eq/kWh)
+		avgCarbonIntensity := (current.CarbonIntensity + previous.CarbonIntensity) / 2
+
+		// Carbon emissions for this interval (gCO2eq)
+		intervalCarbon := intervalEnergy * avgCarbonIntensity
+
+		totalCarbonEmissions += intervalCarbon
+	}
+
+	return totalCarbonEmissions
+}

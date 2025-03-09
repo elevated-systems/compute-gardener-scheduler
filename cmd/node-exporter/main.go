@@ -25,15 +25,16 @@ import (
 
 const (
 	namespace = "compute_gardener"
-	subsystem = "cpu"
+	cpuSubsystem = "cpu"
+	gpuSubsystem = "gpu"
 )
 
 var (
-	// Prometheus metrics
+	// CPU Prometheus metrics
 	cpuFrequency = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: subsystem,
+			Subsystem: cpuSubsystem,
 			Name:      "frequency_ghz",
 			Help:      "Current CPU frequency in GHz",
 		},
@@ -43,18 +44,90 @@ var (
 	cpuFrequencyStatic = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
-			Subsystem: subsystem,
+			Subsystem: cpuSubsystem,
 			Name:      "frequency_static_ghz",
 			Help:      "Static CPU frequency information (base, min, max) in GHz",
 		},
 		[]string{"cpu", "node", "type"},
 	)
+	
+	// GPU Prometheus metrics - Dynamic
+	gpuPower = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "power_watts",
+			Help:      "Current GPU power consumption in watts",
+		},
+		[]string{"gpu", "node"},
+	)
+	
+	gpuUtilization = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "utilization_percent",
+			Help:      "Current GPU utilization percentage",
+		},
+		[]string{"gpu", "node"},
+	)
+	
+	gpuMemoryUtilization = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "memory_utilization_percent",
+			Help:      "Current GPU memory utilization percentage",
+		},
+		[]string{"gpu", "node"},
+	)
+	
+	// GPU Prometheus metrics - Static
+	gpuCount = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "count",
+			Help:      "Number of GPUs detected on the node",
+		},
+	)
+	
+	gpuMaxMemory = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "max_memory_bytes",
+			Help:      "Maximum memory capacity of the GPU in bytes",
+		},
+		[]string{"gpu", "node"},
+	)
+	
+	gpuMaxPower = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Subsystem: gpuSubsystem,
+			Name:      "max_power_watts",
+			Help:      "Maximum power limit of the GPU in watts",
+		},
+		[]string{"gpu", "node"},
+	)
 )
 
 func init() {
 	// Register metrics with Prometheus
+	// CPU metrics
 	prometheus.MustRegister(cpuFrequency)
 	prometheus.MustRegister(cpuFrequencyStatic)
+	
+	// GPU metrics - Dynamic
+	prometheus.MustRegister(gpuPower)
+	prometheus.MustRegister(gpuUtilization)
+	prometheus.MustRegister(gpuMemoryUtilization)
+	
+	// GPU metrics - Static
+	prometheus.MustRegister(gpuCount)
+	prometheus.MustRegister(gpuMaxMemory)
+	prometheus.MustRegister(gpuMaxPower)
 }
 
 // getStaticCPUFrequencyInfo retrieves static CPU frequency information
@@ -253,8 +326,301 @@ func estimateMaxFrequencyFromCPUInfo() float64 {
 	return base * 1.15
 }
 
-// recordMetrics collects and records CPU frequency metrics
+// hasNvidiaGPU checks if the node has NVIDIA GPUs installed
+func hasNvidiaGPU() bool {
+	// Try to run nvidia-smi to check if NVIDIA GPUs are available
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		klog.V(2).InfoS("nvidia-smi not found in PATH, assuming no NVIDIA GPUs")
+		return false
+	}
+
+	cmd := exec.Command(nvidiaSmi, "--query-gpu=count", "--format=csv,noheader")
+	output, err := cmd.Output()
+	if err != nil {
+		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs", "error", err)
+		return false
+	}
+
+	count, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil || count == 0 {
+		klog.V(2).InfoS("No NVIDIA GPUs detected with nvidia-smi", "output", string(output))
+		return false
+	}
+
+	klog.InfoS("NVIDIA GPUs detected", "count", count)
+	return true
+}
+
+// getGPUCount gets the number of NVIDIA GPUs on the node
+func getGPUCount() (int, error) {
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return 0, fmt.Errorf("nvidia-smi not found: %v", err)
+	}
+
+	cmd := exec.Command(nvidiaSmi, "--query-gpu=count", "--format=csv,noheader")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to run nvidia-smi: %v", err)
+	}
+
+	count, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU count: %v", err)
+	}
+
+	return count, nil
+}
+
+// getGPUStaticInfo gets static information about each GPU
+func getGPUStaticInfo() ([]map[string]float64, error) {
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return nil, fmt.Errorf("nvidia-smi not found: %v", err)
+	}
+
+	// Query for total memory and power limit
+	cmd := exec.Command(nvidiaSmi, "--query-gpu=index,memory.total,power.limit", "--format=csv,noheader")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run nvidia-smi for static info: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	result := make([]map[string]float64, 0, len(lines))
+
+	for _, line := range lines {
+		fields := strings.Split(line, ", ")
+		if len(fields) != 3 {
+			klog.V(2).InfoS("Unexpected nvidia-smi output format", "line", line)
+			continue
+		}
+
+		// Parse fields
+		index, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse GPU index", "value", fields[0], "error", err)
+			continue
+		}
+
+		// Parse memory (format: "16384 MiB")
+		memParts := strings.Split(strings.TrimSpace(fields[1]), " ")
+		if len(memParts) != 2 {
+			klog.V(2).InfoS("Unexpected memory format", "value", fields[1])
+			continue
+		}
+		
+		memory, err := strconv.ParseFloat(memParts[0], 64)
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse GPU memory", "value", memParts[0], "error", err)
+			continue
+		}
+		
+		// Convert MiB to bytes
+		memoryBytes := memory * 1024 * 1024
+
+		// Parse power limit (format: "250.00 W")
+		powerParts := strings.Split(strings.TrimSpace(fields[2]), " ")
+		if len(powerParts) != 2 {
+			klog.V(2).InfoS("Unexpected power format", "value", fields[2])
+			continue
+		}
+		
+		power, err := strconv.ParseFloat(powerParts[0], 64)
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse GPU power limit", "value", powerParts[0], "error", err)
+			continue
+		}
+
+		// Add to result
+		if index >= len(result) {
+			// Resize result slice if needed
+			newSize := index + 1
+			newResult := make([]map[string]float64, newSize)
+			copy(newResult, result)
+			result = newResult
+		}
+
+		result[index] = map[string]float64{
+			"maxMemory": memoryBytes,
+			"maxPower":  power,
+		}
+	}
+
+	return result, nil
+}
+
+// getCurrentGPUMetrics gets current utilization metrics for each GPU
+func getCurrentGPUMetrics() ([]map[string]float64, error) {
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		return nil, fmt.Errorf("nvidia-smi not found: %v", err)
+	}
+
+	// Query for utilization and power usage
+	cmd := exec.Command(nvidiaSmi, "--query-gpu=index,utilization.gpu,utilization.memory,power.draw", "--format=csv,noheader")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run nvidia-smi for current metrics: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	result := make([]map[string]float64, 0, len(lines))
+
+	for _, line := range lines {
+		fields := strings.Split(line, ", ")
+		if len(fields) != 4 {
+			klog.V(2).InfoS("Unexpected nvidia-smi output format", "line", line)
+			continue
+		}
+
+		// Parse fields
+		index, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse GPU index", "value", fields[0], "error", err)
+			continue
+		}
+
+		// Parse GPU utilization (format: "30 %")
+		gpuUtilParts := strings.Split(strings.TrimSpace(fields[1]), " ")
+		if len(gpuUtilParts) != 2 {
+			klog.V(2).InfoS("Unexpected GPU utilization format", "value", fields[1])
+			continue
+		}
+		
+		gpuUtil, err := strconv.ParseFloat(gpuUtilParts[0], 64)
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse GPU utilization", "value", gpuUtilParts[0], "error", err)
+			continue
+		}
+
+		// Parse memory utilization (format: "10 %")
+		memUtilParts := strings.Split(strings.TrimSpace(fields[2]), " ")
+		if len(memUtilParts) != 2 {
+			klog.V(2).InfoS("Unexpected memory utilization format", "value", fields[2])
+			continue
+		}
+		
+		memUtil, err := strconv.ParseFloat(memUtilParts[0], 64)
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse memory utilization", "value", memUtilParts[0], "error", err)
+			continue
+		}
+
+		// Parse power draw (format: "100.25 W")
+		powerDrawParts := strings.Split(strings.TrimSpace(fields[3]), " ")
+		if len(powerDrawParts) != 2 {
+			klog.V(2).InfoS("Unexpected power draw format", "value", fields[3])
+			continue
+		}
+		
+		powerDraw, err := strconv.ParseFloat(powerDrawParts[0], 64)
+		if err != nil {
+			klog.V(2).InfoS("Failed to parse power draw", "value", powerDrawParts[0], "error", err)
+			continue
+		}
+
+		// Add to result
+		if index >= len(result) {
+			// Resize result slice if needed
+			newSize := index + 1
+			newResult := make([]map[string]float64, newSize)
+			copy(newResult, result)
+			result = newResult
+		}
+
+		result[index] = map[string]float64{
+			"utilization":       gpuUtil,
+			"memoryUtilization": memUtil,
+			"powerDraw":         powerDraw,
+		}
+	}
+
+	return result, nil
+}
+
+// annotateNodeGPUInfo adds GPU information to the node as annotations
+func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error {
+	// Check if NVIDIA GPUs are available
+	if !hasNvidiaGPU() {
+		klog.InfoS("No NVIDIA GPUs detected, skipping GPU annotations")
+		return nil
+	}
+
+	// Get GPU count
+	gpuCount, err := getGPUCount()
+	if err != nil {
+		return fmt.Errorf("failed to get GPU count: %v", err)
+	}
+
+	// Get static GPU info
+	gpuInfo, err := getGPUStaticInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get GPU static info: %v", err)
+	}
+
+	// Compile GPU model names
+	gpuModels := make([]string, 0, len(gpuInfo))
+	totalMaxPower := 0.0
+
+	// Get GPU model names
+	nvidiaSmi, _ := exec.LookPath("nvidia-smi")
+	cmd := exec.Command(nvidiaSmi, "--query-gpu=name", "--format=csv,noheader")
+	output, err := cmd.Output()
+	if err == nil {
+		models := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, model := range models {
+			gpuModels = append(gpuModels, strings.TrimSpace(model))
+		}
+	}
+
+	// Calculate total max power
+	for _, info := range gpuInfo {
+		if power, ok := info["maxPower"]; ok {
+			totalMaxPower += power
+		}
+	}
+
+	// Get node
+	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
+	}
+
+	// Create a copy of the node with updated annotations
+	nodeCopy := node.DeepCopy()
+	if nodeCopy.Annotations == nil {
+		nodeCopy.Annotations = make(map[string]string)
+	}
+
+	// Add GPU annotations
+	nodeCopy.Annotations[common.AnnotationGPUCount] = fmt.Sprintf("%d", gpuCount)
+	nodeCopy.Annotations[common.AnnotationGPUTotalPower] = fmt.Sprintf("%.2f", totalMaxPower)
+	
+	if len(gpuModels) > 0 {
+		// Join model names with comma
+		nodeCopy.Annotations[common.AnnotationGPUModel] = strings.Join(gpuModels, ",")
+	}
+
+	// Update the node
+	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update node annotations: %v", err)
+	}
+
+	klog.InfoS("Successfully annotated node with GPU information",
+		"node", nodeName,
+		"gpuCount", gpuCount,
+		"gpuModels", gpuModels,
+		"totalMaxPower", totalMaxPower)
+
+	return nil
+}
+
+// recordMetrics collects and records hardware metrics (CPU and GPU)
 func recordMetrics(nodeName string) {
+	// === CPU METRICS ===
 	// Get CPU count
 	cpuCount, err := getCPUCount()
 	if err != nil {
@@ -284,13 +650,59 @@ func recordMetrics(nodeName string) {
 		}
 	}
 
-	// Start periodic collection of current frequency
+	// === GPU METRICS ===
+	// Check if there are NVIDIA GPUs
+	hasGPU := hasNvidiaGPU()
+	
+	// If GPUs are available, get static information
+	var gpuStatic []map[string]float64
+	
+	if hasGPU {
+		// Get GPU count and set metric
+		count, err := getGPUCount()
+		if err != nil {
+			klog.ErrorS(err, "Failed to get GPU count")
+		} else {
+			gpuCount.Set(float64(count))
+			klog.InfoS("Set GPU count metric", "count", count)
+		}
+		
+		// Get static GPU information
+		gpuStatic, err = getGPUStaticInfo()
+		if err != nil {
+			klog.ErrorS(err, "Failed to get static GPU information")
+		} else {
+			// Record static information for each GPU
+			for i, info := range gpuStatic {
+				gpuID := fmt.Sprintf("%d", i)
+				
+				if maxMem, ok := info["maxMemory"]; ok {
+					gpuMaxMemory.With(prometheus.Labels{
+						"gpu":  gpuID,
+						"node": nodeName,
+					}).Set(maxMem)
+					klog.V(2).InfoS("Recorded static GPU memory", "gpu", gpuID, "maxMemory", maxMem)
+				}
+				
+				if maxPower, ok := info["maxPower"]; ok {
+					gpuMaxPower.With(prometheus.Labels{
+						"gpu":  gpuID,
+						"node": nodeName,
+					}).Set(maxPower)
+					klog.V(2).InfoS("Recorded static GPU power limit", "gpu", gpuID, "maxPower", maxPower)
+				}
+			}
+		}
+	}
+
+	// Start periodic collection of current metrics
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			// === CPU METRICS ===
 			// Record current frequency for each CPU
 			for i := 0; i < cpuCount; i++ {
 				freq, err := getCurrentCPUFrequency(i)
@@ -307,6 +719,45 @@ func recordMetrics(nodeName string) {
 					"cpu":  cpuID,
 					"node": nodeName,
 				}).Set(freq)
+			}
+			
+			// === GPU METRICS ===
+			// Only collect GPU metrics if GPUs are available
+			if hasGPU {
+				gpuMetrics, err := getCurrentGPUMetrics()
+				if err != nil {
+					klog.V(2).ErrorS(err, "Failed to get current GPU metrics")
+					continue
+				}
+				
+				// Record metrics for each GPU
+				for i, metrics := range gpuMetrics {
+					gpuID := fmt.Sprintf("%d", i)
+					
+					if util, ok := metrics["utilization"]; ok {
+						gpuUtilization.With(prometheus.Labels{
+							"gpu":  gpuID,
+							"node": nodeName,
+						}).Set(util)
+						klog.V(2).InfoS("Recorded GPU utilization", "gpu", gpuID, "utilization", util)
+					}
+					
+					if memUtil, ok := metrics["memoryUtilization"]; ok {
+						gpuMemoryUtilization.With(prometheus.Labels{
+							"gpu":  gpuID,
+							"node": nodeName,
+						}).Set(memUtil)
+						klog.V(2).InfoS("Recorded GPU memory utilization", "gpu", gpuID, "memoryUtilization", memUtil)
+					}
+					
+					if power, ok := metrics["powerDraw"]; ok {
+						gpuPower.With(prometheus.Labels{
+							"gpu":  gpuID,
+							"node": nodeName,
+						}).Set(power)
+						klog.V(2).InfoS("Recorded GPU power draw", "gpu", gpuID, "powerDraw", power)
+					}
+				}
 			}
 		}
 	}
@@ -491,6 +942,12 @@ func main() {
 	// Annotate the node with CPU model info
 	if err := annotateCPUModel(clientset, nodeName); err != nil {
 		klog.ErrorS(err, "Failed to annotate node with CPU model information")
+		// Continue running even if annotation fails
+	}
+	
+	// Annotate the node with GPU info if available
+	if err := annotateNodeGPUInfo(clientset, nodeName); err != nil {
+		klog.ErrorS(err, "Failed to annotate node with GPU information")
 		// Continue running even if annotation fails
 	}
 

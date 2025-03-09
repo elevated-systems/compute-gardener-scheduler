@@ -358,25 +358,8 @@ func (cs *ComputeGardenerScheduler) updateEnergyBudgetTracking(ctx context.Conte
 			continue
 		}
 
-		// Calculate current energy usage
-		currentEnergyKWh := 0.0
-
-		// Integrate over the time series using trapezoid rule
-		for i := 1; i < len(metricsHistory.Records); i++ {
-			current := metricsHistory.Records[i]
-			previous := metricsHistory.Records[i-1]
-
-			// Time difference in hours
-			deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
-
-			// Average power during this interval (W)
-			avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
-
-			// Energy used in this interval (kWh)
-			intervalEnergy := (avgPower * deltaHours) / 1000
-
-			currentEnergyKWh += intervalEnergy
-		}
+		// Calculate current energy usage using utility function
+		currentEnergyKWh := metrics.CalculateTotalEnergy(metricsHistory.Records)
 
 		// Calculate percentage of budget used
 		usagePercent := (currentEnergyKWh / budget) * 100

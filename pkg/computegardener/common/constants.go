@@ -53,13 +53,17 @@ const (
 	// Node annotations
 	// ----------------------------------------
 	
-	// Hardware annotations
+	// Hardware annotations - CPU
 	AnnotationCPUModel = AnnotationBase + "/cpu-model" 
-	AnnotationGPUModel = AnnotationBase + "/gpu-model"
 	AnnotationCPUBaseFrequency = AnnotationBase + "/cpu-base-frequency" // Base/nominal CPU frequency in GHz
 	AnnotationCPUMinFrequency = AnnotationBase + "/cpu-min-frequency" // Minimum CPU frequency in GHz
 	AnnotationCPUMaxFrequency = AnnotationBase + "/cpu-max-frequency" // Maximum CPU frequency in GHz
 	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
+	
+	// Hardware annotations - GPU
+	AnnotationGPUModel = AnnotationBase + "/gpu-model"
+	AnnotationGPUCount = AnnotationBase + "/gpu-count"
+	AnnotationGPUTotalPower = AnnotationBase + "/gpu-total-power"
 )
 
 // Energy budget actions
@@ -91,10 +95,18 @@ const (
 	DefaultGPUPUE = 1.15
 )
 
-// Prometheus metric names for CPU frequency monitoring
+// Prometheus metric names for hardware monitoring
 const (
+	// CPU metrics
 	MetricCPUFrequencyGHz    = "node_cpu_frequency_ghz"      // Current CPU frequency in GHz
 	MetricCPUBaseFrequencyGHz = "node_cpu_base_frequency_ghz" // Base/nominal CPU frequency in GHz
 	MetricCPUMinFrequencyGHz  = "node_cpu_min_frequency_ghz"  // Minimum CPU frequency in GHz
 	MetricCPUMaxFrequencyGHz  = "node_cpu_max_frequency_ghz"  // Maximum CPU frequency in GHz
+	
+	// GPU metrics
+	MetricGPUCount = "compute_gardener_gpu_count"                  // Number of GPUs on a node
+	MetricGPUPower = "compute_gardener_gpu_power_watts"            // Current GPU power consumption in watts
+	MetricGPUMaxPower = "compute_gardener_gpu_max_power_watts"     // Maximum GPU power limit in watts
+	MetricGPUUtilization = "compute_gardener_gpu_utilization_percent" // GPU utilization percentage
+	MetricGPUMemoryUtilization = "compute_gardener_gpu_memory_utilization_percent" // GPU memory utilization percentage
 )

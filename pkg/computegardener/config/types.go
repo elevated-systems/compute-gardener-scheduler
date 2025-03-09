@@ -64,10 +64,18 @@ type HardwareComponents struct {
 
 // MetricsConfig holds configuration for metrics collection and storage
 type MetricsConfig struct {
-	SamplingInterval     string `yaml:"samplingInterval"`     // e.g. "30s" or "1m"
-	MaxSamplesPerPod     int    `yaml:"maxSamplesPerPod"`     // e.g. 1000
-	PodRetention         string `yaml:"podRetention"`         // e.g. "1h"
-	DownsamplingStrategy string `yaml:"downsamplingStrategy"` // "lttb", "timeBased", "minMax"
+	SamplingInterval     string           `yaml:"samplingInterval"`     // e.g. "30s" or "1m"
+	MaxSamplesPerPod     int              `yaml:"maxSamplesPerPod"`     // e.g. 1000
+	PodRetention         string           `yaml:"podRetention"`         // e.g. "1h"
+	DownsamplingStrategy string           `yaml:"downsamplingStrategy"` // "lttb", "timeBased", "minMax"
+	Prometheus          *PrometheusConfig `yaml:"prometheus,omitempty"` // Prometheus configuration
+}
+
+// PrometheusConfig holds configuration for Prometheus metrics integration
+type PrometheusConfig struct {
+	URL             string `yaml:"url"`             // Prometheus server URL, e.g. "http://prometheus.monitoring:9090"
+	QueryTimeout    string `yaml:"queryTimeout"`    // Prometheus query timeout, e.g. "30s"
+	CompletionDelay string `yaml:"completionDelay"` // Delay after pod completion before collecting final metrics, e.g. "30s"
 }
 
 // NodePower holds power settings for a specific node
@@ -227,6 +235,27 @@ func (c *Config) Validate() error {
 	   c.Metrics.DownsamplingStrategy != "minMax" {
 		return fmt.Errorf("invalid downsampling strategy: %s (must be one of: lttb, timeBased, minMax)", 
 			c.Metrics.DownsamplingStrategy)
+	}
+	
+	// Validate Prometheus config if provided
+	if c.Metrics.Prometheus != nil {
+		if c.Metrics.Prometheus.URL == "" {
+			return fmt.Errorf("Prometheus URL must be provided if Prometheus config is enabled")
+		}
+		
+		// Validate query timeout if provided
+		if c.Metrics.Prometheus.QueryTimeout != "" {
+			if _, err := time.ParseDuration(c.Metrics.Prometheus.QueryTimeout); err != nil {
+				return fmt.Errorf("invalid Prometheus query timeout: %v", err)
+			}
+		}
+		
+		// Validate completion delay if provided
+		if c.Metrics.Prometheus.CompletionDelay != "" {
+			if _, err := time.ParseDuration(c.Metrics.Prometheus.CompletionDelay); err != nil {
+				return fmt.Errorf("invalid pod completion delay: %v", err)
+			}
+		}
 	}
 
 	return nil

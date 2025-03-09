@@ -91,11 +91,12 @@ hardwareProfiles:
   enabled: true
   mountPath: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles"
 
-# CPU information exporter configuration
-cpuExporter:
-  # Enable the CPU information exporter DaemonSet for more accurate CPU model detection and power measurements
+# Node exporter configuration for hardware metrics 
+nodeExporter:
+  # Enable the hardware metrics exporter DaemonSet for accurate CPU/GPU model detection and power measurements
+  # Note: For GPU metrics, requires nodes with NVIDIA GPUs and nvidia-smi installed
   enabled: false
-  image: docker.io/dmasselink/compute-gardener-cpu-exporter:v0.1.4-fa4ec13
+  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.4-fa4ec13
   imagePullPolicy: IfNotPresent
   resources:
     requests:

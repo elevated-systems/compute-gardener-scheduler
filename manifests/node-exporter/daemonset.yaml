@@ -1,30 +1,30 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   namespace: kube-system
   labels:
-    app: compute-gardener-cpu-exporter
+    app: compute-gardener-node-exporter
     component: metrics
     part-of: compute-gardener-scheduler
 spec:
   selector:
     matchLabels:
-      app: compute-gardener-cpu-exporter
+      app: compute-gardener-node-exporter
   template:
     metadata:
       labels:
-        app: compute-gardener-cpu-exporter
+        app: compute-gardener-node-exporter
         component: metrics
         part-of: compute-gardener-scheduler
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9100"
     spec:
-      serviceAccountName: compute-gardener-cpu-exporter
+      serviceAccountName: compute-gardener-node-exporter
       containers:
       - name: exporter
-        image: docker.io/dmasselink/compute-gardener-cpu-exporter:v0.1.3-alpha-5a67f00
+        image: docker.io/dmasselink/compute-gardener-node-exporter:latest
         imagePullPolicy: IfNotPresent
         args:
         - --metrics-addr=:9100
@@ -88,7 +88,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   namespace: kube-system
   labels:
     part-of: compute-gardener-scheduler
@@ -96,7 +96,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   labels:
     part-of: compute-gardener-scheduler
 rules:
@@ -107,25 +107,25 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   labels:
     part-of: compute-gardener-scheduler
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
 subjects:
 - kind: ServiceAccount
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   namespace: kube-system
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: compute-gardener-cpu-exporter
+  name: compute-gardener-node-exporter
   namespace: kube-system
   labels:
-    app: compute-gardener-cpu-exporter
+    app: compute-gardener-node-exporter
     part-of: compute-gardener-scheduler
   annotations:
     prometheus.io/scrape: "true"
@@ -138,4 +138,4 @@ spec:
     protocol: TCP
     name: metrics
   selector:
-    app: compute-gardener-cpu-exporter
+    app: compute-gardener-node-exporter

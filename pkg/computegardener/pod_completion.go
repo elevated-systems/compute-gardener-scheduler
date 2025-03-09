@@ -3,8 +3,10 @@ package computegardener
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
@@ -29,6 +31,38 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 	namespace := pod.Namespace
 	nodeName := pod.Spec.NodeName
 
+	// Check if we should delay metrics collection to allow final metrics to be collected
+	// This is useful when using Prometheus metrics which may have a lag in reporting
+	if cs.config.Metrics.Prometheus != nil && cs.config.Metrics.Prometheus.CompletionDelay != "" {
+		// Parse the delay duration
+		delay, err := time.ParseDuration(cs.config.Metrics.Prometheus.CompletionDelay)
+		if err == nil && delay > 0 {
+			klog.V(2).InfoS("Delaying pod completion handling to allow metrics collection",
+				"pod", klog.KObj(pod),
+				"delay", delay.String())
+				
+			// Start a goroutine to handle this after delay
+			go func() {
+				// Sleep for the specified delay
+				time.Sleep(delay)
+				
+				// Continue with metrics processing
+				cs.processPodCompletionMetrics(pod, podUID, podName, namespace, nodeName)
+			}()
+			
+			return
+		} else if err != nil {
+			klog.V(2).ErrorS(err, "Invalid completion delay, proceeding immediately",
+				"pod", klog.KObj(pod))
+		}
+	}
+	
+	// Process pod completion metrics immediately if no delay configured
+	cs.processPodCompletionMetrics(pod, podUID, podName, namespace, nodeName)
+}
+
+// processPodCompletionMetrics processes metrics for a completed pod
+func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, podUID, podName, namespace, nodeName string) {
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
 
@@ -53,33 +87,9 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 		"podUID", podUID,
 		"recordCount", len(metricsHistory.Records))
 
-	// Calculate energy usage by numerical integration (trapezoid rule)
-	totalEnergyKWh := 0.0
-	totalCarbonEmissions := 0.0
-
-	// Integrate over the time series
-	for i := 1; i < len(metricsHistory.Records); i++ {
-		current := metricsHistory.Records[i]
-		previous := metricsHistory.Records[i-1]
-
-		// Time difference in hours
-		deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
-
-		// Average power during this interval (W)
-		avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
-
-		// Energy used in this interval (kWh)
-		intervalEnergy := (avgPower * deltaHours) / 1000
-
-		// Average carbon intensity during this interval (gCO2eq/kWh)
-		avgCarbonIntensity := (current.CarbonIntensity + previous.CarbonIntensity) / 2
-
-		// Carbon emissions for this interval (gCO2eq)
-		intervalCarbon := intervalEnergy * avgCarbonIntensity
-
-		totalEnergyKWh += intervalEnergy
-		totalCarbonEmissions += intervalCarbon
-	}
+	// Calculate energy and carbon emissions using our utility functions
+	totalEnergyKWh := metrics.CalculateTotalEnergy(metricsHistory.Records)
+	totalCarbonEmissions := metrics.CalculateTotalCarbonEmissions(metricsHistory.Records)
 
 	// Validate values before recording
 	if totalEnergyKWh <= 0 {

@@ -159,8 +159,24 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			klog.ErrorS(err, "Failed to initialize metrics-server client, energy metrics will be limited")
 		}
 
-		// Initialize a null GPU metrics client (stub for future implementation)
-		gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+		// Initialize GPU metrics client - use Prometheus if configured, otherwise use null client
+		if cfg.Metrics.Prometheus != nil && cfg.Metrics.Prometheus.URL != "" {
+			klog.InfoS("Initializing Prometheus GPU metrics client", 
+				"url", cfg.Metrics.Prometheus.URL)
+			
+			prometheusClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
+			if err != nil {
+				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
+				gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+			} else {
+				gpuMetricsClient = prometheusClient
+				klog.InfoS("Prometheus GPU metrics client initialized successfully")
+			}
+		} else {
+			// Initialize a null GPU metrics client as fallback
+			klog.V(2).InfoS("No Prometheus URL configured, using null GPU metrics client")
+			gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+		}
 	}
 
 	scheduler := &ComputeGardenerScheduler{
