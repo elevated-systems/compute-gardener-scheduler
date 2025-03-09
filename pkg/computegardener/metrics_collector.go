@@ -83,6 +83,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	gpuUtilizations := make(map[string]float64)
 	if cs.gpuMetricsClient != nil {
 		if utils, err := cs.gpuMetricsClient.ListPodsGPUUtilization(ctx); err == nil {
+				klog.V(1).InfoS("Retrieved GPU utilizations", "count", len(gpuUtilizations), "values", gpuUtilizations)
 			gpuUtilizations = utils
 		} else {
 			klog.ErrorS(err, "Failed to list GPU utilizations")
@@ -143,11 +144,26 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 
 		// Get GPU utilization for this pod
-		gpuUtilization := 0.0
-		key := podMetrics.Namespace + "/" + podMetrics.Name
-		if util, exists := gpuUtilizations[key]; exists {
-			gpuUtilization = util
-		}
+			// Get GPU utilization for this pod
+			gpuUtilization := 0.0
+			key := podMetrics.Namespace + "/" + podMetrics.Name
+			if util, exists := gpuUtilizations[key]; exists {
+				gpuUtilization = util
+				klog.V(1).InfoS("Found GPU utilization for pod", "pod", key, "utilization", gpuUtilization)
+			} else {
+				// Also check for GPU ID based metrics (format: gpu/UUID)
+				for gpuKey, gpuUtil := range gpuUtilizations {
+					klog.V(1).InfoS("Checking GPU utilization", "gpuKey", gpuKey, "podKey", key)
+					
+					// If this pod uses nvidia runtime, attribute GPU to it
+					if pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == "nvidia" {
+						gpuUtilization = gpuUtil
+						klog.V(1).InfoS("Attributed GPU to pod with nvidia runtime", 
+							"pod", key, "gpuKey", gpuKey, "utilization", gpuUtil)
+						break
+					}
+				}
+			}
 
 		// Calculate pod metrics record
 		record := metrics.CalculatePodMetrics(
@@ -252,11 +268,29 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	gpuPower := 0.0
 	if gpu > 0 {
 		gpuPower = idleGPUPower + (maxGPUPower-idleGPUPower)*gpu
+		klog.V(1).InfoS("Calculated GPU power contribution", 
+			"node", nodeName,
+			"gpuUtilization", gpu,
+			"idleGPUPower", idleGPUPower,
+			"maxGPUPower", maxGPUPower,
+			"calculatedGPUPower", gpuPower)
+	} else {
+		klog.V(1).InfoS("No GPU utilization reported", "node", nodeName, "gpuUtilization", gpu)
 	}
+
+	totalPower := cpuPower + gpuPower
+	
+	klog.V(1).InfoS("Power calculation breakdown", 
+		"node", nodeName,
+		"cpuUtilization", cpu, 
+		"gpuUtilization", gpu,
+		"cpuPower", cpuPower,
+		"gpuPower", gpuPower,
+		"totalPower", totalPower)
 
 	// Total power is sum of CPU and GPU power
 	// TODO: Add memory power model once we have better data
-	return cpuPower + gpuPower
+	return totalPower
 }
 
 // getNodeCPUFrequency attempts to get the current CPU frequency for a node from Prometheus

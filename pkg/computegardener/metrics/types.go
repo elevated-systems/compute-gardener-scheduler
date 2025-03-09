@@ -2,6 +2,8 @@ package metrics
 
 import (
 	"time"
+
+	"k8s.io/klog/v2"
 )
 
 // PodMetricsRecord represents a point-in-time measurement of pod resource usage
@@ -77,6 +79,24 @@ func CalculateTotalEnergy(records []PodMetricsRecord) float64 {
 
 		// Energy used in this interval (kWh)
 		intervalEnergy := (avgPower * deltaHours) / 1000
+
+		// Add detailed logging at key intervals
+		if i == 1 || i == len(records)-1 || i%(len(records)/10+1) == 0 {
+			klog.V(1).InfoS("Energy calculation detail",
+				"interval", i,
+				"previousTime", previous.Timestamp,
+				"currentTime", current.Timestamp,
+				"deltaHours", deltaHours,
+				"previousPower", previous.PowerEstimate,
+				"currentPower", current.PowerEstimate,
+				"avgPower", avgPower,
+				"intervalEnergy", intervalEnergy,
+				"runningTotal", totalEnergyKWh+intervalEnergy,
+				"previousCPU", previous.CPU,
+				"currentCPU", current.CPU,
+				"previousGPU", previous.GPU,
+				"currentGPU", current.GPU)
+		}
 
 		totalEnergyKWh += intervalEnergy
 	}

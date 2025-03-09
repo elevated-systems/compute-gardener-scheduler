@@ -87,6 +87,38 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"podUID", podUID,
 		"recordCount", len(metricsHistory.Records))
 
+	// Log a sample of the metrics record to verify GPU data
+	if len(metricsHistory.Records) > 0 {
+		firstRecord := metricsHistory.Records[0]
+		midIndex := len(metricsHistory.Records) / 2
+		midRecord := metricsHistory.Records[midIndex]
+		lastRecord := metricsHistory.Records[len(metricsHistory.Records)-1]
+		
+		klog.V(1).InfoS("Sample metrics records for energy calculation",
+			"pod", klog.KObj(pod),
+			"firstRecord", map[string]interface{}{
+				"timestamp": firstRecord.Timestamp,
+				"cpu": firstRecord.CPU,
+				"memory": firstRecord.Memory,
+				"gpu": firstRecord.GPU,
+				"powerEstimate": firstRecord.PowerEstimate,
+			},
+			"midRecord", map[string]interface{}{
+				"timestamp": midRecord.Timestamp,
+				"cpu": midRecord.CPU,
+				"memory": midRecord.Memory,
+				"gpu": midRecord.GPU,
+				"powerEstimate": midRecord.PowerEstimate,
+			},
+			"lastRecord", map[string]interface{}{
+				"timestamp": lastRecord.Timestamp,
+				"cpu": lastRecord.CPU,
+				"memory": lastRecord.Memory,
+				"gpu": lastRecord.GPU,
+				"powerEstimate": lastRecord.PowerEstimate,
+			})
+	}
+	
 	// Calculate energy and carbon emissions using our utility functions
 	totalEnergyKWh := metrics.CalculateTotalEnergy(metricsHistory.Records)
 	totalCarbonEmissions := metrics.CalculateTotalCarbonEmissions(metricsHistory.Records)
