@@ -55,6 +55,18 @@ spec:
         - name: sys
           mountPath: /sys
           readOnly: true
+        - name: nvidia-driver
+          mountPath: /usr/local/nvidia
+        - name: nvidia-driver-run
+          mountPath: /run/nvidia/driver
+        - name: nvidia-lib
+          mountPath: /usr/lib/nvidia
+        - name: host-libs
+          mountPath: /host-lib
+        - name: host-libs64
+          mountPath: /host-lib64
+        - name: dev
+          mountPath: /dev
         resources:
           {{- if .Values.nodeExporter.gpu.requestZeroGpu }}
           limits:
@@ -88,6 +100,24 @@ spec:
       - name: sys
         hostPath:
           path: /sys
+      - name: nvidia-driver
+        hostPath:
+          path: /usr/local/nvidia
+      - name: nvidia-driver-run
+        hostPath:
+          path: /run/nvidia/driver
+      - name: nvidia-lib
+        hostPath:
+          path: /usr/lib/nvidia
+      - name: host-libs
+        hostPath:
+          path: /usr/lib
+      - name: host-libs64
+        hostPath:
+          path: /usr/lib64
+      - name: dev
+        hostPath:
+          path: /dev
       # These tolerations ensure the DaemonSet runs on GPU nodes, which might have taints
       tolerations:
       - key: nvidia.com/gpu

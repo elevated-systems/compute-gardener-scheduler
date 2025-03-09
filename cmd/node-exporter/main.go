@@ -815,6 +815,38 @@ func recordGPUMetrics(nodeName string) {
 		// Check environment variables
 		envOutput, _ := exec.Command("bash", "-c", "env | grep -i nvidia || true").CombinedOutput()
 		klog.InfoS("NVIDIA environment variables", "env", string(envOutput))
+		
+		// Try to find and link important NVIDIA libraries
+		potentialLibPaths := []string{
+			"/usr/lib", "/usr/lib64", 
+			"/host-lib", "/host-lib64",
+			"/usr/local/nvidia/lib", "/usr/local/nvidia/lib64",
+			"/run/nvidia/driver/lib", "/run/nvidia/driver/lib64",
+			"/usr/lib/nvidia", "/usr/lib64/nvidia",
+		}
+		
+		// Check for NVIDIA libraries in potential locations
+		for _, libDir := range potentialLibPaths {
+			output, _ := exec.Command("bash", "-c", "ls -la " + libDir + "/libnvidia-ml* 2>/dev/null || true").CombinedOutput()
+			if len(output) > 0 {
+				klog.InfoS("Found NVIDIA libraries", "path", libDir, "output", string(output))
+				
+				// Try to create symlinks to libraries for nvidia-smi
+				linkCmd := exec.Command("bash", "-c", "ln -sf " + libDir + "/libnvidia-ml* /usr/lib/ 2>/dev/null || true")
+				linkCmd.Run() // Ignore errors
+				
+				// Log what we did
+				klog.InfoS("Created symlinks to NVIDIA libraries", "from", libDir, "to", "/usr/lib/")
+			}
+		}
+		
+		// Check LD_LIBRARY_PATH and search paths
+		ldOutput, _ := exec.Command("bash", "-c", "echo $LD_LIBRARY_PATH").CombinedOutput()
+		klog.InfoS("LD_LIBRARY_PATH", "value", strings.TrimSpace(string(ldOutput)))
+		
+		// Check library configuration
+		ldConfigOutput, _ := exec.Command("bash", "-c", "ldconfig -p | grep -i nvidia || true").CombinedOutput()
+		klog.InfoS("NVIDIA libraries in ldconfig", "output", string(ldConfigOutput))
 	}
 
 	// Verify that NVIDIA GPUs are available
