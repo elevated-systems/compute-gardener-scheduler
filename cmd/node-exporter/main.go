@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	namespace = "compute_gardener"
+	namespace    = "compute_gardener"
 	cpuSubsystem = "cpu"
 	gpuSubsystem = "gpu"
 )
@@ -51,7 +51,7 @@ var (
 		},
 		[]string{"cpu", "node", "type"},
 	)
-	
+
 	// GPU Prometheus metrics - Dynamic
 	gpuPower = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -62,7 +62,7 @@ var (
 		},
 		[]string{"gpu", "node"},
 	)
-	
+
 	gpuUtilization = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -72,7 +72,7 @@ var (
 		},
 		[]string{"gpu", "node"},
 	)
-	
+
 	gpuMemoryUtilization = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -82,7 +82,7 @@ var (
 		},
 		[]string{"gpu", "node"},
 	)
-	
+
 	// GPU Prometheus metrics - Static
 	gpuCount = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -92,7 +92,7 @@ var (
 			Help:      "Number of GPUs detected on the node",
 		},
 	)
-	
+
 	gpuMaxMemory = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -102,7 +102,7 @@ var (
 		},
 		[]string{"gpu", "node"},
 	)
-	
+
 	gpuMaxPower = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
@@ -119,12 +119,12 @@ func init() {
 	// CPU metrics
 	prometheus.MustRegister(cpuFrequency)
 	prometheus.MustRegister(cpuFrequencyStatic)
-	
+
 	// GPU metrics - Dynamic
 	prometheus.MustRegister(gpuPower)
 	prometheus.MustRegister(gpuUtilization)
 	prometheus.MustRegister(gpuMemoryUtilization)
-	
+
 	// GPU metrics - Static
 	prometheus.MustRegister(gpuCount)
 	prometheus.MustRegister(gpuMaxMemory)
@@ -335,22 +335,22 @@ func findNvidiaSmi() string {
 		klog.V(2).InfoS("Found nvidia-smi in PATH", "path", nvidiaSmi)
 		return nvidiaSmi
 	}
-	
+
 	// Try common alternative names that might be symlinked
 	alternativeNames := []string{
 		"nvidia-smi",
-		"nvidia-sm",  // Some systems abbreviate
-		"smi",        // Some container environments simplify
-		"nvidia",     // Some systems use just nvidia as the command
+		"nvidia-sm", // Some systems abbreviate
+		"smi",       // Some container environments simplify
+		"nvidia",    // Some systems use just nvidia as the command
 	}
-	
+
 	for _, name := range alternativeNames {
 		if path, err := exec.LookPath(name); err == nil {
 			klog.V(2).InfoS("Found nvidia-smi via alternative name", "name", name, "path", path)
 			return path
 		}
 	}
-	
+
 	// Common locations for nvidia-smi
 	commonLocations := []string{
 		"/usr/bin/nvidia-smi",
@@ -360,12 +360,12 @@ func findNvidiaSmi() string {
 		"/usr/lib/nvidia-smi",
 		"/usr/lib/nvidia/nvidia-smi",
 		"/usr/lib64/nvidia/bin/nvidia-smi",
-		"/usr/local/cuda/bin/nvidia-smi",  // CUDA installation
+		"/usr/local/cuda/bin/nvidia-smi",    // CUDA installation
 		"/opt/nvidia/containers/nvidia-smi", // Container specific path
 		"/var/lib/nvidia/bin/nvidia-smi",    // Another common location
 		// Add more common locations if needed
 	}
-	
+
 	// Check each location - os.Stat follows symlinks
 	for _, location := range commonLocations {
 		if fileInfo, err := os.Stat(location); err == nil && !fileInfo.IsDir() {
@@ -373,14 +373,14 @@ func findNvidiaSmi() string {
 			return location
 		}
 	}
-	
+
 	// Try to use find command to locate nvidia-smi in common parent directories
 	findCommands := []string{
 		"find /usr -name nvidia-smi -type f -o -type l 2>/dev/null | head -1",
 		"find /opt -name nvidia-smi -type f -o -type l 2>/dev/null | head -1",
 		"find / -name nvidia-smi -type f -o -type l -path '*/bin/*' 2>/dev/null | head -1",
 	}
-	
+
 	for _, findCmd := range findCommands {
 		cmd := exec.Command("bash", "-c", findCmd)
 		output, err := cmd.Output()
@@ -392,7 +392,7 @@ func findNvidiaSmi() string {
 			}
 		}
 	}
-	
+
 	// Try to find it using the 'which' command as a fallback
 	cmd := exec.Command("bash", "-c", "which nvidia-smi")
 	output, err := cmd.Output()
@@ -401,7 +401,7 @@ func findNvidiaSmi() string {
 		klog.V(2).InfoS("Found nvidia-smi using 'which'", "path", path)
 		return path
 	}
-	
+
 	klog.V(2).InfoS("nvidia-smi not found in any common location")
 	return ""
 }
@@ -422,12 +422,12 @@ func hasNvidiaGPU() bool {
 	output, err := cmd.Output()
 	if err != nil {
 		// Log detailed error information
-		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs", 
-			"path", nvidiaSmi, 
+		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs",
+			"path", nvidiaSmi,
 			"error", err,
 			"stderr", stderr.String(),
 			"exitCode", cmd.ProcessState.ExitCode())
-		
+
 		// Additional debugging - check if we're running in the nvidia runtime
 		runtimeCmd := exec.Command("bash", "-c", "cat /proc/self/mountinfo | grep nvidia")
 		runtimeOutput, _ := runtimeCmd.CombinedOutput()
@@ -435,13 +435,13 @@ func hasNvidiaGPU() bool {
 		if len(runtimeOutput) > 0 {
 			klog.V(3).InfoS("Runtime details", "output", string(runtimeOutput))
 		}
-		
+
 		return false
 	}
 
 	count, err := strconv.Atoi(strings.TrimSpace(string(output)))
 	if err != nil || count == 0 {
-		klog.V(2).InfoS("No NVIDIA GPUs detected with nvidia-smi", 
+		klog.V(2).InfoS("No NVIDIA GPUs detected with nvidia-smi",
 			"output", string(output))
 		return false
 	}
@@ -508,13 +508,13 @@ func getGPUStaticInfo() ([]map[string]float64, error) {
 			klog.V(2).InfoS("Unexpected memory format", "value", fields[1])
 			continue
 		}
-		
+
 		memory, err := strconv.ParseFloat(memParts[0], 64)
 		if err != nil {
 			klog.V(2).InfoS("Failed to parse GPU memory", "value", memParts[0], "error", err)
 			continue
 		}
-		
+
 		// Convert MiB to bytes
 		memoryBytes := memory * 1024 * 1024
 
@@ -524,7 +524,7 @@ func getGPUStaticInfo() ([]map[string]float64, error) {
 			klog.V(2).InfoS("Unexpected power format", "value", fields[2])
 			continue
 		}
-		
+
 		power, err := strconv.ParseFloat(powerParts[0], 64)
 		if err != nil {
 			klog.V(2).InfoS("Failed to parse GPU power limit", "value", powerParts[0], "error", err)
@@ -586,7 +586,7 @@ func getCurrentGPUMetrics() ([]map[string]float64, error) {
 			klog.V(2).InfoS("Unexpected GPU utilization format", "value", fields[1])
 			continue
 		}
-		
+
 		gpuUtil, err := strconv.ParseFloat(gpuUtilParts[0], 64)
 		if err != nil {
 			klog.V(2).InfoS("Failed to parse GPU utilization", "value", gpuUtilParts[0], "error", err)
@@ -599,7 +599,7 @@ func getCurrentGPUMetrics() ([]map[string]float64, error) {
 			klog.V(2).InfoS("Unexpected memory utilization format", "value", fields[2])
 			continue
 		}
-		
+
 		memUtil, err := strconv.ParseFloat(memUtilParts[0], 64)
 		if err != nil {
 			klog.V(2).InfoS("Failed to parse memory utilization", "value", memUtilParts[0], "error", err)
@@ -612,7 +612,7 @@ func getCurrentGPUMetrics() ([]map[string]float64, error) {
 			klog.V(2).InfoS("Unexpected power draw format", "value", fields[3])
 			continue
 		}
-		
+
 		powerDraw, err := strconv.ParseFloat(powerDrawParts[0], 64)
 		if err != nil {
 			klog.V(2).InfoS("Failed to parse power draw", "value", powerDrawParts[0], "error", err)
@@ -697,7 +697,7 @@ func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error
 	// Add GPU annotations
 	nodeCopy.Annotations[common.AnnotationGPUCount] = fmt.Sprintf("%d", gpuCount)
 	nodeCopy.Annotations[common.AnnotationGPUTotalPower] = fmt.Sprintf("%.2f", totalMaxPower)
-	
+
 	if len(gpuModels) > 0 {
 		// Join model names with comma
 		nodeCopy.Annotations[common.AnnotationGPUModel] = strings.Join(gpuModels, ",")
@@ -779,14 +779,62 @@ func recordCPUMetrics(nodeName string) {
 
 // recordGPUMetrics collects and records GPU-specific metrics
 func recordGPUMetrics(nodeName string) {
+	// Additional diagnostics in GPU mode to help debug issues
+	nvidiaSmiPath := findNvidiaSmi()
+	if nvidiaSmiPath != "" {
+		// Let's check if the file is really executable
+		fileInfo, err := os.Stat(nvidiaSmiPath)
+		if err != nil {
+			klog.InfoS("nvidia-smi stat error", "path", nvidiaSmiPath, "error", err)
+		} else {
+			klog.InfoS("nvidia-smi file info", 
+				"path", nvidiaSmiPath,
+				"mode", fileInfo.Mode().String(),
+				"size", fileInfo.Size(),
+				"isDir", fileInfo.IsDir())
+		}
+		
+		// Try to list the directory contents to see what's available
+		dirPath := filepath.Dir(nvidiaSmiPath)
+		files, err := os.ReadDir(dirPath)
+		if err != nil {
+			klog.InfoS("Failed to read nvidia-smi directory", "dir", dirPath, "error", err)
+		} else {
+			fileList := make([]string, 0, len(files))
+			for _, f := range files {
+				fileList = append(fileList, f.Name())
+			}
+			klog.InfoS("Directory contents", "dir", dirPath, "files", strings.Join(fileList, ", "))
+		}
+		
+		// Check libs to see if NVIDIA libs are available
+		cmd := exec.Command("bash", "-c", "ldd " + nvidiaSmiPath + " || true")
+		output, _ := cmd.CombinedOutput()
+		klog.InfoS("nvidia-smi library dependencies", "output", string(output))
+		
+		// Check environment variables
+		envOutput, _ := exec.Command("bash", "-c", "env | grep -i nvidia || true").CombinedOutput()
+		klog.InfoS("NVIDIA environment variables", "env", string(envOutput))
+	}
+
 	// Verify that NVIDIA GPUs are available
 	if !hasNvidiaGPU() {
 		klog.ErrorS(fmt.Errorf("no NVIDIA GPUs detected"), "Cannot collect GPU metrics in GPU mode")
+		
+		// Additional diagnostics for GPU detection
+		klog.InfoS("Checking device files", "command", "ls -la /dev/nvidia*")
+		devOutput, _ := exec.Command("bash", "-c", "ls -la /dev/nvidia* 2>/dev/null || true").CombinedOutput()
+		klog.InfoS("GPU device files", "output", string(devOutput))
+
+		// Check PCI devices
+		pciOutput, _ := exec.Command("bash", "-c", "lspci | grep -i nvidia || true").CombinedOutput()
+		klog.InfoS("PCI devices", "nvidia_devices", string(pciOutput))
+
 		// We'll still keep running, but won't collect any metrics
 		select {} // Block forever
 		return
 	}
-	
+
 	// Get GPU count and set metric
 	count, err := getGPUCount()
 	if err != nil {
@@ -795,7 +843,7 @@ func recordGPUMetrics(nodeName string) {
 		gpuCount.Set(float64(count))
 		klog.V(2).InfoS("Set GPU count metric", "count", count)
 	}
-	
+
 	// Get static GPU information
 	gpuStatic, err := getGPUStaticInfo()
 	if err != nil {
@@ -804,7 +852,7 @@ func recordGPUMetrics(nodeName string) {
 		// Record static information for each GPU
 		for i, info := range gpuStatic {
 			gpuID := fmt.Sprintf("%d", i)
-			
+
 			if maxMem, ok := info["maxMemory"]; ok {
 				gpuMaxMemory.With(prometheus.Labels{
 					"gpu":  gpuID,
@@ -812,7 +860,7 @@ func recordGPUMetrics(nodeName string) {
 				}).Set(maxMem)
 				klog.V(2).InfoS("Recorded static GPU memory", "gpu", gpuID, "maxMemory", maxMem)
 			}
-			
+
 			if maxPower, ok := info["maxPower"]; ok {
 				gpuMaxPower.With(prometheus.Labels{
 					"gpu":  gpuID,
@@ -835,11 +883,11 @@ func recordGPUMetrics(nodeName string) {
 				klog.V(2).ErrorS(err, "Failed to get current GPU metrics")
 				continue
 			}
-			
+
 			// Record metrics for each GPU
 			for i, metrics := range gpuMetrics {
 				gpuID := fmt.Sprintf("%d", i)
-				
+
 				if util, ok := metrics["utilization"]; ok {
 					gpuUtilization.With(prometheus.Labels{
 						"gpu":  gpuID,
@@ -847,22 +895,21 @@ func recordGPUMetrics(nodeName string) {
 					}).Set(util)
 					klog.V(2).InfoS("Recorded GPU utilization", "gpu", gpuID, "utilization", util)
 				}
-				
+
 				if memUtil, ok := metrics["memoryUtilization"]; ok {
 					gpuMemoryUtilization.With(prometheus.Labels{
 						"gpu":  gpuID,
 						"node": nodeName,
 					}).Set(memUtil)
-						klog.V(2).InfoS("Recorded GPU memory utilization", "gpu", gpuID, "memoryUtilization", memUtil)
-					}
-					
-					if power, ok := metrics["powerDraw"]; ok {
-						gpuPower.With(prometheus.Labels{
-							"gpu":  gpuID,
-							"node": nodeName,
-						}).Set(power)
-						klog.V(2).InfoS("Recorded GPU power draw", "gpu", gpuID, "powerDraw", power)
-					}
+					klog.V(2).InfoS("Recorded GPU memory utilization", "gpu", gpuID, "memoryUtilization", memUtil)
+				}
+
+				if power, ok := metrics["powerDraw"]; ok {
+					gpuPower.With(prometheus.Labels{
+						"gpu":  gpuID,
+						"node": nodeName,
+					}).Set(power)
+					klog.V(2).InfoS("Recorded GPU power draw", "gpu", gpuID, "powerDraw", power)
 				}
 			}
 		}
