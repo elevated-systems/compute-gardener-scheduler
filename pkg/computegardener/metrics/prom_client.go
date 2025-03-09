@@ -13,11 +13,11 @@ import (
 
 // PrometheusGPUMetricsClient implements GPUMetricsClient using Prometheus
 type PrometheusGPUMetricsClient struct {
-	client       v1.API
-	queryTimeout time.Duration
+	client        v1.API
+	queryTimeout  time.Duration
 	metricsPrefix string // The prefix for metrics (e.g., compute_gardener_gpu)
 	// DCGM-specific settings
-	useDCGM        bool   // Whether to use DCGM exporter metrics
+	useDCGM         bool   // Whether to use DCGM exporter metrics
 	dcgmPowerMetric string // DCGM power metric name
 	dcgmUtilMetric  string // DCGM utilization metric name
 }
@@ -57,30 +57,30 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 	cfg := api.Config{
 		Address: prometheusURL,
 	}
-	
+
 	client, err := api.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Prometheus client: %v", err)
 	}
-	
+
 	// Create with DCGM metrics enabled by default
 	metricsClient := &PrometheusGPUMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
 		metricsPrefix: "compute_gardener_gpu", // Still useful as fallback
-		
+
 		// Enable DCGM metrics by default
 		useDCGM:         true,
 		dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE",
 		dcgmUtilMetric:  "DCGM_FI_DEV_GPU_UTIL",
 	}
-	
-	klog.InfoS("Created Prometheus GPU metrics client", 
+
+	klog.InfoS("Created Prometheus GPU metrics client",
 		"prometheusURL", prometheusURL,
 		"usingDCGM", true,
 		"powerMetric", metricsClient.dcgmPowerMetric,
 		"utilMetric", metricsClient.dcgmUtilMetric)
-	
+
 	return metricsClient, nil
 }
 
@@ -91,15 +91,15 @@ func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMe
 	cfg := api.Config{
 		Address: prometheusURL,
 	}
-	
+
 	client, err := api.NewClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Prometheus client: %v", err)
 	}
-	
-	klog.InfoS("Created legacy Prometheus GPU metrics client (without DCGM)", 
+
+	klog.InfoS("Created legacy Prometheus GPU metrics client (without DCGM)",
 		"prometheusURL", prometheusURL)
-	
+
 	return &PrometheusGPUMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
@@ -113,47 +113,48 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, n
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
-	
+
 	// Construct the query for the specific pod's GPU utilization
 	var query string
 	if c.useDCGM {
-		// DCGM metrics query
-		query = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
-			c.dcgmUtilMetric, name, namespace)
+		// DCGM metrics query - we need to query all GPU metrics since they're not labeled by workload pod
+		query = fmt.Sprintf(`avg(%s)`, c.dcgmUtilMetric)
+		klog.V(2).InfoS("Using DCGM for GPU utilization - note: this will attribute ALL GPU utilization to this pod",
+			"pod", name, "namespace", namespace, "query", query)
 	} else {
 		// Custom metrics query
-		query = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
+		query = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`,
 			c.metricsPrefix, name, namespace)
 	}
-	
+
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
 		return 0, fmt.Errorf("error querying Prometheus for GPU utilization: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus query", 
+		klog.V(2).InfoS("Warnings received from Prometheus query",
 			"warnings", warnings,
 			"query", query)
 	}
-	
+
 	// Extract the result
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
 		if len(vector) == 0 {
 			// No data available
 			klog.V(2).InfoS("No GPU utilization data available for pod",
-				"namespace", namespace, 
+				"namespace", namespace,
 				"name", name)
 			return 0, nil
 		}
-		
+
 		// Return the average utilization (convert from percentage to 0-1 scale)
 		return float64(vector[0].Value) / 100.0, nil
 	}
-	
+
 	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
@@ -162,57 +163,81 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context)
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
-	
+
 	// Query that gets average GPU utilization for each pod
 	var query string
 	if c.useDCGM {
-		// DCGM metrics query
-		query = fmt.Sprintf(`avg by (pod, namespace) (%s)`, c.dcgmUtilMetric)
-		klog.V(2).InfoS("Using DCGM utilization metric", "metric", c.dcgmUtilMetric)
+		// DCGM metrics query - we can't filter by workload pod, so we'll get metrics by GPU device
+		query = fmt.Sprintf(`avg by (UUID) (%s)`, c.dcgmUtilMetric)
+		klog.V(2).InfoS("Using DCGM utilization metric by GPU UUID", "metric", c.dcgmUtilMetric)
 	} else {
 		// Custom metrics query
 		query = fmt.Sprintf(`avg by (pod, namespace) (%s_utilization_percent)`, c.metricsPrefix)
 	}
-	
+
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("error querying Prometheus for GPU utilization: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus query", 
+		klog.V(2).InfoS("Warnings received from Prometheus query",
 			"warnings", warnings,
 			"query", query)
 	}
-	
+
 	// Process results
 	utilizations := make(map[string]float64)
-	
+
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
-		
+
+		// Process each result
+
 		// Process each result
 		for _, sample := range vector {
-			// Extract pod and namespace from the metric labels
-			pod, ok1 := sample.Metric["pod"]
-			namespace, ok2 := sample.Metric["namespace"]
-			
-			if !ok1 || !ok2 {
-				klog.V(2).InfoS("Missing pod or namespace label in GPU utilization metric",
-					"metric", sample.Metric.String())
-				continue
+			if c.useDCGM {
+				// For DCGM metrics, extract GPU UUID from the metric labels
+				uuid, ok := sample.Metric["UUID"]
+
+				if !ok {
+					klog.V(2).InfoS("Missing UUID label in DCGM GPU utilization metric",
+						"metric", sample.Metric.String())
+					continue
+				}
+
+				// Use UUID as the key - this will be matched with pods using the GPU
+				key := fmt.Sprintf("gpu/%s", uuid)
+
+				// Convert from percentage to 0-1 scale
+				utilizations[key] = float64(sample.Value) / 100.0
+
+				klog.V(2).InfoS("Recorded GPU utilization",
+					"UUID", uuid,
+					"utilization", float64(sample.Value),
+					"normalized", float64(sample.Value)/100.0)
+			} else {
+				// For custom metrics, extract pod and namespace
+				pod, ok1 := sample.Metric["pod"]
+				namespace, ok2 := sample.Metric["namespace"]
+
+				if !ok1 || !ok2 {
+					klog.V(2).InfoS("Missing pod or namespace label in GPU utilization metric",
+						"metric", sample.Metric.String())
+					continue
+				}
+
+				// Construct the key in the format namespace/pod
+				key := fmt.Sprintf("%s/%s", namespace, pod)
+
+				// Convert from percentage to 0-1 scale
+				utilizations[key] = float64(sample.Value) / 100.0
 			}
-			
-			// Construct the key in the format namespace/pod
-			key := fmt.Sprintf("%s/%s", namespace, pod)
-			
-			// Convert from percentage to 0-1 scale
-			utilizations[key] = float64(sample.Value) / 100.0
 		}
 	}
-	
+
 	return utilizations, nil
 }
 
@@ -221,47 +246,48 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespa
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
-	
+
 	// Construct the query for the specific pod's GPU power
 	var query string
 	if c.useDCGM {
-		// DCGM metrics query
-		query = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
-			c.dcgmPowerMetric, name, namespace)
+		// DCGM metrics query - we need to query all GPU metrics since they're not labeled by workload pod
+		query = fmt.Sprintf(`avg(%s)`, c.dcgmPowerMetric)
+		klog.V(2).InfoS("Using DCGM for GPU power - note: this will attribute ALL GPU power to this pod",
+			"pod", name, "namespace", namespace, "query", query)
 	} else {
 		// Custom metrics query
-		query = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
+		query = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`,
 			c.metricsPrefix, name, namespace)
 	}
-	
+
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
 		return 0, fmt.Errorf("error querying Prometheus for GPU power: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus query", 
+		klog.V(2).InfoS("Warnings received from Prometheus query",
 			"warnings", warnings,
 			"query", query)
 	}
-	
+
 	// Extract the result
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
 		if len(vector) == 0 {
 			// No data available
 			klog.V(2).InfoS("No GPU power data available for pod",
-				"namespace", namespace, 
+				"namespace", namespace,
 				"name", name)
 			return 0, nil
 		}
-		
+
 		// Return the average power in watts
 		return float64(vector[0].Value), nil
 	}
-	
+
 	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
@@ -270,57 +296,80 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
-	
+
 	// Query that gets average GPU power for each pod
 	var query string
 	if c.useDCGM {
 		// DCGM metrics query
-		query = fmt.Sprintf(`avg by (pod, namespace) (%s)`, c.dcgmPowerMetric)
-		klog.V(2).InfoS("Using DCGM power metric", "metric", c.dcgmPowerMetric)
+		query = fmt.Sprintf(`avg by (UUID) (%s)`, c.dcgmPowerMetric)
+		klog.V(2).InfoS("Using DCGM power metric by GPU UUID", "metric", c.dcgmPowerMetric)
 	} else {
 		// Custom metrics query
 		query = fmt.Sprintf(`avg by (pod, namespace) (%s_power_watts)`, c.metricsPrefix)
 	}
-	
+
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("error querying Prometheus for GPU power: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus query", 
+		klog.V(2).InfoS("Warnings received from Prometheus query",
 			"warnings", warnings,
 			"query", query)
 	}
-	
+
 	// Process results
 	powers := make(map[string]float64)
-	
+
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
-		
+
+		// Process each result
+
 		// Process each result
 		for _, sample := range vector {
-			// Extract pod and namespace from the metric labels
-			pod, ok1 := sample.Metric["pod"]
-			namespace, ok2 := sample.Metric["namespace"]
-			
-			if !ok1 || !ok2 {
-				klog.V(2).InfoS("Missing pod or namespace label in GPU power metric",
-					"metric", sample.Metric.String())
-				continue
+			if c.useDCGM {
+				// For DCGM metrics, extract GPU UUID from the metric labels
+				uuid, ok := sample.Metric["UUID"]
+
+				if !ok {
+					klog.V(2).InfoS("Missing UUID label in DCGM GPU power metric",
+						"metric", sample.Metric.String())
+					continue
+				}
+
+				// Use UUID as the key - this will be matched with pods using the GPU
+				key := fmt.Sprintf("gpu/%s", uuid)
+
+				// Store the power value in watts
+				powers[key] = float64(sample.Value)
+
+				klog.V(2).InfoS("Recorded GPU power",
+					"UUID", uuid,
+					"power", float64(sample.Value))
+			} else {
+				// For custom metrics, extract pod and namespace
+				pod, ok1 := sample.Metric["pod"]
+				namespace, ok2 := sample.Metric["namespace"]
+
+				if !ok1 || !ok2 {
+					klog.V(2).InfoS("Missing pod or namespace label in GPU power metric",
+						"metric", sample.Metric.String())
+					continue
+				}
+
+				// Construct the key in the format namespace/pod
+				key := fmt.Sprintf("%s/%s", namespace, pod)
+
+				// Store the power value in watts
+				powers[key] = float64(sample.Value)
 			}
-			
-			// Construct the key in the format namespace/pod
-			key := fmt.Sprintf("%s/%s", namespace, pod)
-			
-			// Store the power value in watts
-			powers[key] = float64(sample.Value)
 		}
 	}
-	
+
 	return powers, nil
 }
 
@@ -329,12 +378,12 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 	// Create a context with timeout (longer timeout for range queries)
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout*2)
 	defer cancel()
-	
+
 	// Use a step size that's appropriate for the time range
 	// For longer periods, we use a larger step to reduce data volume
 	timeRange := endTime.Sub(startTime)
 	var step time.Duration
-	
+
 	if timeRange < 10*time.Minute {
 		step = 15 * time.Second
 	} else if timeRange < 3*time.Hour {
@@ -342,31 +391,31 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 	} else {
 		step = 5 * time.Minute
 	}
-	
+
 	var utilizationQuery, powerQuery string
-	
+
 	if c.useDCGM {
-		// Use DCGM metrics - these come with pod label directly from DCGM exporter
-		utilizationQuery = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
-			c.dcgmUtilMetric, name, namespace)
-		
-		powerQuery = fmt.Sprintf(`avg(%s{pod="%s", namespace="%s"})`, 
-			c.dcgmPowerMetric, name, namespace)
-		
-		klog.V(2).InfoS("Using DCGM metrics for historical GPU data", 
-			"pod", name, 
+		// Use DCGM metrics - we need to query all GPU metrics since they are not labeled by workload pod
+		utilizationQuery = fmt.Sprintf(`avg(%s)`,
+			c.dcgmUtilMetric)
+
+		powerQuery = fmt.Sprintf(`avg(%s)`,
+			c.dcgmPowerMetric)
+
+		klog.V(2).InfoS("Using DCGM metrics for historical GPU data - note: this will attribute ALL GPU utilization to this pod",
+			"pod", name,
 			"namespace", namespace,
-			"powerMetric", c.dcgmPowerMetric, 
+			"powerMetric", c.dcgmPowerMetric,
 			"utilMetric", c.dcgmUtilMetric)
 	} else {
 		// Use our custom metrics
-		utilizationQuery = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`, 
+		utilizationQuery = fmt.Sprintf(`avg(%s_utilization_percent{pod="%s", namespace="%s"})`,
 			c.metricsPrefix, name, namespace)
-		
-		powerQuery = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`, 
+
+		powerQuery = fmt.Sprintf(`avg(%s_power_watts{pod="%s", namespace="%s"})`,
 			c.metricsPrefix, name, namespace)
 	}
-	
+
 	// Execute utilization range query
 	utilizationResult, warnings, err := c.client.QueryRange(
 		queryCtx,
@@ -377,18 +426,18 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 			Step:  step,
 		},
 	)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("error querying Prometheus for GPU utilization history: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus utilization range query", 
+		klog.V(2).InfoS("Warnings received from Prometheus utilization range query",
 			"warnings", warnings,
 			"query", utilizationQuery)
 	}
-	
+
 	// Execute power range query
 	powerResult, warnings, err := c.client.QueryRange(
 		queryCtx,
@@ -399,18 +448,18 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 			Step:  step,
 		},
 	)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("error querying Prometheus for GPU power history: %v", err)
 	}
-	
+
 	// Log any warnings
 	if len(warnings) > 0 {
-		klog.V(2).InfoS("Warnings received from Prometheus power range query", 
+		klog.V(2).InfoS("Warnings received from Prometheus power range query",
 			"warnings", warnings,
 			"query", powerQuery)
 	}
-	
+
 	// Process the results and create a history record
 	history := &PodGPUMetricsHistory{
 		PodName:     name,
@@ -419,19 +468,19 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 		Utilization: []float64{},
 		Power:       []float64{},
 	}
-	
+
 	// Process utilization data
 	if utilizationResult.Type() == model.ValMatrix {
 		matrix := utilizationResult.(model.Matrix)
-		
+
 		if len(matrix) > 0 && len(matrix[0].Values) > 0 {
 			// Get the first series (assuming there's only one for the avg)
 			series := matrix[0]
-			
+
 			// Pre-allocate slices based on the number of samples
 			history.Timestamps = make([]time.Time, len(series.Values))
 			history.Utilization = make([]float64, len(series.Values))
-			
+
 			// Extract the values
 			for i, point := range series.Values {
 				history.Timestamps[i] = time.Unix(int64(point.Timestamp)/1000, 0)
@@ -439,20 +488,20 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 			}
 		}
 	}
-	
+
 	// Process power data
 	if powerResult.Type() == model.ValMatrix {
 		matrix := powerResult.(model.Matrix)
-		
+
 		if len(matrix) > 0 && len(matrix[0].Values) > 0 {
 			// Get the first series (assuming there's only one for the avg)
 			series := matrix[0]
-			
+
 			// Ensure we have space for the power values
 			if len(history.Power) < len(series.Values) {
 				history.Power = make([]float64, len(series.Values))
 			}
-			
+
 			// If we don't have timestamps yet (no utilization data), create them
 			if len(history.Timestamps) == 0 {
 				history.Timestamps = make([]time.Time, len(series.Values))
@@ -460,7 +509,7 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 					history.Timestamps[i] = time.Unix(int64(point.Timestamp)/1000, 0)
 				}
 			}
-			
+
 			// Extract the power values
 			for i, point := range series.Values {
 				// Only add power values that correspond to our timestamps
@@ -470,7 +519,7 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 			}
 		}
 	}
-	
+
 	// If we have no data, log a warning
 	if len(history.Timestamps) == 0 {
 		klog.V(2).InfoS("No historical GPU metrics found for pod",
@@ -486,7 +535,7 @@ func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Cont
 			"startTime", history.Timestamps[0],
 			"endTime", history.Timestamps[len(history.Timestamps)-1])
 	}
-	
+
 	return history, nil
 }
 
@@ -504,14 +553,14 @@ func (h *PodGPUMetricsHistory) CalculateAverageGPUMetrics() (utilization, power 
 	if len(h.Timestamps) == 0 {
 		return 0, 0
 	}
-	
+
 	var totalUtil, totalPower float64
-	
+
 	for i := range h.Timestamps {
 		totalUtil += h.Utilization[i]
 		totalPower += h.Power[i]
 	}
-	
+
 	return totalUtil / float64(len(h.Timestamps)), totalPower / float64(len(h.Timestamps))
 }
 
@@ -520,23 +569,23 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 	if len(h.Timestamps) < 2 {
 		return 0
 	}
-	
+
 	totalEnergy := 0.0
-	
+
 	// Use trapezoid rule for integration
 	for i := 1; i < len(h.Timestamps); i++ {
 		// Time difference in hours
 		dt := h.Timestamps[i].Sub(h.Timestamps[i-1]).Hours()
-		
+
 		// Average power during this interval
 		avgPower := (h.Power[i] + h.Power[i-1]) / 2
-		
+
 		// Energy in watt-hours
 		energy := avgPower * dt
-		
+
 		totalEnergy += energy
 	}
-	
+
 	return totalEnergy
 }
 
@@ -546,9 +595,9 @@ func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []PodMetricsRecord {
 	if len(h.Timestamps) == 0 {
 		return nil
 	}
-	
+
 	records := make([]PodMetricsRecord, len(h.Timestamps))
-	
+
 	for i := range h.Timestamps {
 		records[i] = PodMetricsRecord{
 			Timestamp:     h.Timestamps[i],
@@ -557,6 +606,6 @@ func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []PodMetricsRecord {
 			// CPU and Memory will be 0 as this is GPU-specific
 		}
 	}
-	
+
 	return records
 }
