@@ -326,25 +326,108 @@ func estimateMaxFrequencyFromCPUInfo() float64 {
 	return base * 1.15
 }
 
+// findNvidiaSmi tries to locate the nvidia-smi binary in various common locations
+func findNvidiaSmi() string {
+	// First try via PATH - this already handles symlinks
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err == nil {
+		klog.V(2).InfoS("Found nvidia-smi in PATH", "path", nvidiaSmi)
+		return nvidiaSmi
+	}
+	
+	// Try common alternative names that might be symlinked
+	alternativeNames := []string{
+		"nvidia-smi",
+		"nvidia-sm",  // Some systems abbreviate
+		"smi",        // Some container environments simplify
+		"nvidia",     // Some systems use just nvidia as the command
+	}
+	
+	for _, name := range alternativeNames {
+		if path, err := exec.LookPath(name); err == nil {
+			klog.V(2).InfoS("Found nvidia-smi via alternative name", "name", name, "path", path)
+			return path
+		}
+	}
+	
+	// Common locations for nvidia-smi
+	commonLocations := []string{
+		"/usr/bin/nvidia-smi",
+		"/usr/local/bin/nvidia-smi",
+		"/usr/local/nvidia/bin/nvidia-smi",
+		"/opt/nvidia/nvidia-smi",
+		"/usr/lib/nvidia-smi",
+		"/usr/lib/nvidia/nvidia-smi",
+		"/usr/lib64/nvidia/bin/nvidia-smi",
+		"/usr/local/cuda/bin/nvidia-smi",  // CUDA installation
+		"/opt/nvidia/containers/nvidia-smi", // Container specific path
+		"/var/lib/nvidia/bin/nvidia-smi",    // Another common location
+		// Add more common locations if needed
+	}
+	
+	// Check each location - os.Stat follows symlinks
+	for _, location := range commonLocations {
+		if fileInfo, err := os.Stat(location); err == nil && !fileInfo.IsDir() {
+			klog.V(2).InfoS("Found nvidia-smi in alternate location", "path", location)
+			return location
+		}
+	}
+	
+	// Try to use find command to locate nvidia-smi in common parent directories
+	findCommands := []string{
+		"find /usr -name nvidia-smi -type f -o -type l 2>/dev/null | head -1",
+		"find /opt -name nvidia-smi -type f -o -type l 2>/dev/null | head -1",
+		"find / -name nvidia-smi -type f -o -type l -path '*/bin/*' 2>/dev/null | head -1",
+	}
+	
+	for _, findCmd := range findCommands {
+		cmd := exec.Command("bash", "-c", findCmd)
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			path := strings.TrimSpace(string(output))
+			if path != "" {
+				klog.V(2).InfoS("Found nvidia-smi using find command", "path", path)
+				return path
+			}
+		}
+	}
+	
+	// Try to find it using the 'which' command as a fallback
+	cmd := exec.Command("bash", "-c", "which nvidia-smi")
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		path := strings.TrimSpace(string(output))
+		klog.V(2).InfoS("Found nvidia-smi using 'which'", "path", path)
+		return path
+	}
+	
+	klog.V(2).InfoS("nvidia-smi not found in any common location")
+	return ""
+}
+
 // hasNvidiaGPU checks if the node has NVIDIA GPUs installed
 func hasNvidiaGPU() bool {
-	// Try to run nvidia-smi to check if NVIDIA GPUs are available
-	nvidiaSmi, err := exec.LookPath("nvidia-smi")
-	if err != nil {
-		klog.V(2).InfoS("nvidia-smi not found in PATH, assuming no NVIDIA GPUs")
+	// Try to find nvidia-smi
+	nvidiaSmi := findNvidiaSmi()
+	if nvidiaSmi == "" {
+		klog.V(2).InfoS("nvidia-smi not found, assuming no NVIDIA GPUs")
 		return false
 	}
 
+	// Try to get GPU count
 	cmd := exec.Command(nvidiaSmi, "--query-gpu=count", "--format=csv,noheader")
 	output, err := cmd.Output()
 	if err != nil {
-		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs", "error", err)
+		klog.V(2).InfoS("Failed to run nvidia-smi, assuming no NVIDIA GPUs", 
+			"path", nvidiaSmi, 
+			"error", err)
 		return false
 	}
 
 	count, err := strconv.Atoi(strings.TrimSpace(string(output)))
 	if err != nil || count == 0 {
-		klog.V(2).InfoS("No NVIDIA GPUs detected with nvidia-smi", "output", string(output))
+		klog.V(2).InfoS("No NVIDIA GPUs detected with nvidia-smi", 
+			"output", string(output))
 		return false
 	}
 
@@ -354,9 +437,9 @@ func hasNvidiaGPU() bool {
 
 // getGPUCount gets the number of NVIDIA GPUs on the node
 func getGPUCount() (int, error) {
-	nvidiaSmi, err := exec.LookPath("nvidia-smi")
-	if err != nil {
-		return 0, fmt.Errorf("nvidia-smi not found: %v", err)
+	nvidiaSmi := findNvidiaSmi()
+	if nvidiaSmi == "" {
+		return 0, fmt.Errorf("nvidia-smi not found in any common location")
 	}
 
 	cmd := exec.Command(nvidiaSmi, "--query-gpu=count", "--format=csv,noheader")
@@ -375,9 +458,9 @@ func getGPUCount() (int, error) {
 
 // getGPUStaticInfo gets static information about each GPU
 func getGPUStaticInfo() ([]map[string]float64, error) {
-	nvidiaSmi, err := exec.LookPath("nvidia-smi")
-	if err != nil {
-		return nil, fmt.Errorf("nvidia-smi not found: %v", err)
+	nvidiaSmi := findNvidiaSmi()
+	if nvidiaSmi == "" {
+		return nil, fmt.Errorf("nvidia-smi not found in any common location")
 	}
 
 	// Query for total memory and power limit
@@ -453,9 +536,9 @@ func getGPUStaticInfo() ([]map[string]float64, error) {
 
 // getCurrentGPUMetrics gets current utilization metrics for each GPU
 func getCurrentGPUMetrics() ([]map[string]float64, error) {
-	nvidiaSmi, err := exec.LookPath("nvidia-smi")
-	if err != nil {
-		return nil, fmt.Errorf("nvidia-smi not found: %v", err)
+	nvidiaSmi := findNvidiaSmi()
+	if nvidiaSmi == "" {
+		return nil, fmt.Errorf("nvidia-smi not found in any common location")
 	}
 
 	// Query for utilization and power usage
@@ -565,13 +648,15 @@ func annotateNodeGPUInfo(clientset *kubernetes.Clientset, nodeName string) error
 	totalMaxPower := 0.0
 
 	// Get GPU model names
-	nvidiaSmi, _ := exec.LookPath("nvidia-smi")
-	cmd := exec.Command(nvidiaSmi, "--query-gpu=name", "--format=csv,noheader")
-	output, err := cmd.Output()
-	if err == nil {
-		models := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, model := range models {
-			gpuModels = append(gpuModels, strings.TrimSpace(model))
+	nvidiaSmi := findNvidiaSmi()
+	if nvidiaSmi != "" {
+		cmd := exec.Command(nvidiaSmi, "--query-gpu=name", "--format=csv,noheader")
+		output, err := cmd.Output()
+		if err == nil {
+			models := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, model := range models {
+				gpuModels = append(gpuModels, strings.TrimSpace(model))
+			}
 		}
 	}
 

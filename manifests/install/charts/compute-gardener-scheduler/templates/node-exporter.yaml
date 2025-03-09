@@ -21,7 +21,7 @@ spec:
         part-of: compute-gardener-scheduler
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ .Values.cpuExporter.metricsPort }}"
+        prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
     spec:
       serviceAccountName: compute-gardener-node-exporter
       containers:
@@ -130,12 +130,12 @@ metadata:
     {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "{{ .Values.cpuExporter.metricsPort }}"
+    prometheus.io/port: "{{ .Values.nodeExporter.metricsPort }}"
 spec:
   type: ClusterIP
   ports:
-  - port: {{ .Values.cpuExporter.metricsPort }}
-    targetPort: {{ .Values.cpuExporter.metricsPort }}
+  - port: {{ .Values.nodeExporter.metricsPort }}
+    targetPort: {{ .Values.nodeExporter.metricsPort }}
     protocol: TCP
     name: metrics
   selector:
