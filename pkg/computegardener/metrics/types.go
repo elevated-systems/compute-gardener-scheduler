@@ -11,9 +11,9 @@ type PodMetricsRecord struct {
 	Timestamp       time.Time
 	CPU             float64 // CPU usage in cores
 	Memory          float64 // Memory usage in bytes
-	GPU             float64 // GPU utilization (0-1 range)
-	PowerEstimate   float64 // Estimated power at this point (Watts)
-	CarbonIntensity float64 // Carbon intensity at this point (gCO2eq/kWh)
+	GPUPowerWatts   float64 // GPU power in Watts
+	PowerEstimate   float64 // Estimated power at this point across all hw in Watts
+	CarbonIntensity float64 // Carbon intensity at this point in gCO2eq/kWh
 }
 
 // PodMetricsHistory stores a time series of pod metrics
@@ -94,8 +94,8 @@ func CalculateTotalEnergy(records []PodMetricsRecord) float64 {
 				"runningTotal", totalEnergyKWh+intervalEnergy,
 				"previousCPU", previous.CPU,
 				"currentCPU", current.CPU,
-				"previousGPU", previous.GPU,
-				"currentGPU", current.GPU)
+				"previousGPUPower", previous.GPUPowerWatts,
+				"currentGPUPower", current.GPUPowerWatts)
 		}
 
 		totalEnergyKWh += intervalEnergy

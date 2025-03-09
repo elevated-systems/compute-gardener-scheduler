@@ -191,7 +191,7 @@ func (c *MockGPUMetricsClient) SetPodGPUPower(namespace, name string, power floa
 func CalculatePodMetrics(
 	podMetrics *metricsv1beta1.PodMetrics, 
 	pod *corev1.Pod, 
-	gpuUtilization float64,
+	gpuPowerWatts float64,
 	carbonIntensity float64,
 	calculatePower func(nodeName string, cpu, memory, gpu float64) float64,
 ) PodMetricsRecord {
@@ -209,13 +209,13 @@ func CalculatePodMetrics(
 	
 	// Calculate power estimate using the provided calculator function
 	nodeName := pod.Spec.NodeName
-	estimatedPower := calculatePower(nodeName, totalCPU, totalMemory, gpuUtilization)
+	estimatedPower := calculatePower(nodeName, totalCPU, totalMemory, gpuPowerWatts)
 	
 	return PodMetricsRecord{
 		Timestamp:       podMetrics.Timestamp.Time,
 		CPU:             totalCPU,
 		Memory:          totalMemory,
-		GPU:             gpuUtilization,
+		GPUPowerWatts:   gpuPowerWatts,
 		PowerEstimate:   estimatedPower,
 		CarbonIntensity: carbonIntensity,
 	}

@@ -11,6 +11,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 )
 
@@ -79,14 +80,14 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	klog.V(3).InfoS("Retrieved pod metrics from metrics server",
 		"podCount", len(podMetricsList))
 
-	// Get GPU utilization for all pods if GPU metrics client is configured
-	gpuUtilizations := make(map[string]float64)
+	// Get GPU power measurements for all pods if GPU metrics client is configured
+	gpuPowers := make(map[string]float64)
 	if cs.gpuMetricsClient != nil {
-		if utils, err := cs.gpuMetricsClient.ListPodsGPUUtilization(ctx); err == nil {
-			klog.V(1).InfoS("Retrieved GPU utilizations", "count", len(gpuUtilizations), "values", gpuUtilizations)
-			gpuUtilizations = utils
+		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
+			klog.V(1).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
+			gpuPowers = powers
 		} else {
-			klog.ErrorS(err, "Failed to list GPU utilizations")
+			klog.ErrorS(err, "Failed to list GPU power measurements")
 		}
 	}
 
@@ -143,23 +144,25 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			continue
 		}
 
-		// Get GPU utilization for this pod
-		// Get GPU utilization for this pod
-		gpuUtilization := 0.0
+		// Get GPU power for this pod
+		gpuPower := 0.0
 		key := podMetrics.Namespace + "/" + podMetrics.Name
-		if util, exists := gpuUtilizations[key]; exists {
-			gpuUtilization = util
-			klog.V(1).InfoS("Found GPU utilization for pod", "pod", key, "utilization", gpuUtilization)
+		
+		// First try direct mapping by pod name/namespace
+		if power, exists := gpuPowers[key]; exists {
+			gpuPower = power
+			klog.V(1).InfoS("Found direct GPU power measurement for pod", "pod", key, "power", gpuPower)
 		} else {
-			// Also check for GPU ID based metrics (format: gpu/UUID)
-			for gpuKey, gpuUtil := range gpuUtilizations {
-				klog.V(1).InfoS("Checking GPU utilization", "gpuKey", gpuKey, "podKey", key)
-
-				// If this pod uses nvidia runtime, attribute GPU to it
-				if pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == "nvidia" {
-					gpuUtilization = gpuUtil
-					klog.V(1).InfoS("Attributed GPU to pod with nvidia runtime",
-						"pod", key, "gpuKey", gpuKey, "utilization", gpuUtil)
+			// Check if this is a GPU pod
+			isGPUPod := common.IsGPUPod(pod)
+			
+			// For GPU pods, find GPU power measurements from DCGM
+			if isGPUPod && len(gpuPowers) > 0 {
+				// Use the first GPU power value we find
+				for gpuKey, power := range gpuPowers {
+					gpuPower = power
+					klog.V(1).InfoS("Attributed GPU power to pod", 
+						"pod", klog.KObj(pod), "gpuKey", gpuKey, "power", power)
 					break
 				}
 			}
@@ -169,7 +172,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		record := metrics.CalculatePodMetrics(
 			&podMetrics,
 			pod,
-			gpuUtilization,
+			gpuPower,
 			carbonIntensity,
 			cs.calculatePodPower,
 		)
@@ -186,7 +189,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		// Update current metrics in Prometheus
 		NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.CPU)
 		NodeMemoryUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.Memory)
-		NodeGPUUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.GPU)
+		NodeGPUPower.WithLabelValues(nodeName, pod.Name, "current").Set(record.GPUPowerWatts)
 		NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "current").Set(record.PowerEstimate)
 
 		processedCount++
@@ -217,16 +220,21 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 }
 
 // calculatePodPower estimates power consumption for a pod based on resource usage
-func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memory, gpu float64) float64 {
+func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memory, gpuPower float64) float64 {
 	// Get node power configuration
 	var idlePower, maxPower float64
-	if nodePower, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
-		idlePower = nodePower.IdlePower
-		maxPower = nodePower.MaxPower
+	var nodePower *config.NodePower
+	var hasNodePower bool
+	
+	if np, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
+		nodePower = &np
+		idlePower = np.IdlePower
+		maxPower = np.MaxPower
+		hasNodePower = true
 	} else {
 		idlePower = cs.config.Power.DefaultIdlePower
 		maxPower = cs.config.Power.DefaultMaxPower
-		// Default GPU power settings (only used if GPU utilization > 0)
+		hasNodePower = false
 	}
 
 	// Check if we have frequency data for this node
@@ -260,21 +268,32 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	// Linear interpolation between idle and max power based on CPU usage
 	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*cpu
 
-	// Add GPU power for NVIDIA runtime pods
-	gpuPower := 0.0
-	if gpu > 0 {
-		gpuPower = gpu
-		klog.V(1).InfoS("GPU power", "node", nodeName, "power", gpuPower)
+	// Apply GPU PUE factor if we have GPU power
+	adjustedGPUPower := 0.0
+	if gpuPower > 0 {
+		gpuPUE := common.DefaultGPUPUE
+		if hasNodePower && nodePower.GPUPUE > 0 {
+			gpuPUE = nodePower.GPUPUE
+		} else if cs.config.Power.DefaultGPUPUE > 0 {
+			gpuPUE = cs.config.Power.DefaultGPUPUE
+		}
+		
+		adjustedGPUPower = gpuPower * gpuPUE
+		klog.V(1).InfoS("GPU power with PUE applied", 
+			"node", nodeName, 
+			"rawPower", gpuPower, 
+			"pue", gpuPUE, 
+			"adjustedPower", adjustedGPUPower)
 	}
 
-	totalPower := cpuPower + gpuPower
+	totalPower := cpuPower + adjustedGPUPower
 
 	klog.V(1).InfoS("Power calculation breakdown",
 		"node", nodeName,
 		"cpuUtilization", cpu,
-		"gpuUtilization", gpu,
-		"cpuPower", cpuPower,
 		"gpuPower", gpuPower,
+		"adjustedGPUPower", adjustedGPUPower,
+		"cpuPower", cpuPower,
 		"totalPower", totalPower)
 
 	// Total power is sum of CPU and GPU power

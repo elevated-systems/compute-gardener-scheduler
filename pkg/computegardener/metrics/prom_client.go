@@ -601,7 +601,7 @@ func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []PodMetricsRecord {
 	for i := range h.Timestamps {
 		records[i] = PodMetricsRecord{
 			Timestamp:     h.Timestamps[i],
-			GPU:           h.Utilization[i] / 100.0, // Convert percentage to 0-1 range
+			GPUPowerWatts: h.Power[i],               // GPU power in watts
 			PowerEstimate: h.Power[i],               // GPU power in watts
 			// CPU and Memory will be 0 as this is GPU-specific
 		}

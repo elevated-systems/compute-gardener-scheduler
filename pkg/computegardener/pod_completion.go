@@ -100,21 +100,21 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				"timestamp": firstRecord.Timestamp,
 				"cpu": firstRecord.CPU,
 				"memory": firstRecord.Memory,
-				"gpu": firstRecord.GPU,
+				"gpuPower": firstRecord.GPUPowerWatts,
 				"powerEstimate": firstRecord.PowerEstimate,
 			},
 			"midRecord", map[string]interface{}{
 				"timestamp": midRecord.Timestamp,
 				"cpu": midRecord.CPU,
 				"memory": midRecord.Memory,
-				"gpu": midRecord.GPU,
+				"gpuPower": midRecord.GPUPowerWatts,
 				"powerEstimate": midRecord.PowerEstimate,
 			},
 			"lastRecord", map[string]interface{}{
 				"timestamp": lastRecord.Timestamp,
 				"cpu": lastRecord.CPU,
 				"memory": lastRecord.Memory,
-				"gpu": lastRecord.GPU,
+				"gpuPower": lastRecord.GPUPowerWatts,
 				"powerEstimate": lastRecord.PowerEstimate,
 			})
 	}
@@ -207,7 +207,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		final := metricsHistory.Records[len(metricsHistory.Records)-1]
 		NodeCPUUsage.WithLabelValues(nodeName, podName, "final").Set(final.CPU)
 		NodeMemoryUsage.WithLabelValues(nodeName, podName, "final").Set(final.Memory)
-		NodeGPUUsage.WithLabelValues(nodeName, podName, "final").Set(final.GPU)
+		NodeGPUPower.WithLabelValues(nodeName, podName, "final").Set(final.GPUPowerWatts)
 		NodePowerEstimate.WithLabelValues(nodeName, podName, "final").Set(final.PowerEstimate)
 	}
 }

@@ -67,12 +67,12 @@ var (
 		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
 	)
 
-	// NodeGPUUsage tracks GPU usage on nodes
-	NodeGPUUsage = metrics.NewGaugeVec(
+	// NodeGPUPower tracks GPU power usage on nodes
+	NodeGPUPower = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
-			Name:           "node_gpu_usage",
-			Help:           "GPU utilization on nodes (0-1 range)",
+			Name:           "node_gpu_power_watts",
+			Help:           "GPU power consumption in watts on nodes",
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"node", "pod", "phase"}, // phase: "baseline", "current", "final"
@@ -252,7 +252,7 @@ func init() {
 	legacyregistry.MustRegister(SchedulingAttempts)
 	legacyregistry.MustRegister(NodeCPUUsage)
 	legacyregistry.MustRegister(NodeMemoryUsage)
-	legacyregistry.MustRegister(NodeGPUUsage)
+	legacyregistry.MustRegister(NodeGPUPower)
 	legacyregistry.MustRegister(NodePowerEstimate)
 	legacyregistry.MustRegister(MetricsSamplesStored)
 	legacyregistry.MustRegister(MetricsCacheSize)
