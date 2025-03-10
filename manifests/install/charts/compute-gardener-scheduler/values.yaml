@@ -11,12 +11,14 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.4-fa4ec13
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.5-47530b2
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
   # Maximum time to delay pod scheduling when waiting for better conditions (price or carbon)
   maxSchedulingDelay: "24h"
+  # Log verbosity level (0-5)
+  logLevel: 2
   resources:
     requests:
       cpu: 50m
@@ -74,8 +76,46 @@ metrics:
   serviceMonitor:
     enabled: true
     namespace: "monitoring" # Default Prometheus namespace, change to match your setup
-    interval: "15s" # Match the CPU exporter's sampling interval
+    interval: "15s" # Match the node exporter's sampling interval
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
+  
+  # Prometheus configuration for metrics collection
+  prometheus:
+    # Prometheus server URL - REQUIRED for GPU power metrics
+    # This URL follows standard Prometheus Operator conventions. You may need to adjust
+    # based on your cluster's specific Prometheus installation:
+    # - Standard Prometheus Operator: http://prometheus-operated.monitoring.svc.cluster.local:9090
+    # - Rancher Monitoring: http://prometheus-operated.cattle-monitoring-system.svc.cluster.local:9090
+    # - Cloud provider managed: Check your cloud provider's documentation
+    url: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+    # Query timeout for Prometheus queries (default: 30s)
+    queryTimeout: "30s"
+    # Whether to use DCGM metrics (default: true)
+    useDCGM: true
+    # DCGM power metric name (default: DCGM_FI_DEV_POWER_USAGE)
+    # This assumes DCGM exporter is configured with standard metric names
+    dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE"
+  
+  # GPU metrics configuration via DCGM exporter
+  dcgmExporter:
+    # Enable GPU metrics collection via DCGM exporter
+    enabled: true
+    # Set to true if DCGM exporter is already installed externally
+    external: false
+    # Node selector for GPU nodes - only deploy on nodes with NVIDIA GPUs
+    nodeSelector:
+      nvidia.com/gpu: "present"
+    # Configuration for DCGM exporter when not using external installation
+    image: "nvcr.io/nvidia/k8s/dcgm-exporter:2.4.6-2.6.10-ubuntu20.04"
+    # DCGM exporter metrics port
+    port: 9400
+    # Metrics endpoint for Prometheus when using external DCGM exporter
+    # For internal installation, will be constructed based on service name
+    endpoint: "http://dcgm-exporter.monitoring:9400/metrics"
+    # Whether to deploy ServiceMonitor for DCGM exporter
+    serviceMonitor:
+      enabled: true
+      interval: "15s"
 
 # Sample pod to demonstrate scheduler usage
 samplePod:
@@ -91,12 +131,12 @@ hardwareProfiles:
   enabled: true
   mountPath: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles"
 
-# Node exporter configuration for hardware metrics 
+# Node exporter configuration for CPU hardware metrics 
 nodeExporter:
-  # Enable the hardware metrics exporter DaemonSet for accurate CPU/GPU model detection and power measurements
-  # Note: For GPU metrics, requires nodes with NVIDIA GPUs and nvidia-smi installed
+  # Enable the hardware metrics exporter DaemonSet for accurate CPU model detection and power measurements
+  # Note: For GPU metrics, DCGM exporter is used instead
   enabled: false
-  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.4-fa4ec13
+  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.5-47530b2
   imagePullPolicy: IfNotPresent
   resources:
     requests:
@@ -109,6 +149,16 @@ nodeExporter:
   metricsPort: 9100
   # Log verbosity level (0-5)
   logLevel: 2
+  
+  # GPU-specific configuration
+  gpu:
+    # Enable GPU-specific node exporter
+    enabled: false
+    # Node selector to target only GPU nodes
+    nodeSelector:
+      nvidia.com/gpu: "present"
+    # Runtime class for NVIDIA GPU access
+    runtimeClassName: "nvidia"
 
 # Additional plugin configuration
 plugins:

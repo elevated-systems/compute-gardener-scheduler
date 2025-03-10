@@ -2,8 +2,8 @@ apiVersion: v2
 name: compute-gardener-scheduler
 description: A Helm chart for the Compute Gardener Scheduler, a carbon and price aware Kubernetes scheduler
 type: application
-version: 0.1.4  # Chart version - increment when chart changes
-appVersion: "v0.1.4-fa4ec13"  # Application version - matches current git tag
+version: 0.1.5  # Chart version - increment when chart changes
+appVersion: "v0.1.5-47530b2"  # Application version - matches current git tag
 keywords:
   - kubernetes
   - scheduler
