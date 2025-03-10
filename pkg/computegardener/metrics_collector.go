@@ -227,15 +227,53 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	var nodePower *config.NodePower
 	var hasNodePower bool
 	
-	if np, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
-		nodePower = &np
-		idlePower = np.IdlePower
-		maxPower = np.MaxPower
-		hasNodePower = true
-	} else {
-		idlePower = cs.config.Power.DefaultIdlePower
-		maxPower = cs.config.Power.DefaultMaxPower
-		hasNodePower = false
+	// First try to get the node from the Kubernetes API
+	node, err := cs.handle.ClientSet().CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	
+	// Check if we have a hardware profiler and can get a node-specific power profile
+	if err == nil && cs.hardwareProfiler != nil {
+		// Try to get a node-specific profile based on detected hardware
+		profile, profileErr := cs.hardwareProfiler.GetNodePowerProfile(node)
+		if profileErr == nil && profile != nil {
+			nodePower = profile
+			idlePower = profile.IdlePower
+			maxPower = profile.MaxPower
+			hasNodePower = true
+			
+			cpuModel := "unknown"
+			if val, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+				cpuModel = val
+			}
+			
+			klog.V(2).InfoS("Using hardware-profiled power values",
+				"node", nodeName,
+				"cpuModel", cpuModel,
+				"idlePower", idlePower,
+				"maxPower", maxPower)
+		}
+	}
+	
+	// If no hardware profile, check manually configured power values
+	if !hasNodePower {
+		if np, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
+			nodePower = &np
+			idlePower = np.IdlePower
+			maxPower = np.MaxPower
+			hasNodePower = true
+			klog.V(2).InfoS("Using manually configured power values", 
+				"node", nodeName,
+				"idlePower", idlePower,
+				"maxPower", maxPower)
+		} else {
+			// Last resort: use defaults
+			idlePower = cs.config.Power.DefaultIdlePower
+			maxPower = cs.config.Power.DefaultMaxPower
+			hasNodePower = false
+			klog.V(2).InfoS("Using default power values (no profile found)",
+				"node", nodeName,
+				"idlePower", idlePower,
+				"maxPower", maxPower)
+		}
 	}
 
 	// Check if we have frequency data for this node
