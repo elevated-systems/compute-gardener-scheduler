@@ -53,6 +53,7 @@ func LoadFromEnv() (*Config, error) {
 			MaxSamplesPerPod:     getIntOrDefault("MAX_SAMPLES_PER_POD", 500),
 			PodRetention:         getEnvOrDefault("COMPLETED_POD_RETENTION", "1h"),
 			DownsamplingStrategy: getEnvOrDefault("DOWNSAMPLING_STRATEGY", "timeBased"),
+			Prometheus:           loadPrometheusConfig(),
 		},
 	}
 	
@@ -279,4 +280,29 @@ func loadPricingSchedules(cfg *Config, path string) error {
 
 	cfg.Pricing.Schedules = schedules.Schedules
 	return nil
+}
+
+// loadPrometheusConfig loads Prometheus connection settings from environment variables
+func loadPrometheusConfig() *PrometheusConfig {
+	// Check if Prometheus URL is set - if not, don't enable Prometheus
+	prometheusURL := os.Getenv("PROMETHEUS_URL")
+	if prometheusURL == "" {
+		return nil
+	}
+	
+	// Create Prometheus config with URL
+	config := &PrometheusConfig{
+		URL:             prometheusURL,
+		QueryTimeout:    getEnvOrDefault("PROMETHEUS_QUERY_TIMEOUT", "30s"),
+		UseDCGM:         getBoolOrDefault("PROMETHEUS_USE_DCGM", true),
+		DCGMPowerMetric: getEnvOrDefault("PROMETHEUS_DCGM_POWER_METRIC", "DCGM_FI_DEV_POWER_USAGE"),
+	}
+	
+	klog.InfoS("Prometheus configuration loaded", 
+		"url", config.URL,
+		"queryTimeout", config.QueryTimeout,
+		"useDCGM", config.UseDCGM,
+		"dcgmPowerMetric", config.DCGMPowerMetric)
+	
+	return config
 }

@@ -75,6 +75,23 @@ spec:
         - name: HARDWARE_PROFILES_PATH
           value: "{{ .Values.hardwareProfiles.mountPath }}/hardware-profiles.yaml"
         {{- end }}
+        {{- if and .Values.metrics.enabled .Values.metrics.prometheus }}
+        # Prometheus metrics configuration
+        - name: PROMETHEUS_URL
+          value: "{{ .Values.metrics.prometheus.url }}"
+        {{- if .Values.metrics.prometheus.queryTimeout }}
+        - name: PROMETHEUS_QUERY_TIMEOUT
+          value: "{{ .Values.metrics.prometheus.queryTimeout }}"
+        {{- end }}
+        {{- if .Values.metrics.prometheus.useDCGM }}
+        - name: PROMETHEUS_USE_DCGM
+          value: "{{ .Values.metrics.prometheus.useDCGM }}"
+        {{- end }}
+        {{- if .Values.metrics.prometheus.dcgmPowerMetric }}
+        - name: PROMETHEUS_DCGM_POWER_METRIC
+          value: "{{ .Values.metrics.prometheus.dcgmPowerMetric }}"
+        {{- end }}
+        {{- end }}
         ports:
         - containerPort: {{ .Values.metrics.port }}
           name: https

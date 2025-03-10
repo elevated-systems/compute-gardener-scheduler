@@ -25,6 +25,8 @@ rules:
   - watch
 - nonResourceURLs:
   - "/metrics"
+  - "/api/v1/query"
+  - "/api/v1/query_range"
   verbs:
   - get
 ---
@@ -227,6 +229,13 @@ spec:
           value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
         - name: HARDWARE_PROFILES_PATH
           value: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles/hardware-profiles.yaml"
+        # Prometheus configuration - adjust the URL to match your cluster's Prometheus instance
+        - name: PROMETHEUS_URL
+          value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+        - name: PROMETHEUS_USE_DCGM
+          value: "true"
+        - name: PROMETHEUS_DCGM_POWER_METRIC
+          value: "DCGM_FI_DEV_POWER_USAGE"
         ports:
         - containerPort: 10259
           name: https

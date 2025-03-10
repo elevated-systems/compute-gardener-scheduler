@@ -21,6 +21,8 @@ rules:
   - watch
 - nonResourceURLs:
   - "/metrics"
+  - "/api/v1/query"
+  - "/api/v1/query_range"
   verbs:
   - get
 ---
