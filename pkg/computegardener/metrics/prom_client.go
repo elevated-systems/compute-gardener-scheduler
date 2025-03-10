@@ -12,6 +12,7 @@ import (
 )
 
 // PrometheusGPUMetricsClient implements GPUMetricsClient using Prometheus
+// TODO: Rename to PrometheusMetricsClient since it's now used for both GPU and CPU metrics
 type PrometheusGPUMetricsClient struct {
 	client        v1.API
 	queryTimeout  time.Duration
@@ -82,6 +83,46 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 		"utilMetric", metricsClient.dcgmUtilMetric)
 
 	return metricsClient, nil
+}
+
+// QueryNodeMetric queries a single metric value for a node
+func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metricName, nodeName string) (float64, error) {
+	// Create a context with timeout
+	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
+	defer cancel()
+
+	// Construct the query for the node metric
+	query := fmt.Sprintf(`%s{instance=~"%s.*"}`, metricName, nodeName)
+	
+	// Execute the query
+	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
+	if err != nil {
+		return 0, fmt.Errorf("error querying Prometheus for node metric %s: %v", metricName, err)
+	}
+
+	// Log any warnings
+	if len(warnings) > 0 {
+		klog.V(2).InfoS("Warnings received from Prometheus query",
+			"warnings", warnings,
+			"query", query)
+	}
+
+	// Extract the result
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		if len(vector) == 0 {
+			// No data available
+			klog.V(2).InfoS("No metric data available for node",
+				"node", nodeName,
+				"metric", metricName)
+			return 0, fmt.Errorf("no data available for metric %s on node %s", metricName, nodeName)
+		}
+
+		// Return the first value found
+		return float64(vector[0].Value), nil
+	}
+
+	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
 // NewLegacyPrometheusGPUMetricsClient creates a Prometheus client that uses the legacy

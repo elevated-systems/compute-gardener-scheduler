@@ -3,6 +3,7 @@ package computegardener
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -84,7 +85,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	gpuPowers := make(map[string]float64)
 	if cs.gpuMetricsClient != nil {
 		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
-			klog.V(1).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
+			klog.V(2).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
 			gpuPowers = powers
 		} else {
 			klog.ErrorS(err, "Failed to list GPU power measurements")
@@ -151,7 +152,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		// First try direct mapping by pod name/namespace
 		if power, exists := gpuPowers[key]; exists {
 			gpuPower = power
-			klog.V(1).InfoS("Found direct GPU power measurement for pod", "pod", key, "power", gpuPower)
+			klog.V(2).InfoS("Found direct GPU power measurement for pod", "pod", key, "power", gpuPower)
 		} else {
 			// Check if this is a GPU pod
 			isGPUPod := common.IsGPUPod(pod)
@@ -161,7 +162,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 				// Use the first GPU power value we find
 				for gpuKey, power := range gpuPowers {
 					gpuPower = power
-					klog.V(1).InfoS("Attributed GPU power to pod", 
+					klog.V(2).InfoS("Attributed GPU power to pod", 
 						"pod", klog.KObj(pod), "gpuKey", gpuKey, "power", power)
 					break
 				}
@@ -265,8 +266,9 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		}
 	}
 
-	// Linear interpolation between idle and max power based on CPU usage
-	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*cpu
+	// Power-law model (exponent 1.4) provides more realistic power scaling than linear model
+	powerExponent := 1.4
+	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*math.Pow(cpu, powerExponent)
 
 	// Apply GPU PUE factor if we have GPU power
 	adjustedGPUPower := 0.0
@@ -279,7 +281,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		}
 		
 		adjustedGPUPower = gpuPower * gpuPUE
-		klog.V(1).InfoS("GPU power with PUE applied", 
+		klog.V(2).InfoS("GPU power with PUE applied", 
 			"node", nodeName, 
 			"rawPower", gpuPower, 
 			"pue", gpuPUE, 
@@ -288,7 +290,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 
 	totalPower := cpuPower + adjustedGPUPower
 
-	klog.V(1).InfoS("Power calculation breakdown",
+	klog.V(2).InfoS("Power calculation breakdown",
 		"node", nodeName,
 		"cpuUtilization", cpu,
 		"gpuPower", gpuPower,
@@ -302,13 +304,28 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 }
 
 // getNodeCPUFrequency attempts to get the current CPU frequency for a node from Prometheus
-// NOTE: This is currently UNIMPLEMENTED and will be enhanced when Prometheus metrics client is available
 func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float64, error) {
-	// TODO: Implement Prometheus query to get CPU frequency
-	// This should query for the 'compute_gardener_cpu_frequency_ghz' metric for this node
-
-	// For now, return not available
-	return 0, fmt.Errorf("CPU frequency data not available - Prometheus integration not yet implemented")
+	// Check if we have Prometheus client available
+	if cs.gpuMetricsClient == nil {
+		return 0, fmt.Errorf("prometheus client not available")
+	}
+	
+	// Get the Prometheus client from the GPU metrics client (which is a PrometheusGPUMetricsClient)
+	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusGPUMetricsClient)
+	if !ok {
+		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
+	}
+	
+	// Query for CPU frequency using the node exporter metric
+	// The metric name is defined in common.MetricCPUFrequencyGHz
+	// This assumes that our node exporter is exporting this metric
+	freq, err := promClient.QueryNodeMetric(context.Background(), common.MetricCPUFrequencyGHz, nodeName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query CPU frequency: %v", err)
+	}
+	
+	// Return the frequency in GHz
+	return freq, nil
 }
 
 // getNodeCPUModelInfo returns CPU model, base frequency, and power scaling mode

@@ -185,21 +185,21 @@ func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpu
 		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
 		arch, _ := node.Labels["kubernetes.io/arch"]
 		cpuCores := node.Status.Capacity.Cpu().Value()
-		
+
 		// Use very generic model names that indicate architecture but not specific model
 		// (this encourages users to deploy the cpu-info-exporter for accuracy)
 		switch arch {
 		case "amd64":
 			cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
 				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		case "arm64":
 			cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
 				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		default:
 			cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)", 
+			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
 				"node", node.Name, "model", cpuModel, "cores", cpuCores)
 		}
 	}
@@ -488,20 +488,20 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 	// Check for CPU model annotations changed
 	oldCPUModel, oldHasCPUModel := oldNode.Annotations[common.AnnotationCPUModel]
 	newCPUModel, newHasCPUModel := newNode.Annotations[common.AnnotationCPUModel]
-	
+
 	if oldHasCPUModel != newHasCPUModel {
 		if newHasCPUModel {
-			klog.V(2).InfoS("CPU model annotation added to node", 
-				"node", newNode.Name, 
+			klog.V(2).InfoS("CPU model annotation added to node",
+				"node", newNode.Name,
 				"model", newCPUModel,
 				"annotationKey", common.AnnotationCPUModel)
 		}
 		return true
 	}
-	
+
 	if oldHasCPUModel && newHasCPUModel && oldCPUModel != newCPUModel {
-		klog.V(2).InfoS("CPU model annotation changed on node", 
-			"node", newNode.Name, 
+		klog.V(2).InfoS("CPU model annotation changed on node",
+			"node", newNode.Name,
 			"oldModel", oldCPUModel,
 			"newModel", newCPUModel,
 			"annotationKey", common.AnnotationCPUModel)

@@ -336,15 +336,10 @@ func (cs *ComputeGardenerScheduler) Name() string {
 
 // PreFilter implements the PreFilter interface
 func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	// Log with high visibility to ensure we see it for all pods
-	klog.InfoS("*** PREFILTER BEING CALLED ***", 
+	klog.V(2).InfoS("PreFilter starting", 
 		"pod", klog.KObj(pod),
 		"schedulerName", pod.Spec.SchedulerName,
 		"hasGPU", hasGPURequest(pod))
-		
-	klog.V(2).InfoS("PreFilter starting", 
-		"pod", klog.KObj(pod),
-		"schedulerName", pod.Spec.SchedulerName)
 	
 	startTime := cs.clock.Now()
 	defer func() {
