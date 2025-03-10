@@ -12,8 +12,8 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 - **GPU Workload Classification**: Optimize power modeling based on workload type (inference, training, rendering)
 - **Namespace-Level Policies**: Define energy policies at namespace level to automatically apply to all pods
 - **Workload-Type Optimization**: Different policies for batch jobs, services, and stateful workloads
-- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration
-- **CPU Frequency Monitoring** (Optional): DaemonSet for accurate CPU power estimation, by node, based on dynamic frequency scaling
+- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration and dynamic frequency scaling
+- **GPU & CPU Power Monitoring**: Integrated with DCGM and CPU frequency monitoring for precise power tracking of workloads
 - **Pod-Level Controls**: Pods can opt-out or specify custom thresholds via annotations
 - **Caching**: Built-in caching of API responses to limit external API calls
 - **Observability**: Comprehensive Prometheus metrics for monitoring energy usage, carbon intensity, and cost savings
@@ -24,9 +24,11 @@ The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables car
 
 - **Metrics Server**: Highly recommended but not strictly required. Without Metrics Server, the scheduler won't be able to collect real-time node utilization data, resulting in less accurate energy usage estimates. Core carbon-aware and price-aware scheduling will still function using requested resources rather than actual usage.
 
-- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation and won't have visibility into the actual emissions and cost reductions achieved.
+- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation and won't have visibility into the actual emissions and cost reductions achieved. Prometheus is also used for collecting CPU frequency and GPU power data for more accurate power estimation.
 
-- **CPU Frequency Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for power calculations. Without it, the scheduler will estimate power based on static CPU models, which may not accurately reflect dynamic frequency scaling behaviors.
+- **Node Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for power calculations that reflect dynamic frequency scaling behaviors. Without it, the scheduler will estimate power based on static CPU models.
+
+- **DCGM Exporter**: Optional component for NVIDIA GPU monitoring. When enabled, it provides accurate GPU power consumption data via Prometheus, allowing for precise tracking of GPU workloads. The scheduler integrates with DCGM metrics to capture real-time GPU power usage and adjust workload power estimates accordingly.
 
 ### Environment Variables
 

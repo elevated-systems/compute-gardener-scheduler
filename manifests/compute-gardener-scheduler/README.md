@@ -138,7 +138,13 @@ memProfiles:
     baseIdlePower: 1.0      # Base power for memory controller (watts)
 ```
 
-The hardware profiles work in conjunction with the CPU frequency exporter to provide more accurate power estimates based on actual CPU frequencies. You can customize these profiles to match your specific hardware or add new profiles for hardware not included in the default configuration.
+The hardware profiles work in conjunction with two critical runtime components for dynamic power tracking:
+
+1. **CPU Frequency Monitoring**: The scheduler can collect CPU frequency data via Prometheus from the node exporter, adjusting power estimates based on actual frequency scaling. Power usage scales according to the configured model (typically quadratic, where power ∝ frequency²).
+
+2. **GPU Power Monitoring**: For GPU workloads, the scheduler integrates with DCGM exporter metrics through Prometheus to capture actual GPU power consumption (via the `DCGM_FI_DEV_POWER_USAGE` metric). This enables accurate tracking of GPU power by directly measuring consumption rather than estimating.
+
+Together, these provide accurate power measurement that adapts to real-time workload characteristics and frequency scaling states. You can customize the hardware profiles to match your specific hardware.
 
 ## Deployment
 

@@ -25,15 +25,13 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
 
 - **Metrics Server**: Highly recommended but not strictly required. Without Metrics Server, the scheduler won't be able to collect real-time node utilization data, resulting in less accurate energy usage estimates. Core carbon-aware and price-aware scheduling will still function.
 
-- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation.
+- **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation. Prometheus is also essential for CPU frequency and GPU power data collection.
 
-- **Node Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors:
-  - The actual CPU frequencies of each node, providing more precise data for CPU power calculations 
-  - GPU metrics (utilization, memory usage, power consumption) on nodes with NVIDIA GPUs 
+- **Node Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for CPU power calculations that reflect dynamic frequency scaling. Without it, the scheduler will estimate power based on static CPU models only.
+
+- **DCGM Exporter**: Optional component for NVIDIA GPU monitoring. When enabled, it provides accurate GPU power consumption data via Prometheus. The scheduler integrates with DCGM metrics (specifically using the `DCGM_FI_DEV_POWER_USAGE` metric) to capture real-time GPU power usage with per-device granularity.
   
-  Without it, the scheduler will estimate power based on static CPU/GPU models only. When enabled, it integrates with the hardware profiles to adjust power estimates based on actual hardware states.
-  
-  **GPU Support Requirements:** For GPU metrics collection, nodes must have NVIDIA GPUs with nvidia-smi installed.
+  **GPU Support Requirements:** For GPU metrics collection, nodes must have NVIDIA GPUs with NVIDIA drivers installed. The scheduler will automatically detect GPU nodes when DCGM metrics are available through Prometheus.
 
 ## Installation
 
@@ -65,6 +63,7 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --namespace compute-gardener \
   --create-namespace \
   --set nodeExporter.enabled=true \
+  --set metrics.dcgmExporter.enabled=true \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 
 # Installation without metrics (for clusters without Prometheus Operator)
