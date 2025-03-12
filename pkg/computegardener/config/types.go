@@ -271,14 +271,19 @@ func (c *Config) validatePricing() error {
 		if err := validateSchedule(schedule); err != nil {
 			return fmt.Errorf("invalid schedule at index %d: %v", i, err)
 		}
-		if schedule.PeakRate <= 0 {
-			return fmt.Errorf("peak rate must be positive in schedule at index %d", i)
-		}
-		if schedule.OffPeakRate <= 0 {
-			return fmt.Errorf("off-peak rate must be positive in schedule at index %d", i)
-		}
-		if schedule.PeakRate <= schedule.OffPeakRate {
-			return fmt.Errorf("peak rate must be greater than off-peak rate in schedule at index %d", i)
+		
+		// Only validate rates if they are provided (non-zero)
+		if schedule.PeakRate != 0 || schedule.OffPeakRate != 0 {
+			// If one rate is provided, both should be
+			if schedule.PeakRate <= 0 {
+				return fmt.Errorf("peak rate must be positive in schedule at index %d when rates are provided", i)
+			}
+			if schedule.OffPeakRate <= 0 {
+				return fmt.Errorf("off-peak rate must be positive in schedule at index %d when rates are provided", i)
+			}
+			if schedule.PeakRate <= schedule.OffPeakRate {
+				return fmt.Errorf("peak rate must be greater than off-peak rate in schedule at index %d", i)
+			}
 		}
 	}
 	return nil
