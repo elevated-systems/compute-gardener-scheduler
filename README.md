@@ -128,7 +128,7 @@ node.kubernetes.io/gpu-model: "NVIDIA A100"
 
 ### Namespace-Level Energy Policies
 
-The scheduler supports defining energy policies at the namespace level, which automatically apply to all pods in the namespace. This feature requires deploying the Energy Policy Webhook (included in the repo).
+The scheduler supports defining energy policies at the namespace level, which automatically apply to all pods in the namespace.
 
 To enable namespace-level policies:
 
@@ -180,29 +180,25 @@ The recommended way to deploy the Compute Gardener Scheduler is using Helm:
 helm repo add compute-gardener https://elevated-systems.github.io/compute-gardener-scheduler
 helm repo update
 
-# Install the scheduler
+# Standard installation with metrics enabled (recommended)
 helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
-  --namespace kube-system \
+  --namespace compute-gardener \
+  --create-namespace \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
-```
-
-To enable namespace-level energy policies, deploy the Energy Policy Webhook:
-
-```bash
-# First, generate webhook TLS certificates
-./hack/generate-webhook-certs.sh
-
-# Install the webhook
-helm install energy-policy-webhook compute-gardener/energy-policy-webhook \
-  --namespace kube-system \
-  --set caBundle=$(cat webhooks/certs/ca.pem | base64 | tr -d '\n')
+  
+# Installation without metrics (for clusters without Prometheus Operator)
+# This is a more lightweight installation and doesn't require ServiceMonitor CRDs
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set metrics.enabled=false \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
 To uninstall:
 
 ```bash
-helm uninstall compute-gardener-scheduler --namespace kube-system
-helm uninstall energy-policy-webhook --namespace kube-system
+helm uninstall compute-gardener-scheduler --namespace compute-gardener
 ```
 
 For more detailed installation and configuration options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
@@ -212,27 +208,19 @@ For more detailed installation and configuration options, see the [Helm chart RE
 Alternatively, you can deploy using the provided YAML manifests:
 
 ```bash
-# Scheduler deployment
+# Standard installation with metrics (recommended)
 kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
 
-# Energy Policy Webhook (optional)
-# First, generate TLS certificates and create a Secret
-./hack/generate-webhook-certs.sh
-kubectl create secret tls energy-policy-webhook-certs -n kube-system \
-  --cert=webhooks/certs/server.pem \
-  --key=webhooks/certs/server-key.pem
-
-# Then apply the webhook manifest with the CA bundle
-CA_BUNDLE=$(cat webhooks/certs/ca.pem | base64 | tr -d '\n') \
-envsubst < webhooks/energy-policy/deployment.yaml | kubectl apply -f -
+# Installation without metrics (for clusters without Prometheus)
+kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler-no-metrics.yaml
 ```
 
 To uninstall:
 
 ```bash
 kubectl delete -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
-kubectl delete -f webhooks/energy-policy/deployment.yaml
-kubectl delete secret energy-policy-webhook-certs -n kube-system
+# Or if you used the no-metrics version:
+kubectl delete -f manifests/compute-gardener-scheduler/compute-gardener-scheduler-no-metrics.yaml
 ```
 
 ## Hardware Power Profiles
@@ -288,13 +276,13 @@ gpuProfiles:
       inference: 0.6      # Inference typically uses ~60% of max power at 100% utilization
       training: 1.0       # Training uses full power
       rendering: 0.9      # Rendering uses ~90% of max power at 100% utilization
-  "NVIDIA GeForce GTX 1660":
-    idlePower: 7.0
-    maxPower: 125.0
+  "NVIDIA GeForce RTX 3060":
+    idlePower: 10.0
+    maxPower: 170.0
     workloadTypes:
-      inference: 0.5
-      training: 0.9
-      rendering: 0.8
+      inference: 0.55
+      training: 0.95
+      rendering: 0.85
 
 # Memory power profiles
 memProfiles:
@@ -488,34 +476,6 @@ The scheduler follows this enhanced decision flow:
    - Compare against energy budgets
    - Take configurable actions when budgets are exceeded
 
-### Energy Policy Webhook
-
-The Energy Policy Webhook automates the application of energy policies to pods:
-
-```
-                           +---------------------+
-                           | Kubernetes API      |
-                           | Server              |
-                           +----------+----------+
-                                      |
-                                      | Pod Creation
-                                      | Request
-                                      v
-                           +----------+----------+
-                           | Energy Policy       |
-                           | Admission Webhook   |
-                           +----------+----------+
-                                      |
-                                      | Add Annotations
-                                      | Based on Namespace
-                                      v
-                           +----------+----------+
-                           | Compute Gardener    |
-                           | Scheduler           |
-                           +---------------------+
-```
-
-This architecture separates policy definition (at namespace level) from policy enforcement (scheduler), making it easier to define energy policies for different workload types and teams.
 
 ## Development
 
