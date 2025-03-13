@@ -1,4 +1,8 @@
-{{- if and .Values.metrics.enabled .Values.metrics.dcgmExporter.enabled (not .Values.metrics.dcgmExporter.external) }}
+{{- if and .Values.metrics.enabled .Values.metrics.gpuMetrics.enabled (not .Values.metrics.gpuMetrics.external) }}
+{{- /* Standard constants for NVIDIA GPU setup */}}
+{{- $gpuNodeSelector := dict "nvidia.com/gpu" "present" }}
+{{- $gpuRuntimeClassName := "nvidia" }}
+
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -21,15 +25,17 @@ spec:
         part-of: compute-gardener-scheduler
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+        prometheus.io/port: "{{ .Values.metrics.gpuMetrics.port }}"
         prometheus.io/path: "/metrics"
     spec:
+      # Standard nodeSelector for NVIDIA GPU nodes
       nodeSelector:
-        {{- toYaml .Values.metrics.dcgmExporter.nodeSelector | nindent 8 }}
-      runtimeClassName: nvidia
+        {{- toYaml $gpuNodeSelector | nindent 8 }}
+      # Standard runtimeClassName for NVIDIA GPU access
+      runtimeClassName: {{ $gpuRuntimeClassName }}
       containers:
       - name: exporter
-        image: {{ .Values.metrics.dcgmExporter.image }}
+        image: {{ .Values.metrics.gpuMetrics.image }}
         env:
         - name: NVIDIA_VISIBLE_DEVICES
           value: "all"
@@ -40,7 +46,7 @@ spec:
           runAsUser: 0
           privileged: true
         ports:
-        - containerPort: {{ .Values.metrics.dcgmExporter.port }}
+        - containerPort: {{ .Values.metrics.gpuMetrics.port }}
           name: metrics
           protocol: TCP
         volumeMounts:
@@ -78,18 +84,18 @@ metadata:
     {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "{{ .Values.metrics.dcgmExporter.port }}"
+    prometheus.io/port: "{{ .Values.metrics.gpuMetrics.port }}"
     prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:
-  - port: {{ .Values.metrics.dcgmExporter.port }}
-    targetPort: {{ .Values.metrics.dcgmExporter.port }}
+  - port: {{ .Values.metrics.gpuMetrics.port }}
+    targetPort: {{ .Values.metrics.gpuMetrics.port }}
     protocol: TCP
     name: metrics
   selector:
     app: compute-gardener-dcgm-exporter
-{{- if and .Values.metrics.dcgmExporter.serviceMonitor.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- if and .Values.metrics.gpuMetrics.serviceMonitor.enabled .Values.metrics.serviceMonitor.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -107,7 +113,7 @@ spec:
       app: compute-gardener-dcgm-exporter
   endpoints:
   - port: metrics
-    interval: {{ .Values.metrics.dcgmExporter.serviceMonitor.interval }}
+    interval: {{ .Values.metrics.gpuMetrics.serviceMonitor.interval }}
     path: /metrics
   namespaceSelector:
     matchNames:

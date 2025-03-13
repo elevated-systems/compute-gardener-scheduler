@@ -30,19 +30,50 @@ func New(config config.PricingConfig) *Scheduler {
 func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
 	weekday := fmt.Sprintf("%d", now.Weekday())
 	currentTime := now.Format("15:04")
+	
+	klog.V(2).InfoS("Checking if current time is within peak window",
+		"currentWeekday", weekday, 
+		"currentTime", currentTime,
+		"numSchedules", len(s.config.Schedules))
 
-	for _, schedule := range s.config.Schedules {
+	for idx, schedule := range s.config.Schedules {
 		// Check if current day is in schedule
-		if !containsDay(schedule.DayOfWeek, weekday) {
+		isDayMatched := containsDay(schedule.DayOfWeek, weekday)
+		klog.V(2).InfoS("Checking schedule",
+			"scheduleIndex", idx,
+			"dayOfWeek", schedule.DayOfWeek,
+			"startTime", schedule.StartTime,
+			"endTime", schedule.EndTime,
+			"isDayMatched", isDayMatched)
+			
+		if !isDayMatched {
 			continue
 		}
 
 		// Check if current time is within schedule
-		if currentTime >= schedule.StartTime && currentTime <= schedule.EndTime {
+		isTimeInRange := currentTime >= schedule.StartTime && currentTime <= schedule.EndTime
+		klog.V(2).InfoS("Checking time range",
+			"scheduleIndex", idx,
+			"currentTime", currentTime,
+			"startTime", schedule.StartTime,
+			"endTime", schedule.EndTime,
+			"isInRange", isTimeInRange)
+			
+		if isTimeInRange {
+			klog.V(2).InfoS("Current time is within peak period", 
+				"weekday", weekday,
+				"currentTime", currentTime,
+				"schedule", fmt.Sprintf("%s from %s to %s", 
+					describeDays(schedule.DayOfWeek), 
+					schedule.StartTime, 
+					schedule.EndTime))
 			return true
 		}
 	}
 
+	klog.V(2).InfoS("Current time is NOT within any peak window", 
+		"weekday", weekday,
+		"currentTime", currentTime)
 	return false // Not in any peak time window
 }
 

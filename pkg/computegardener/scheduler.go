@@ -104,6 +104,24 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing implementation: %v", err)
 	}
+	
+	if cfg.Pricing.Enabled {
+		klog.InfoS("Price-aware scheduling enabled",
+			"provider", cfg.Pricing.Provider,
+			"numSchedules", len(cfg.Pricing.Schedules))
+		
+		for i, schedule := range cfg.Pricing.Schedules {
+			klog.InfoS("Loaded pricing schedule",
+				"index", i,
+				"dayOfWeek", schedule.DayOfWeek,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"peakRate", schedule.PeakRate,
+				"offPeakRate", schedule.OffPeakRate)
+		}
+	} else {
+		klog.InfoS("Price-aware scheduling disabled")
+	}
 
 	// Initialize carbon implementation if enabled
 	var carbonImpl carbon.Implementation
@@ -432,10 +450,39 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	// Check pricing constraints if enabled
 	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		klog.V(2).InfoS("Checking price constraints", 
+			"pod", klog.KObj(pod), 
+			"enabled", cs.config.Pricing.Enabled,
+			"provider", cs.config.Pricing.Provider,
+			"numSchedules", len(cs.config.Pricing.Schedules),
+			"currentTime", cs.clock.Now().Format("15:04"),
+			"currentWeekday", cs.clock.Now().Weekday())
+			
+		if len(cs.config.Pricing.Schedules) > 0 {
+			schedule := cs.config.Pricing.Schedules[0]
+			klog.V(2).InfoS("Schedule details",
+				"pod", klog.KObj(pod),
+				"dayOfWeek", schedule.DayOfWeek,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"peakRate", schedule.PeakRate,
+				"offPeakRate", schedule.OffPeakRate)
+		} else {
+			klog.V(2).InfoS("No pricing schedules found", "pod", klog.KObj(pod))
+		}
+			
 		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
+			klog.V(2).InfoS("Price constraints check failed, delaying pod", 
+				"pod", klog.KObj(pod), 
+				"status", status.Message())
+				
 			// Record metrics for price-based delay
 			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
-			threshold := cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
+			threshold := 0.5 // Default threshold
+			if len(cs.config.Pricing.Schedules) > 0 {
+				threshold = cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
+			}
+			
 			if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
@@ -452,7 +499,15 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
 			return status
+		} else {
+			klog.V(2).InfoS("Price constraints check passed",
+				"pod", klog.KObj(pod))
 		}
+	} else {
+		klog.V(2).InfoS("Skipping price constraints check",
+			"pod", klog.KObj(pod),
+			"pricingEnabled", cs.config.Pricing.Enabled,
+			"pricingImpl", cs.pricingImpl != nil)
 	}
 
 	// Check carbon intensity constraints if enabled
