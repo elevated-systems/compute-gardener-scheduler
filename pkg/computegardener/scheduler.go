@@ -455,7 +455,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			"enabled", cs.config.Pricing.Enabled,
 			"provider", cs.config.Pricing.Provider,
 			"numSchedules", len(cs.config.Pricing.Schedules),
-			"currentTime", cs.clock.Now().Format("15:04"),
+			"exactTime", cs.clock.Now().Format("2006-01-02 15:04:05 MST"),
 			"currentWeekday", cs.clock.Now().Weekday())
 			
 		if len(cs.config.Pricing.Schedules) > 0 {

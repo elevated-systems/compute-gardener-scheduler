@@ -54,12 +54,16 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 			if loc, err := time.LoadLocation(schedule.Timezone); err == nil {
 				localTime = now.In(loc)
 				tzName = schedule.Timezone
+				_, offset := localTime.Zone()
+				isDST := time.Now().In(loc).IsDST()
 				if verbose {
 					klog.V(2).InfoS("Using schedule timezone", 
 						"scheduleName", schedule.Name,
 						"timezone", schedule.Timezone,
-						"utcTime", now.Format("15:04"),
-						"localTime", localTime.Format("15:04"))
+						"utcTime", now.Format("2006-01-02 15:04"),
+						"localTime", localTime.Format("2006-01-02 15:04"),
+						"offset", offset/3600,
+						"isDST", isDST)
 				}
 			} else {
 				klog.ErrorS(err, "Failed to load timezone, using UTC", 
@@ -93,7 +97,9 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 		if verbose {
 			klog.V(2).InfoS("Checking time range",
 				"scheduleName", schedule.Name,
-				"currentTime", currentTime,
+				"utcTime", now.Format("15:04"),
+				"localTime", currentTime,
+				"localDay", weekday,
 				"startTime", schedule.StartTime,
 				"endTime", schedule.EndTime,
 				"timezone", tzName,
