@@ -78,23 +78,23 @@ ENABLE_TRACING=false                  # Optional: Enable tracing
 
 ### Time-of-Use Pricing Schedules
 
-Time-of-use pricing schedules are defined in a YAML file:
+Time-of-use pricing schedules are defined in a YAML file. Each schedule supports its own timezone, allowing for multi-region scheduling:
 
 ```yaml
 schedules:
-  # Monday-Friday peak pricing periods (4pm-9pm)
-  - dayOfWeek: "1-5"
-    startTime: "16:00"
-    endTime: "21:00"
-    peakRate: 0.30    # Peak electricity rate in $/kWh
-    offPeakRate: 0.10 # Off-peak electricity rate in $/kWh
-  # Weekend peak pricing periods (1pm-7pm)
-  - dayOfWeek: "0,6"
-    startTime: "13:00"
-    endTime: "19:00"
-    peakRate: 0.30    # Peak electricity rate in $/kWh
-    offPeakRate: 0.10 # Off-peak electricity rate in $/kWh
+  # Monday-Friday peak pricing periods (4pm-9pm Pacific Time)
+  - name: "california-pge"          # Unique name for this schedule
+    dayOfWeek: "1-5"                # Days this schedule applies to (0=Sunday, 1=Monday, etc.)
+    startTime: "16:00"              # Start time in 24h format
+    endTime: "21:00"                # End time in 24h format
+    timezone: "America/Los_Angeles" # IANA timezone for this schedule
+    peakRate: 0.30                  # Peak electricity rate in $/kWh (optional)
+    offPeakRate: 0.10               # Off-peak electricity rate in $/kWh (optional)
 ```
+
+Compute Gardener uses these schedules to determine when to delay pods based on electricity prices. Rate information is optional and only used for metrics and savings estimates.
+
+**Note:** The current implementation uses the first schedule in the list for all nodes. Future versions will support node-specific schedule assignment via node annotations.
 
 ### Pod Annotations
 

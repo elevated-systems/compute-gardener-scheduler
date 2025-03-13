@@ -132,11 +132,13 @@ type SchedulingConfig struct {
 
 // Schedule defines a time range with its peak and off-peak rates
 type Schedule struct {
-	DayOfWeek   string  `yaml:"dayOfWeek"`
-	StartTime   string  `yaml:"startTime"`
-	EndTime     string  `yaml:"endTime"`
-	PeakRate    float64 `yaml:"peakRate"`    // Rate in $/kWh during this time period
-	OffPeakRate float64 `yaml:"offPeakRate"` // Rate in $/kWh outside this time period
+	Name        string  `yaml:"name"`               // Name for this schedule, e.g., "california-pg&e"
+	DayOfWeek   string  `yaml:"dayOfWeek"`          // Days this schedule applies to, e.g., "1-5" for weekdays
+	StartTime   string  `yaml:"startTime"`          // Start time in 24h format, e.g., "14:00"
+	EndTime     string  `yaml:"endTime"`            // End time in 24h format, e.g., "19:00"
+	Timezone    string  `yaml:"timezone,omitempty"` // IANA timezone, e.g., "America/Los_Angeles" (defaults to UTC)
+	PeakRate    float64 `yaml:"peakRate,omitempty"`    // Rate in $/kWh during this time period (optional, for metrics only)
+	OffPeakRate float64 `yaml:"offPeakRate,omitempty"` // Rate in $/kWh outside this time period (optional, for metrics only)
 }
 
 // CarbonConfig holds configuration for carbon-aware scheduling
@@ -150,8 +152,8 @@ type CarbonConfig struct {
 // PricingConfig holds configuration for price-aware scheduling
 type PricingConfig struct {
 	Enabled   bool       `yaml:"enabled"`
-	Provider  string     `yaml:"provider"`  // e.g. "tou" for time-of-use pricing
-	Schedules []Schedule `yaml:"schedules"` // Time-based pricing periods with their rates
+	Provider  string     `yaml:"provider"`                // e.g. "tou" for time-of-use pricing
+	Schedules []Schedule `yaml:"schedules"`               // Time-based pricing periods with their rates
 }
 
 // Validate performs validation of the configuration

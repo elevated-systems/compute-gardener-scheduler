@@ -198,6 +198,7 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `carbonAware.electricityMap.apiKey` | ElectricityMap API key | `YOUR_ELECTRICITY_MAP_API_KEY` |
 | `priceAware.enabled` | Enable price-aware scheduling | `false` |
 | `priceAware.provider` | Pricing provider | `tou` |
+| `priceAware.schedules` | List of Time-of-Use schedules (see below) | `[]` |
 | `hardwareProfiles.enabled` | Enable hardware profiles | `true` |
 | `hardwareProfiles.mountPath` | Path to mount the hardware profiles | `/etc/kubernetes/compute-gardener-scheduler/hardware-profiles` |
 | `nodeExporter.enabled` | Enable hardware metrics exporter (CPU & GPU) | `false` |
@@ -208,6 +209,43 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `metrics.serviceMonitor.namespace` | ServiceMonitor namespace | `cattle-monitoring-system` |
 | `samplePod.enabled` | Deploy a sample pod to showcase scheduler | `true` |
 | `samplePod.image` | Image for the sample pod | `busybox:latest` |
+
+### Time-of-Use Schedule Configuration
+
+The Time-of-Use pricing configuration supports multiple schedules, each with its own timezone. Each schedule consists of:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `name` | Unique name to identify this schedule | `"california-pge"` |
+| `dayOfWeek` | Days this schedule applies to (0=Sunday, 1=Monday, etc.) | `"1-5"` for weekdays |
+| `startTime` | Start time of peak period (24h format) | `"16:00"` |
+| `endTime` | End time of peak period (24h format) | `"21:00"` |
+| `timezone` | IANA timezone identifier | `"America/Los_Angeles"` |
+| `peakRate` | Optional: Peak electricity rate in $/kWh | `0.30` |
+| `offPeakRate` | Optional: Off-peak electricity rate in $/kWh | `0.10` |
+
+Example configuration:
+
+```yaml
+priceAware:
+  enabled: true
+  provider: "tou"
+  schedules:
+    - name: "california-pge-weekday"
+      dayOfWeek: "1-5"
+      startTime: "16:00"
+      endTime: "21:00"
+      timezone: "America/Los_Angeles"
+      peakRate: 0.30
+      offPeakRate: 0.10
+    - name: "california-pge-weekend"
+      dayOfWeek: "0,6"
+      startTime: "17:00"
+      endTime: "20:00"
+      timezone: "America/Los_Angeles"
+      peakRate: 0.25
+      offPeakRate: 0.10
+```
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`.
 

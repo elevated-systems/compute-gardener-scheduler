@@ -166,18 +166,18 @@ metadata:
 data:
   pricing-schedules.yaml: |
     schedules:
-      # Monday-Friday peak pricing periods (4pm-9pm)
-      - dayOfWeek: "1-5"
+      # Default TOU schedule for all nodes
+      # Currently, all nodes follow this schedule unless node annotation support is implemented
+      - name: "california-pge" 
+        dayOfWeek: "1-5"        # Monday-Friday peak pricing periods (4pm-9pm)
         startTime: "16:00"
         endTime: "21:00"
+        timezone: "America/Los_Angeles"
         peakRate: 0.30
         offPeakRate: 0.10
-      # Weekend peak pricing periods (1pm-7pm)
-      - dayOfWeek: "0,6" 
-        startTime: "13:00"
-        endTime: "19:00"
-        peakRate: 0.30
-        offPeakRate: 0.10
+      
+      # Additional schedules can be added when node-specific schedule assignment is implemented
+      # For now, only the first schedule will be used for all nodes
 ---
 apiVersion: apps/v1
 kind: Deployment

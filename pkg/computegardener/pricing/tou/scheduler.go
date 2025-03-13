@@ -26,25 +26,63 @@ func New(config config.PricingConfig) *Scheduler {
 	}
 }
 
-// IsCurrentlyPeakTime checks if the current time is within a peak time window
-func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
-	weekday := fmt.Sprintf("%d", now.Weekday())
-	currentTime := now.Format("15:04")
-	
-	klog.V(2).InfoS("Checking if current time is within peak window",
-		"currentWeekday", weekday, 
-		"currentTime", currentTime,
-		"numSchedules", len(s.config.Schedules))
+// schedulePeriod represents the result of checking a schedule against a timestamp
+type schedulePeriod struct {
+	schedule    *config.Schedule // The schedule that matched
+	localTime   time.Time       // The time in the schedule's timezone
+	isPeakTime  bool            // Whether the time is within peak hours
+	tzName      string          // Name of the timezone used
+	weekday     string          // Day of week as string
+	currentTime string          // Current time formatted as HH:MM
+}
+
+// findActivePeriod checks if the given time falls within any schedule's peak period
+// and returns details about the matching period, or nil if not in peak time
+func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePeriod {
+	if verbose {
+		klog.V(2).InfoS("Checking if current time is within any peak window",
+			"utcTime", now.Format("15:04"),
+			"numSchedules", len(s.config.Schedules))
+	}
 
 	for idx, schedule := range s.config.Schedules {
+		// Convert UTC time to schedule's timezone if specified, otherwise use UTC
+		localTime := now
+		var tzName string = "UTC"
+		
+		if schedule.Timezone != "" {
+			if loc, err := time.LoadLocation(schedule.Timezone); err == nil {
+				localTime = now.In(loc)
+				tzName = schedule.Timezone
+				if verbose {
+					klog.V(2).InfoS("Using schedule timezone", 
+						"scheduleName", schedule.Name,
+						"timezone", schedule.Timezone,
+						"utcTime", now.Format("15:04"),
+						"localTime", localTime.Format("15:04"))
+				}
+			} else {
+				klog.ErrorS(err, "Failed to load timezone, using UTC", 
+					"scheduleName", schedule.Name,
+					"timezone", schedule.Timezone)
+			}
+		}
+		
+		weekday := fmt.Sprintf("%d", localTime.Weekday())
+		currentTime := localTime.Format("15:04")
+		
 		// Check if current day is in schedule
 		isDayMatched := containsDay(schedule.DayOfWeek, weekday)
-		klog.V(2).InfoS("Checking schedule",
-			"scheduleIndex", idx,
-			"dayOfWeek", schedule.DayOfWeek,
-			"startTime", schedule.StartTime,
-			"endTime", schedule.EndTime,
-			"isDayMatched", isDayMatched)
+		if verbose {
+			klog.V(2).InfoS("Checking schedule",
+				"scheduleName", schedule.Name,
+				"scheduleIndex", idx,
+				"dayOfWeek", schedule.DayOfWeek,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"timezone", tzName,
+				"isDayMatched", isDayMatched)
+		}
 			
 		if !isDayMatched {
 			continue
@@ -52,29 +90,52 @@ func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
 
 		// Check if current time is within schedule
 		isTimeInRange := currentTime >= schedule.StartTime && currentTime <= schedule.EndTime
-		klog.V(2).InfoS("Checking time range",
-			"scheduleIndex", idx,
-			"currentTime", currentTime,
-			"startTime", schedule.StartTime,
-			"endTime", schedule.EndTime,
-			"isInRange", isTimeInRange)
+		if verbose {
+			klog.V(2).InfoS("Checking time range",
+				"scheduleName", schedule.Name,
+				"currentTime", currentTime,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"timezone", tzName,
+				"isInRange", isTimeInRange)
+		}
 			
 		if isTimeInRange {
-			klog.V(2).InfoS("Current time is within peak period", 
-				"weekday", weekday,
-				"currentTime", currentTime,
-				"schedule", fmt.Sprintf("%s from %s to %s", 
-					describeDays(schedule.DayOfWeek), 
-					schedule.StartTime, 
-					schedule.EndTime))
-			return true
+			if verbose {
+				klog.V(2).InfoS("Current time is within peak period", 
+					"scheduleName", schedule.Name,
+					"weekday", weekday,
+					"currentTime", currentTime,
+					"timezone", tzName,
+					"schedule", fmt.Sprintf("%s from %s to %s", 
+						describeDays(schedule.DayOfWeek), 
+						schedule.StartTime, 
+						schedule.EndTime))
+			}
+			
+			// Return the active period details
+			return &schedulePeriod{
+				schedule:    &schedule,
+				localTime:   localTime,
+				isPeakTime:  true,
+				tzName:      tzName,
+				weekday:     weekday,
+				currentTime: currentTime,
+			}
 		}
 	}
 
-	klog.V(2).InfoS("Current time is NOT within any peak window", 
-		"weekday", weekday,
-		"currentTime", currentTime)
-	return false // Not in any peak time window
+	if verbose {
+		klog.V(2).InfoS("Current time is NOT within any peak window", 
+			"utcTime", now.Format("15:04"))
+	}
+	return nil // Not in any peak time window
+}
+
+// IsCurrentlyPeakTime checks if the current time is within a peak time window
+func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
+	period := s.findActivePeriod(now, true)
+	return period != nil && period.isPeakTime
 }
 
 // GetCurrentRate returns the current electricity rate based on configured schedules
@@ -85,22 +146,35 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 		return 0 // No schedules configured
 	}
 
-	// If first schedule doesn't have rates configured, return 1.0 for peak, 0.5 for off-peak
-	// as nominal values for metric recording purposes only
-	schedule := s.config.Schedules[0]
+	// Default nominal values for metrics purposes
 	peakRate := 1.0
 	offPeakRate := 0.5
-
-	// If rates are configured, use the actual rates
-	if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
-		peakRate = schedule.PeakRate
-		offPeakRate = schedule.OffPeakRate
-	}
 	
-	if s.IsCurrentlyPeakTime(now) {
+	// Check if we're in a peak period right now
+	period := s.findActivePeriod(now, false)
+	
+	if period != nil && period.isPeakTime {
+		// We found a matching peak period
+		schedule := period.schedule
+		
+		// If this schedule has rates defined, use those
+		if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
+			peakRate = schedule.PeakRate
+			offPeakRate = schedule.OffPeakRate
+		}
+		
 		return peakRate
 	}
 	
+	// If we reach here, we're not in peak time, so return off-peak rate
+	// First try to find a schedule that defines off-peak rate
+	for _, schedule := range s.config.Schedules {
+		if schedule.OffPeakRate > 0 {
+			return schedule.OffPeakRate
+		}
+	}
+	
+	// Otherwise return default off-peak value
 	return offPeakRate
 }
 
@@ -119,18 +193,24 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 		// If the pod has a threshold annotation, it's essentially setting a custom allowance value
 		// A high threshold effectively allows scheduling during peak times
 		if t, err := strconv.ParseFloat(val, 64); err == nil {
-			// If rates are configured, check against actual peak rate
-			// Otherwise, just check if the threshold is high (>0.9 of nominal 1.0 peak)
-			if len(s.config.Schedules) > 0 && s.config.Schedules[0].PeakRate > 0 {
-				allowPeakScheduling = t >= s.config.Schedules[0].PeakRate
-			} else {
-				allowPeakScheduling = t >= 0.9 // Arbitrary high threshold compared to nominal value
+			// Find applicable schedule to check rates
+			var peakRate float64 = 1.0 // Default nominal value
+			
+			// Try to find an appropriate peak rate from schedules
+			for _, schedule := range s.config.Schedules {
+				if schedule.PeakRate > 0 {
+					peakRate = schedule.PeakRate
+					break
+				}
 			}
+			
+			allowPeakScheduling = t >= peakRate
 			
 			klog.V(2).InfoS("Evaluated price threshold annotation",
 				"pod", pod.Name,
 				"namespace", pod.Namespace,
 				"threshold", t,
+				"peakRate", peakRate,
 				"allowPeakScheduling", allowPeakScheduling)
 		} else {
 			klog.ErrorS(err, "Invalid price threshold annotation",
@@ -141,31 +221,25 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 		}
 	}
 	
+	// Find active peak period, if any
+	period := s.findActivePeriod(now, false)
+	
 	// If we're in peak time and the pod isn't allowed to schedule during peak, block scheduling
-	if s.IsCurrentlyPeakTime(now) && !allowPeakScheduling {
-		// For human-readable message, get the current schedule period for context
-		scheduleInfo := "current peak period"
-		for _, schedule := range s.config.Schedules {
-			weekday := fmt.Sprintf("%d", now.Weekday())
-			if containsDay(schedule.DayOfWeek, weekday) {
-				currentTime := now.Format("15:04")
-				if currentTime >= schedule.StartTime && currentTime <= schedule.EndTime {
-					days := describeDays(schedule.DayOfWeek)
-					scheduleInfo = fmt.Sprintf("%s from %s to %s", days, schedule.StartTime, schedule.EndTime)
-					break
-				}
-			}
-		}
-
-		// Record this in metrics if rates are available
-		if len(s.config.Schedules) > 0 {
-			schedule := s.config.Schedules[0]
-			if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
-				savingsEstimate := schedule.PeakRate - schedule.OffPeakRate
-				klog.V(2).InfoS("Estimated savings for delaying pod",
-					"pod", klog.KObj(pod),
-					"savingsPerKWh", savingsEstimate)
-			}
+	if period != nil && period.isPeakTime && !allowPeakScheduling {
+		schedule := period.schedule
+		days := describeDays(schedule.DayOfWeek)
+		
+		// Create a human-readable schedule description
+		scheduleInfo := fmt.Sprintf("%s from %s to %s (%s, schedule: %s)", 
+			days, schedule.StartTime, schedule.EndTime, period.tzName, schedule.Name)
+		
+		// Record this in metrics if rates are available 
+		if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
+			savingsEstimate := schedule.PeakRate - schedule.OffPeakRate
+			klog.V(2).InfoS("Estimated savings for delaying pod",
+				"pod", klog.KObj(pod),
+				"schedule", schedule.Name,
+				"savingsPerKWh", savingsEstimate)
 		}
 
 		return framework.NewStatus(
