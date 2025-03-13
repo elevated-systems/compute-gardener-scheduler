@@ -38,12 +38,10 @@ type schedulePeriod struct {
 
 // findActivePeriod checks if the given time falls within any schedule's peak period
 // and returns details about the matching period, or nil if not in peak time
-func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePeriod {
-	if verbose {
-		klog.V(2).InfoS("Checking if current time is within any peak window",
-			"utcTime", now.Format("15:04"),
-			"numSchedules", len(s.config.Schedules))
-	}
+func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
+	klog.V(2).InfoS("Checking if current time is within any peak window",
+		"utcTime", now.Format("2006-01-02 15:04:05 MST"),
+		"numSchedules", len(s.config.Schedules))
 
 	for idx, schedule := range s.config.Schedules {
 		// Convert UTC time to schedule's timezone if specified, otherwise use UTC
@@ -54,17 +52,16 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 			if loc, err := time.LoadLocation(schedule.Timezone); err == nil {
 				localTime = now.In(loc)
 				tzName = schedule.Timezone
-				_, offset := localTime.Zone()
-				isDST := time.Now().In(loc).IsDST()
-				if verbose {
-					klog.V(2).InfoS("Using schedule timezone", 
-						"scheduleName", schedule.Name,
-						"timezone", schedule.Timezone,
-						"utcTime", now.Format("2006-01-02 15:04"),
-						"localTime", localTime.Format("2006-01-02 15:04"),
-						"offset", offset/3600,
-						"isDST", isDST)
-				}
+				zoneName, offset := localTime.Zone()
+				isDST := localTime.IsDST()
+				klog.V(2).InfoS("Using schedule timezone", 
+					"scheduleName", schedule.Name,
+					"timezone", schedule.Timezone,
+					"utcTime", now.Format("2006-01-02 15:04:05 MST"),
+					"localTime", localTime.Format("2006-01-02 15:04:05 MST"),
+					"zoneName", zoneName,
+					"offsetHours", offset/3600,
+					"isDST", isDST)
 			} else {
 				klog.ErrorS(err, "Failed to load timezone, using UTC", 
 					"scheduleName", schedule.Name,
@@ -77,16 +74,14 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 		
 		// Check if current day is in schedule
 		isDayMatched := containsDay(schedule.DayOfWeek, weekday)
-		if verbose {
-			klog.V(2).InfoS("Checking schedule",
-				"scheduleName", schedule.Name,
-				"scheduleIndex", idx,
-				"dayOfWeek", schedule.DayOfWeek,
-				"startTime", schedule.StartTime,
-				"endTime", schedule.EndTime,
-				"timezone", tzName,
-				"isDayMatched", isDayMatched)
-		}
+		klog.V(2).InfoS("Checking schedule",
+			"scheduleName", schedule.Name,
+			"scheduleIndex", idx,
+			"dayOfWeek", schedule.DayOfWeek,
+			"startTime", schedule.StartTime,
+			"endTime", schedule.EndTime,
+			"timezone", tzName,
+			"isDayMatched", isDayMatched)
 			
 		if !isDayMatched {
 			continue
@@ -94,30 +89,26 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 
 		// Check if current time is within schedule
 		isTimeInRange := currentTime >= schedule.StartTime && currentTime <= schedule.EndTime
-		if verbose {
-			klog.V(2).InfoS("Checking time range",
-				"scheduleName", schedule.Name,
-				"utcTime", now.Format("15:04"),
-				"localTime", currentTime,
-				"localDay", weekday,
-				"startTime", schedule.StartTime,
-				"endTime", schedule.EndTime,
-				"timezone", tzName,
-				"isInRange", isTimeInRange)
-		}
+		klog.V(2).InfoS("Checking time range",
+			"scheduleName", schedule.Name,
+			"utcTime", now.Format("15:04"),
+			"localTime", currentTime,
+			"localDay", weekday,
+			"startTime", schedule.StartTime,
+			"endTime", schedule.EndTime,
+			"timezone", tzName,
+			"isInRange", isTimeInRange)
 			
 		if isTimeInRange {
-			if verbose {
-				klog.V(2).InfoS("Current time is within peak period", 
-					"scheduleName", schedule.Name,
-					"weekday", weekday,
-					"currentTime", currentTime,
-					"timezone", tzName,
-					"schedule", fmt.Sprintf("%s from %s to %s", 
-						describeDays(schedule.DayOfWeek), 
-						schedule.StartTime, 
-						schedule.EndTime))
-			}
+			klog.V(2).InfoS("Current time is within peak period", 
+				"scheduleName", schedule.Name,
+				"weekday", weekday,
+				"currentTime", currentTime,
+				"timezone", tzName,
+				"schedule", fmt.Sprintf("%s from %s to %s", 
+					describeDays(schedule.DayOfWeek), 
+					schedule.StartTime, 
+					schedule.EndTime))
 			
 			// Return the active period details
 			return &schedulePeriod{
@@ -131,16 +122,27 @@ func (s *Scheduler) findActivePeriod(now time.Time, verbose bool) *schedulePerio
 		}
 	}
 
-	if verbose {
-		klog.V(2).InfoS("Current time is NOT within any peak window", 
-			"utcTime", now.Format("15:04"))
-	}
+	klog.V(2).InfoS("Current time is NOT within any peak window", 
+		"utcTime", now.Format("2006-01-02 15:04:05 MST"))
+	
 	return nil // Not in any peak time window
 }
 
 // IsCurrentlyPeakTime checks if the current time is within a peak time window
 func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
-	period := s.findActivePeriod(now, true)
+	// Debug time comparison for America/Los_Angeles
+	if loc, err := time.LoadLocation("America/Los_Angeles"); err == nil {
+		laTime := now.In(loc)
+		zone, offset := laTime.Zone()
+		klog.InfoS("DEBUG: Direct timezone conversion check",
+			"utcTime", now.Format("2006-01-02 15:04:05 MST"),
+			"losAngelesTime", laTime.Format("2006-01-02 15:04:05 MST"),
+			"zone", zone,
+			"offsetHours", offset/3600,
+			"isDST", laTime.IsDST())
+	}
+
+	period := s.findActivePeriod(now)
 	return period != nil && period.isPeakTime
 }
 
@@ -157,7 +159,7 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 	offPeakRate := 0.5
 	
 	// Check if we're in a peak period right now
-	period := s.findActivePeriod(now, false)
+	period := s.findActivePeriod(now)
 	
 	if period != nil && period.isPeakTime {
 		// We found a matching peak period
@@ -228,7 +230,7 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 	}
 	
 	// Find active peak period, if any
-	period := s.findActivePeriod(now, false)
+	period := s.findActivePeriod(now)
 	
 	// If we're in peak time and the pod isn't allowed to schedule during peak, block scheduling
 	if period != nil && period.isPeakTime && !allowPeakScheduling {
