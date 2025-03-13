@@ -47,9 +47,13 @@ data:
   pricing-schedules.yaml: |
     schedules:
       {{- range .Values.priceAware.schedules }}
-      - dayOfWeek: "{{ .dayOfWeek }}"
+      - name: "{{ .name }}"
+        dayOfWeek: "{{ .dayOfWeek }}"
         startTime: "{{ .startTime }}"
         endTime: "{{ .endTime }}"
+        {{- if .timezone }}
+        timezone: "{{ .timezone }}"
+        {{- end }}
         {{- if hasKey . "peakRate" }}
         peakRate: {{ .peakRate }}
         {{- end }}
