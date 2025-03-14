@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -226,31 +227,65 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	var idlePower, maxPower float64
 	var nodePower *config.NodePower
 	var hasNodePower bool
+	var powerSource string = "unknown"
+	var diagnostics []string
 	
 	// First try to get the node from the Kubernetes API
 	node, err := cs.handle.ClientSet().CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		diagnostics = append(diagnostics, fmt.Sprintf("Failed to get node from API: %v", err))
+	}
 	
 	// Check if we have a hardware profiler and can get a node-specific power profile
 	if err == nil && cs.hardwareProfiler != nil {
 		// Try to get a node-specific profile based on detected hardware
 		profile, profileErr := cs.hardwareProfiler.GetNodePowerProfile(node)
+		
+		// Log CPU model annotation for diagnostics
+		cpuModel := "missing"
+		if val, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+			cpuModel = val
+		}
+		
+		if profileErr != nil {
+			diagnostics = append(diagnostics, fmt.Sprintf("Hardware profile detection error: %v", profileErr))
+			diagnostics = append(diagnostics, fmt.Sprintf("Node CPU model annotation: %s", cpuModel))
+		}
+		
 		if profileErr == nil && profile != nil {
 			nodePower = profile
 			idlePower = profile.IdlePower
 			maxPower = profile.MaxPower
 			hasNodePower = true
-			
-			cpuModel := "unknown"
-			if val, ok := node.Annotations[common.AnnotationCPUModel]; ok {
-				cpuModel = val
-			}
+			powerSource = "hardware-profile"
 			
 			klog.V(2).InfoS("Using hardware-profiled power values",
 				"node", nodeName,
 				"cpuModel", cpuModel,
 				"idlePower", idlePower,
-				"maxPower", maxPower)
+				"maxPower", maxPower,
+				"hasCPUModelAnnotation", cpuModel != "missing")
+		} else {
+			diagnostics = append(diagnostics, fmt.Sprintf("Hardware profile failed or nil: err=%v, profile=%v", profileErr, profile != nil))
+			
+			// Log more details about the hardware profiler
+			if cs.hardwareProfiler != nil && cs.config.Power.HardwareProfiles != nil {
+				cpuProfileCount := len(cs.config.Power.HardwareProfiles.CPUProfiles)
+				diagnostics = append(diagnostics, fmt.Sprintf("Hardware profiler has %d CPU profiles", cpuProfileCount))
+				
+				// Check if the CPU model we have is in the profiles
+				if cpuModel != "missing" && cs.config.Power.HardwareProfiles.CPUProfiles != nil {
+					_, found := cs.config.Power.HardwareProfiles.CPUProfiles[cpuModel]
+					diagnostics = append(diagnostics, fmt.Sprintf("CPU model '%s' exists in profiles: %v", cpuModel, found))
+				}
+			} else {
+				diagnostics = append(diagnostics, "Hardware profiler or profiles is nil")
+			}
 		}
+	} else if err != nil {
+		diagnostics = append(diagnostics, "Skipping hardware profile due to node lookup error")
+	} else if cs.hardwareProfiler == nil {
+		diagnostics = append(diagnostics, "Hardware profiler is nil")
 	}
 	
 	// If no hardware profile, check manually configured power values
@@ -260,6 +295,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 			idlePower = np.IdlePower
 			maxPower = np.MaxPower
 			hasNodePower = true
+			powerSource = "manual-config"
 			klog.V(2).InfoS("Using manually configured power values", 
 				"node", nodeName,
 				"idlePower", idlePower,
@@ -269,10 +305,12 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 			idlePower = cs.config.Power.DefaultIdlePower
 			maxPower = cs.config.Power.DefaultMaxPower
 			hasNodePower = false
+			powerSource = "default-values"
 			klog.V(2).InfoS("Using default power values (no profile found)",
 				"node", nodeName,
 				"idlePower", idlePower,
-				"maxPower", maxPower)
+				"maxPower", maxPower,
+				"diagnosticsInfo", strings.Join(diagnostics, "; "))
 		}
 	}
 
@@ -328,12 +366,18 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 
 	totalPower := cpuPower + adjustedGPUPower
 
-	klog.V(2).InfoS("Power calculation breakdown",
+	// Expanded logging with power source information
+	klog.V(2).InfoS("Power calculation full breakdown",
 		"node", nodeName,
+		"powerSource", powerSource,
 		"cpuUtilization", cpu,
+		"originalIdlePower", idlePower,
+		"originalMaxPower", maxPower,
+		"adjustedIdlePower", adjustedIdlePower,
+		"adjustedMaxPower", adjustedMaxPower,
+		"cpuPower", cpuPower,
 		"gpuPower", gpuPower,
 		"adjustedGPUPower", adjustedGPUPower,
-		"cpuPower", cpuPower,
 		"totalPower", totalPower)
 
 	// Total power is sum of CPU and GPU power

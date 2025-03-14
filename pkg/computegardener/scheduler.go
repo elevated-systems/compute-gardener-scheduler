@@ -97,6 +97,19 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			"cpuProfiles", len(cfg.Power.HardwareProfiles.CPUProfiles),
 			"gpuProfiles", len(cfg.Power.HardwareProfiles.GPUProfiles),
 			"memProfiles", len(cfg.Power.HardwareProfiles.MemProfiles))
+
+		// Log detailed information about CPU profiles
+		for model, profile := range cfg.Power.HardwareProfiles.CPUProfiles {
+			klog.V(2).InfoS("CPU profile loaded",
+				"model", model,
+				"idlePower", profile.IdlePower,
+				"maxPower", profile.MaxPower)
+		}
+
+		// Log default power values
+		klog.V(2).InfoS("Default power values configured",
+			"defaultIdlePower", cfg.Power.DefaultIdlePower,
+			"defaultMaxPower", cfg.Power.DefaultMaxPower)
 	}
 
 	// Initialize pricing implementation if enabled
@@ -104,12 +117,12 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing implementation: %v", err)
 	}
-	
+
 	if cfg.Pricing.Enabled {
 		klog.InfoS("Price-aware scheduling enabled",
 			"provider", cfg.Pricing.Provider,
 			"numSchedules", len(cfg.Pricing.Schedules))
-		
+
 		for i, schedule := range cfg.Pricing.Schedules {
 			klog.InfoS("Loaded pricing schedule",
 				"index", i,
@@ -179,9 +192,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		// Initialize GPU metrics client - use Prometheus if configured, otherwise use null client
 		if cfg.Metrics.Prometheus != nil && cfg.Metrics.Prometheus.URL != "" {
-			klog.InfoS("Initializing Prometheus GPU metrics client", 
+			klog.InfoS("Initializing Prometheus GPU metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
-			
+
 			promClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
 				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
@@ -194,7 +207,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				if cfg.Metrics.Prometheus.DCGMUtilMetric != "" {
 					promClient.SetDCGMUtilMetric(cfg.Metrics.Prometheus.DCGMUtilMetric)
 				}
-				
+
 				// Set useDCGM based on config (default to true if not explicitly disabled)
 				useDCGM := true // Default to true
 				// Only change if explicitly set to false
@@ -202,12 +215,12 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					useDCGM = false
 				}
 				promClient.SetUseDCGM(useDCGM)
-				
-				klog.InfoS("Prometheus GPU metrics client configured with DCGM", 
+
+				klog.InfoS("Prometheus GPU metrics client configured with DCGM",
 					"useDCGM", useDCGM,
 					"powerMetric", promClient.GetDCGMPowerMetric(),
 					"utilMetric", promClient.GetDCGMUtilMetric())
-				
+
 				gpuMetricsClient = promClient
 			}
 		} else {
@@ -252,7 +265,15 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			FilterFunc: func(obj interface{}) bool {
 				pod, ok := obj.(*v1.Pod)
 				if !ok {
-					return false
+					// Handle tombstone objects
+					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+					if !ok {
+						return false
+					}
+					pod, ok = tombstone.Obj.(*v1.Pod)
+					if !ok {
+						return false
+					}
 				}
 				return pod.Spec.SchedulerName == SchedulerName
 			},
@@ -287,6 +308,38 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 							"nodeName", newPod.Spec.NodeName)
 						scheduler.handlePodCompletion(newPod)
 					}
+				},
+				DeleteFunc: func(obj interface{}) {
+					// Handle pod deletion (like when scaling down deployments)
+					var pod *v1.Pod
+					var ok bool
+					
+					// Extract the pod from the object (which might be a tombstone)
+					pod, ok = obj.(*v1.Pod)
+					if !ok {
+						// When a delete is observed, we sometimes get a DeletedFinalStateUnknown
+						tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+						if !ok {
+							klog.V(2).InfoS("Error decoding object, invalid type")
+							return
+						}
+						pod, ok = tombstone.Obj.(*v1.Pod)
+						if !ok {
+							klog.V(2).InfoS("Error decoding object tombstone, invalid type")
+							return
+						}
+					}
+					
+					// Skip if pod doesn't have a node assigned
+					if pod.Spec.NodeName == "" {
+						return
+					}
+					
+					klog.V(2).InfoS("Pod deleted, handling as completion",
+						"pod", klog.KObj(pod),
+						"phase", pod.Status.Phase,
+						"nodeName", pod.Spec.NodeName)
+					scheduler.handlePodCompletion(pod)
 				},
 			},
 		},
@@ -354,11 +407,11 @@ func (cs *ComputeGardenerScheduler) Name() string {
 
 // PreFilter implements the PreFilter interface
 func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	klog.V(2).InfoS("PreFilter starting", 
+	klog.V(2).InfoS("PreFilter starting",
 		"pod", klog.KObj(pod),
 		"schedulerName", pod.Spec.SchedulerName,
 		"hasGPU", hasGPURequest(pod))
-	
+
 	startTime := cs.clock.Now()
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
@@ -384,9 +437,9 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
 	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
-	
-	klog.V(2).InfoS("PreFilter completed successfully", 
-		"pod", klog.KObj(pod), 
+
+	klog.V(2).InfoS("PreFilter completed successfully",
+		"pod", klog.KObj(pod),
 		"schedulerName", pod.Spec.SchedulerName)
 	return nil, framework.NewStatus(framework.Success, "")
 }
@@ -430,13 +483,13 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		// If state exists, check if it's valid
 		s, ok := v.(*preFilterState)
 		if !ok || !s.passed {
-			klog.V(2).InfoS("Invalid prefilter state but continuing with filter evaluation", 
+			klog.V(2).InfoS("Invalid prefilter state but continuing with filter evaluation",
 				"pod", klog.KObj(pod),
 				"correctType", ok,
 				"passed", ok && s.passed)
 		}
 	}
-	
+
 	// Check for opt-out annotation directly since we might not have prefilter state
 	if cs.isOptedOut(pod) {
 		klog.V(2).InfoS("Pod opted out of scheduling constraints", "pod", klog.KObj(pod))
@@ -450,14 +503,14 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	// Check pricing constraints if enabled
 	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
-		klog.V(2).InfoS("Checking price constraints", 
-			"pod", klog.KObj(pod), 
+		klog.V(2).InfoS("Checking price constraints",
+			"pod", klog.KObj(pod),
 			"enabled", cs.config.Pricing.Enabled,
 			"provider", cs.config.Pricing.Provider,
 			"numSchedules", len(cs.config.Pricing.Schedules),
 			"exactTime", cs.clock.Now().Format("2006-01-02 15:04:05 MST"),
 			"currentWeekday", cs.clock.Now().Weekday())
-			
+
 		if len(cs.config.Pricing.Schedules) > 0 {
 			schedule := cs.config.Pricing.Schedules[0]
 			klog.V(2).InfoS("Schedule details",
@@ -470,19 +523,19 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		} else {
 			klog.V(2).InfoS("No pricing schedules found", "pod", klog.KObj(pod))
 		}
-			
+
 		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
-			klog.V(2).InfoS("Price constraints check failed, delaying pod", 
-				"pod", klog.KObj(pod), 
+			klog.V(2).InfoS("Price constraints check failed, delaying pod",
+				"pod", klog.KObj(pod),
 				"status", status.Message())
-				
+
 			// Record metrics for price-based delay
 			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
 			threshold := 0.5 // Default threshold
 			if len(cs.config.Pricing.Schedules) > 0 {
 				threshold = cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
 			}
-			
+
 			if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
