@@ -342,9 +342,37 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		}
 	}
 
+	// Get number of CPU cores for the node to normalize utilization
+	var totalCPUCores float64 = 1.0 // Default to 1 if we can't determine
+	if node != nil {
+		if cpuQuantity, exists := node.Status.Capacity[v1.ResourceCPU]; exists {
+			totalCPUCores = float64(cpuQuantity.Value())
+		}
+	}
+	
+	// Normalize CPU utilization to 0-1 range by dividing by total cores
+	normalizedCPU := cpu
+	if totalCPUCores > 0 {
+		normalizedCPU = cpu / totalCPUCores
+		// Ensure normalized value doesn't exceed 1.0 (100%)
+		if normalizedCPU > 1.0 {
+			normalizedCPU = 1.0
+		}
+	}
+	
 	// Power-law model (exponent 1.4) provides more realistic power scaling than linear model
 	powerExponent := 1.4
-	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*math.Pow(cpu, powerExponent)
+	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*math.Pow(normalizedCPU, powerExponent)
+	
+	klog.V(3).InfoS("CPU power calculation details", 
+		"node", nodeName,
+		"cpuCores", totalCPUCores,
+		"absoluteCpuUsage", cpu,
+		"normalizedCpuUsage", normalizedCPU,
+		"powerExponent", powerExponent,
+		"idlePower", adjustedIdlePower,
+		"maxPower", adjustedMaxPower,
+		"calculatedCpuPower", cpuPower)
 
 	// Apply GPU PUE factor if we have GPU power
 	adjustedGPUPower := 0.0
