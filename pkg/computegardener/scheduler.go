@@ -336,6 +336,16 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 						return
 					}
 					
+					// Check if this pod was already processed for completion
+					if scheduler.metricsStore != nil {
+						if history, found := scheduler.metricsStore.GetHistory(string(pod.UID)); found && history.Completed {
+							klog.V(2).InfoS("Pod deletion detected, but already processed for completion",
+								"pod", klog.KObj(pod),
+								"phase", pod.Status.Phase)
+							return
+						}
+					}
+					
 					klog.V(2).InfoS("Pod deleted, handling as completion",
 						"pod", klog.KObj(pod),
 						"phase", pod.Status.Phase,
@@ -482,8 +492,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			"node", nodeInfo.Node().Name,
 			"path", pathMsg,
 			"decision", decision,
-			"duration", cs.clock.Since(startTime).Milliseconds(),
-			"ms")
+			"durationMs", cs.clock.Since(startTime).Milliseconds())
 		
 		// More detailed logging at higher verbosity
 		if returnStatus != nil {

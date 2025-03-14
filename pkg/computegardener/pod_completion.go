@@ -63,24 +63,30 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 
 // processPodCompletionMetrics processes metrics for a completed pod
 func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, podUID, podName, namespace, nodeName string) {
-	// Mark pod as completed in metrics store to prevent further collection
-	cs.metricsStore.MarkCompleted(podUID)
-
-	// Get pod metrics history
+	// Get pod metrics history first to check if already completed
 	metricsHistory, found := cs.metricsStore.GetHistory(podUID)
+	
+	// Check if already processed or no history available
 	if !found {
 		klog.V(2).InfoS("No metrics history found for pod",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)
 		return
-	}
-
-	if len(metricsHistory.Records) == 0 {
+	} else if found && metricsHistory.Completed {
+		// Pod was already processed for completion, avoid double-counting
+		klog.V(2).InfoS("Pod already marked as completed, skipping metrics calculation to avoid double-counting",
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
+		return
+	} else if len(metricsHistory.Records) == 0 {
 		klog.V(2).InfoS("Metrics history is empty for pod",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)
 		return
 	}
+	
+	// Mark pod as completed in metrics store to prevent further collection
+	cs.metricsStore.MarkCompleted(podUID)
 
 	klog.V(2).InfoS("Found metrics history for pod",
 		"pod", klog.KObj(pod),
