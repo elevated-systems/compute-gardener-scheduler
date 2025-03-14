@@ -25,13 +25,13 @@ import (
 	"k8s.io/kubernetes/cmd/kube-scheduler/app"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/networkaware/networkoverhead"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/networkaware/topologicalsort"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesources"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/noderesourcetopology"
+	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/networkoverhead"
+	"sigs.k8s.io/scheduler-plugins/pkg/networkaware/topologicalsort"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesources"
+	"sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology"
 
 	// Ensure scheme package is initialized.
-	_ "github.com/elevated-systems/compute-gardener-scheduler/apis/config/scheme"
+	_ "sigs.k8s.io/scheduler-plugins/apis/config/scheme"
 )
 
 func main() {

@@ -4,6 +4,8 @@
 
 The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables carbon and price-aware scheduling of pods based on real-time carbon intensity data and time-of-use electricity pricing.
 
+This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) framework to provide specialized energy and cost-aware scheduling capabilities.
+
 ## Features
 
 - **Carbon-Aware Scheduling** (Optional): Schedule pods based on real-time carbon intensity data from Electricity Map API or implement your own intensity source
@@ -478,6 +480,16 @@ The scheduler follows this enhanced decision flow:
 
 
 ## Development
+
+### Integration with Kubernetes Scheduler Plugins
+
+This project uses the following plugins from the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) project:
+
+- **Network-aware scheduling**: Optimize pod placement based on network topology and latency requirements
+- **Node resource allocation**: More advanced resource allocation strategies beyond default scheduler
+- **Node resource topology**: NUMA-aware scheduling for optimized hardware resource utilization
+
+These plugins are imported directly from the upstream `sigs.k8s.io/scheduler-plugins` repository, allowing us to focus on our core energy-efficiency features while leveraging the community's work on specialized scheduling.
 
 ### Adding a New Carbon Intensity Source
 
