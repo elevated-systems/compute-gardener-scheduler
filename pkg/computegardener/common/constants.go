@@ -92,7 +92,7 @@ const (
 // Defaults for power and efficiency
 const (
 	DefaultPUE    = 1.15
-	DefaultGPUPUE = 1.17
+	DefaultGPUPUE = 1.2
 )
 
 // Prometheus metric names for hardware monitoring
