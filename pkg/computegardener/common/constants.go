@@ -22,6 +22,10 @@ const (
 	AnnotationEnergyBudgetExceeded   = AnnotationBase + "/energy-budget-exceeded"
 	AnnotationEnergyUsageKWh         = AnnotationBase + "/energy-usage-kwh"
 	AnnotationEnergyBudgetExceededBy = AnnotationBase + "/energy-budget-exceeded-by"
+	
+	// Carbon and cost tracking annotations
+	AnnotationInitialCarbonIntensity = AnnotationBase + "/initial-carbon-intensity"
+	AnnotationInitialElectricityRate = AnnotationBase + "/initial-electricity-rate"
 
 	// Hardware efficiency annotations
 	AnnotationMaxPowerWatts   = AnnotationBase + "/max-power-watts"

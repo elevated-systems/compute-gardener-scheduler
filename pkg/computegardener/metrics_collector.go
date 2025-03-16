@@ -178,6 +178,12 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			carbonIntensity,
 			cs.calculatePodPower,
 		)
+		
+		// Add electricity rate if pricing implementation is available
+		if cs.pricingImpl != nil {
+			currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
+			record.ElectricityRate = currentRate
+		}
 
 		// Store metrics in cache
 		cs.metricsStore.AddRecord(

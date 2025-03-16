@@ -97,6 +97,28 @@ spec:
     app: compute-gardener-dcgm-exporter
 {{- if and .Values.metrics.gpuMetrics.serviceMonitor.enabled .Values.metrics.serviceMonitor.enabled }}
 ---
+{{- if .Values.metrics.gke }}
+# GKE-specific monitoring
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: compute-gardener-dcgm-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dcgm-exporter
+    component: gpu-metrics
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dcgm-exporter
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.gpuMetrics.serviceMonitor.interval }}
+    path: /metrics
+{{- else }}
+# Standard Prometheus Operator
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -118,5 +140,6 @@ spec:
   namespaceSelector:
     matchNames:
     - {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
 {{- end }}

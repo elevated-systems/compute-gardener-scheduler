@@ -185,6 +185,17 @@ data:
         frequencyRangeGHz:
           min: 1.5
           max: 3.5
+          
+      # Generic Intel Xeon for Google Cloud/GKE
+      "Intel(R) Xeon(R) CPU @ 2.20GHz":
+        idlePower: 10.0
+        maxPower: 110.0
+        numCores: 16
+        baseFrequencyGHz: 2.2
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.2
+          max: 3.0
       
       # AMD CPUs - Consumer/Edge (Homelab)
       "AMD Ryzen 5 3600 6-Core Processor":
@@ -308,6 +319,11 @@ data:
       
       # GCP instance types
       gcp:
+        "default-gke-profile":
+          cpuModel: "Intel(R) Xeon(R) CPU @ 2.20GHz"
+          numCores: 16
+          totalMemory: 32768
+          memoryType: "DDR4-2666 ECC"
         "n2-standard-2":
           cpuModel: "Intel(R) Xeon(R) Gold 6148"
           totalMemory: 8192

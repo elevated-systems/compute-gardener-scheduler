@@ -20,6 +20,8 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
   kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
   ```
   Or disable metrics with `--set metrics.enabled=false`
+  
+  **Note for GKE users**: GKE uses its own monitoring CRDs. For GKE, enable the GKE-specific monitoring with `--set metrics.gke=true` instead of installing the Prometheus Operator CRDs. This will use `PodMonitoring` from the `monitoring.googleapis.com/v1` API.
 
 ### Recommended Components
 
@@ -86,16 +88,27 @@ helm uninstall compute-gardener-scheduler --namespace compute-gardener
 **Note on Simplified/Managed Cluster Types:**
 Simplified cluster types like GKE Autopilot and EKS Fargate have limitations that may prevent using custom schedulers:
 
-- **GKE Autopilot** does not support custom schedulers at all. You must use GKE Standard clusters:
-  ```bash
-  # Create a GKE Standard cluster in a region with typically lower carbon intensity
-  # The us-west1 (Oregon) region uses significant renewable energy
-  gcloud container clusters create compute-gardener-cluster \
-    --num-nodes=1 \
-    --disk-size=100 \
-    --machine-type=e2-standard-2 \
-    --zone=us-west1-a
-  ```
+- **GKE** considerations:
+  - **GKE Autopilot** does not support custom schedulers at all. You must use GKE Standard clusters:
+    ```bash
+    # Create a GKE Standard cluster in a region with typically lower carbon intensity
+    # The us-west1 (Oregon) region uses significant renewable energy
+    gcloud container clusters create compute-gardener-cluster \
+      --num-nodes=1 \
+      --disk-size=100 \
+      --machine-type=e2-standard-2 \
+      --zone=us-west1-a
+    ```
+  - **GKE Standard** with Google Cloud Managed Service for Prometheus: 
+    ```bash
+    # Install with GKE-specific monitoring
+    helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+      --namespace compute-gardener \
+      --create-namespace \
+      --set metrics.gke=true \
+      --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+    ```
+    This will use `PodMonitoring` resources from the `monitoring.googleapis.com/v1` API instead of the standard Prometheus Operator `ServiceMonitor` resources.
 
 - **EKS Fargate** has similar limitations with pod scheduling. Consider using regular EKS with EC2 nodes.
 
@@ -207,6 +220,7 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `metrics.enabled` | Enable metrics | `true` |
 | `metrics.serviceMonitor.enabled` | Enable ServiceMonitor for Prometheus | `true` |
 | `metrics.serviceMonitor.namespace` | ServiceMonitor namespace | `cattle-monitoring-system` |
+| `metrics.gke` | Use GKE-specific PodMonitoring instead of ServiceMonitor | `false` |
 | `samplePod.enabled` | Deploy a sample pod to showcase scheduler | `true` |
 | `samplePod.image` | Image for the sample pod | `busybox:latest` |
 

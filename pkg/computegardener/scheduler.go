@@ -609,8 +609,18 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 			// Record metrics for price-based delay
 			PriceBasedDelays.WithLabelValues(period).Inc()
-			savings := rate - threshold
-			EstimatedSavings.WithLabelValues("cost", "dollars").Add(savings)
+			// Store the current rate as an annotation for later calculation of true savings,
+			// but only if we haven't recorded it already (to capture the first delay only)
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			// Only set the initial rate if it hasn't been set already
+			if _, exists := pod.Annotations[common.AnnotationInitialElectricityRate]; !exists {
+				pod.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(rate, 'f', 6, 64)
+				klog.V(3).InfoS("Recorded initial electricity rate for delayed pod", 
+					"pod", klog.KObj(pod),
+					"initialRate", rate)
+			}
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
 			return status
@@ -698,8 +708,19 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 					"intensity", intensity,
 					"threshold", threshold)
 				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-				savings := intensity - threshold
-				EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
+				
+				// Store the current intensity as an annotation for later calculation of true savings,
+				// but only if we haven't recorded it already (to capture the first delay only)
+				if pod.Annotations == nil {
+					pod.Annotations = make(map[string]string)
+				}
+				// Only set the initial intensity if it hasn't been set already
+				if _, exists := pod.Annotations[common.AnnotationInitialCarbonIntensity]; !exists {
+					pod.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(intensity, 'f', 2, 64)
+					klog.V(3).InfoS("Recorded initial carbon intensity for delayed pod", 
+						"pod", klog.KObj(pod),
+						"initialIntensity", intensity)
+				}
 
 				// Return unschedulable status directly
 				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
