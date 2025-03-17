@@ -2,7 +2,7 @@
 # This is a YAML-formatted file
 
 # Note: Use Helm's --namespace and --create-namespace flags 
-# to specify the installation namespace
+# to specify the installation namespace (suggested namespace: "compute-gardener")
 
 # General scheduler configuration
 scheduler:
@@ -11,14 +11,14 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.5-47530b2
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.6-b5233a9
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
   # Maximum time to delay pod scheduling when waiting for better conditions (price or carbon)
   maxSchedulingDelay: "24h"
   # Log verbosity level (0-5)
-  logLevel: 2
+  logLevel: 1
   resources:
     requests:
       cpu: 50m
@@ -51,18 +51,38 @@ priceAware:
   enabled: false
   provider: "tou" # Time of Use
   schedules:
-    # Monday-Friday peak pricing periods (4pm-9pm)
-    - dayOfWeek: "1-5"
-      startTime: "16:00"
-      endTime: "21:00"
-      peakRate: 0.30
-      offPeakRate: 0.10
-    # Weekend peak pricing periods (1pm-7pm)
-    - dayOfWeek: "0,6"
-      startTime: "13:00"
-      endTime: "19:00"
-      peakRate: 0.30
-      offPeakRate: 0.10
+    # Default TOU schedule for all nodes
+    # Currently, all nodes follow this schedule unless node annotation support is implemented
+    - name: "california-pge"            # Unique name for this schedule
+      dayOfWeek: "1-5"                  # Monday-Friday (1-5)
+      startTime: "16:00"                # Start of peak period (4pm)
+      endTime: "21:00"                  # End of peak period (9pm)
+      timezone: "America/Los_Angeles"   # IANA timezone identifier
+      # Rates are optional and only used for metrics/reporting
+      peakRate: 0.30                    # Peak rate in $/kWh
+      offPeakRate: 0.10                 # Off-peak rate in $/kWh
+    
+    # Additional schedules will be supported in the future:
+    # In the current implementation, only the first schedule is used for all nodes.
+    # Future versions will support node-specific schedule assignment via annotations.
+    # 
+    # Examples of additional schedule formats for future use:
+    #
+    # - name: "california-pge-weekend"
+    #   dayOfWeek: "0,6"                # Saturday-Sunday (0,6)
+    #   startTime: "13:00"              # 1pm
+    #   endTime: "19:00"                # 7pm
+    #   timezone: "America/Los_Angeles"
+    #   peakRate: 0.20
+    #   offPeakRate: 0.10
+    #
+    # - name: "new-york-coned"
+    #   dayOfWeek: "1-5"                # Monday-Friday 
+    #   startTime: "14:00"              # 2pm
+    #   endTime: "20:00"                # 8pm
+    #   timezone: "America/New_York"
+    #   peakRate: 0.25
+    #   offPeakRate: 0.08
 
 # Metrics configuration
 metrics:
@@ -75,9 +95,12 @@ metrics:
     port: 10259
   serviceMonitor:
     enabled: true
-    namespace: "monitoring" # Default Prometheus namespace, change to match your setup
+    # Default Prometheus namespace, change to match your setup (ex: cattle-monitoring-system with Rancher)
+    namespace: "monitoring"
     interval: "15s" # Match the node exporter's sampling interval
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
+  # Set to true for GKE to use PodMonitoring instead of ServiceMonitor
+  gke: false
   
   # Prometheus configuration for metrics collection
   prometheus:
@@ -96,23 +119,20 @@ metrics:
     # This assumes DCGM exporter is configured with standard metric names
     dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE"
   
-  # GPU metrics configuration via DCGM exporter
-  dcgmExporter:
-    # Enable GPU metrics collection via DCGM exporter
+  # GPU metrics configuration
+  gpuMetrics:
+    # Enable GPU metrics collection
     enabled: true
-    # Set to true if DCGM exporter is already installed externally
+    # Set to true if GPU metrics exporter is already installed externally
     external: false
-    # Node selector for GPU nodes - only deploy on nodes with NVIDIA GPUs
-    nodeSelector:
-      nvidia.com/gpu: "present"
-    # Configuration for DCGM exporter when not using external installation
+    # Configuration for GPU metrics exporter (using industry-standard DCGM)
     image: "nvcr.io/nvidia/k8s/dcgm-exporter:2.4.6-2.6.10-ubuntu20.04"
-    # DCGM exporter metrics port
+    # GPU metrics exporter port
     port: 9400
-    # Metrics endpoint for Prometheus when using external DCGM exporter
+    # Metrics endpoint for Prometheus when using external GPU metrics exporter
     # For internal installation, will be constructed based on service name
     endpoint: "http://dcgm-exporter.monitoring:9400/metrics"
-    # Whether to deploy ServiceMonitor for DCGM exporter
+    # Whether to deploy ServiceMonitor for GPU metrics exporter
     serviceMonitor:
       enabled: true
       interval: "15s"
@@ -134,9 +154,9 @@ hardwareProfiles:
 # Node exporter configuration for CPU hardware metrics 
 nodeExporter:
   # Enable the hardware metrics exporter DaemonSet for accurate CPU model detection and power measurements
-  # Note: For GPU metrics, DCGM exporter is used instead
-  enabled: false
-  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.5-47530b2
+  # Note: For GPU metrics, see metrics.gpuMetrics section
+  enabled: true
+  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.6-b5233a9
   imagePullPolicy: IfNotPresent
   resources:
     requests:
@@ -148,17 +168,7 @@ nodeExporter:
   # Port for metrics endpoint
   metricsPort: 9100
   # Log verbosity level (0-5)
-  logLevel: 2
-  
-  # GPU-specific configuration
-  gpu:
-    # Enable GPU-specific node exporter
-    enabled: false
-    # Node selector to target only GPU nodes
-    nodeSelector:
-      nvidia.com/gpu: "present"
-    # Runtime class for NVIDIA GPU access
-    runtimeClassName: "nvidia"
+  logLevel: 1
 
 # Additional plugin configuration
 plugins:
