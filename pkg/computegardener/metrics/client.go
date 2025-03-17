@@ -211,6 +211,8 @@ func CalculatePodMetrics(
 	nodeName := pod.Spec.NodeName
 	estimatedPower := calculatePower(nodeName, totalCPU, totalMemory, gpuPowerWatts)
 	
+	// Return a record with all the fields including 0 for ElectricityRate
+	// ElectricityRate will be set in the metrics collector if available
 	return PodMetricsRecord{
 		Timestamp:       podMetrics.Timestamp.Time,
 		CPU:             totalCPU,
@@ -218,5 +220,6 @@ func CalculatePodMetrics(
 		GPUPowerWatts:   gpuPowerWatts,
 		PowerEstimate:   estimatedPower,
 		CarbonIntensity: carbonIntensity,
+		ElectricityRate: 0, // Will be set later if available
 	}
 }

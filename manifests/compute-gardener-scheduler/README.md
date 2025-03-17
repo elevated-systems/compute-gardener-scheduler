@@ -410,3 +410,26 @@ kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheu
 # Or use the no-metrics version instead
 kubectl apply -f compute-gardener-scheduler-no-metrics.yaml
 ```
+
+9. **GKE-specific monitoring**: GKE uses its own monitoring API. If deploying on GKE with Google Cloud Managed Service for Prometheus:
+```bash
+# Find available monitoring CRDs in your GKE cluster
+kubectl get crd | grep monitoring
+
+# Edit the ServiceMonitor section in compute-gardener-scheduler.yaml before applying:
+# Replace:
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+
+# With:
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+
+# And remove these lines from the ServiceMonitor spec:
+  namespaceSelector:
+    matchNames:
+    - compute-gardener
+  bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+```
+
+For a cleaner approach, consider using the Helm chart instead which natively supports GKE monitoring with `--set metrics.gke=true`.

@@ -144,6 +144,27 @@ spec:
     app: compute-gardener-node-exporter
 {{- if .Values.metrics.serviceMonitor.enabled }}
 ---
+{{- if .Values.metrics.gke }}
+# GKE-specific monitoring
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: compute-gardener-node-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-node-exporter
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-node-exporter
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    path: /metrics
+{{- else }}
+# Standard Prometheus Operator
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -164,5 +185,6 @@ spec:
   namespaceSelector:
     matchNames:
     - {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
 {{- end }}

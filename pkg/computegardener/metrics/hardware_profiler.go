@@ -140,8 +140,30 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 		}
 	}
 
+	// Get CPU model information for better error diagnostics
+	var cpuModelInfo, gpuModelInfo string
+	cpuModelInfo, gpuModelInfo = hp.detectNodeHardwareInfoFromSystem(node)
+	
+	// Log detailed diagnostics about why hardware profile detection failed
+	var cpuProfileCount int
+	var profileExists bool
+	if hp.config != nil {
+		cpuProfileCount = len(hp.config.CPUProfiles)
+		if cpuModelInfo != "" {
+			_, profileExists = hp.config.CPUProfiles[cpuModelInfo]
+		}
+	}
+	
+	klog.V(2).InfoS("Hardware profile detection failed", 
+		"node", node.Name, 
+		"cpuModel", cpuModelInfo,
+		"gpuModel", gpuModelInfo,
+		"profilesConfigured", hp.config != nil,
+		"cpuProfileCount", cpuProfileCount,
+		"cpuModelInProfiles", profileExists)
+	
 	// Fall back to default values
-	return nil, fmt.Errorf("hardware profile not found for node %s", node.Name)
+	return nil, fmt.Errorf("hardware profile not found for node %s (CPU model: %s)", node.Name, cpuModelInfo)
 }
 
 // lookupCloudInstance finds hardware components for a cloud instance

@@ -69,7 +69,7 @@ spec:
         - name: PRICING_PROVIDER
           value: "{{ .Values.priceAware.provider }}"
         - name: PRICING_SCHEDULES_PATH
-          value: "/etc/kubernetes/{{ .Values.scheduler.name }}/pricing-schedules.yaml"
+          value: "/etc/kubernetes/{{ .Values.scheduler.name }}-pricing/pricing-schedules.yaml"
         {{- end }}
         {{- if .Values.hardwareProfiles.enabled }}
         - name: HARDWARE_PROFILES_PATH
@@ -117,8 +117,7 @@ spec:
             mountPath: /etc/kubernetes/{{ .Values.scheduler.name }}
           {{- if .Values.priceAware.enabled }}
           - name: pricing-schedules-volume
-            mountPath: /etc/kubernetes/{{ .Values.scheduler.name }}/pricing-schedules.yaml
-            subPath: schedules.yaml
+            mountPath: /etc/kubernetes/{{ .Values.scheduler.name }}-pricing
           {{- end }}
           {{- if .Values.hardwareProfiles.enabled }}
           - name: hardware-profiles-volume

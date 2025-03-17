@@ -63,24 +63,30 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 
 // processPodCompletionMetrics processes metrics for a completed pod
 func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, podUID, podName, namespace, nodeName string) {
-	// Mark pod as completed in metrics store to prevent further collection
-	cs.metricsStore.MarkCompleted(podUID)
-
-	// Get pod metrics history
+	// Get pod metrics history first to check if already completed
 	metricsHistory, found := cs.metricsStore.GetHistory(podUID)
+	
+	// Check if already processed or no history available
 	if !found {
 		klog.V(2).InfoS("No metrics history found for pod",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)
 		return
-	}
-
-	if len(metricsHistory.Records) == 0 {
+	} else if found && metricsHistory.Completed {
+		// Pod was already processed for completion, avoid double-counting
+		klog.V(2).InfoS("Pod already marked as completed, skipping metrics calculation to avoid double-counting",
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
+		return
+	} else if len(metricsHistory.Records) == 0 {
 		klog.V(2).InfoS("Metrics history is empty for pod",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)
 		return
 	}
+	
+	// Mark pod as completed in metrics store to prevent further collection
+	cs.metricsStore.MarkCompleted(podUID)
 
 	klog.V(2).InfoS("Found metrics history for pod",
 		"pod", klog.KObj(pod),
@@ -152,6 +158,81 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Record the metrics
 	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
 	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
+	
+	// Calculate true carbon and cost savings based on the diff between initial and final intensity/rate
+	// multiplied by actual energy used - requires all three values to be known
+	
+	// Carbon savings calculation
+	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
+		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
+		if err == nil {
+			// Get the current/final carbon intensity
+			var finalIntensity float64
+			if len(metricsHistory.Records) > 0 {
+				finalIntensity = metricsHistory.Records[len(metricsHistory.Records)-1].CarbonIntensity
+			} else if cs.carbonImpl != nil {
+				// If not in history, try to get current intensity
+				finalIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
+			}
+			
+			if finalIntensity > 0 && initialIntensity > finalIntensity {
+				// Calculate true savings: (initial - final) * energy consumed
+				intensityDiff := initialIntensity - finalIntensity
+				carbonSavingsGrams := intensityDiff * totalEnergyKWh * 1000 // convert kWh to Wh and multiply by gCO2/kWh
+				
+				if carbonSavingsGrams > 0 {
+					klog.V(2).InfoS("Calculated carbon savings",
+						"pod", klog.KObj(pod),
+						"initialIntensity", initialIntensity,
+						"finalIntensity", finalIntensity,
+						"energyKWh", totalEnergyKWh,
+						"savingsGrams", carbonSavingsGrams)
+						
+					// Record actual calculated savings
+					EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
+					
+					// Record efficiency metrics
+					SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
+				}
+			}
+		}
+	}
+	
+	// Cost savings calculation
+	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
+		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
+		if err == nil {
+			// Get the current/final electricity rate
+			var finalRate float64
+			if len(metricsHistory.Records) > 0 && metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate > 0 {
+				finalRate = metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate
+			} else if cs.pricingImpl != nil {
+				// If not in history, try to get current rate
+				finalRate = cs.pricingImpl.GetCurrentRate(time.Now())
+			}
+			
+			if finalRate > 0 && initialRate > finalRate {
+				// Calculate cost savings: (initial - final) * energy consumed
+				rateDiff := initialRate - finalRate
+				costSavingsDollars := rateDiff * totalEnergyKWh
+				
+				if costSavingsDollars > 0 {
+					klog.V(2).InfoS("Calculated cost savings",
+						"pod", klog.KObj(pod),
+						"initialRate", initialRate,
+						"finalRate", finalRate,
+						"energyKWh", totalEnergyKWh,
+						"savingsDollars", costSavingsDollars)
+						
+					// Record actual calculated savings
+					EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
+					
+					// Record efficiency metrics
+					SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
+				}
+			}
+		}
+	}
 
 	// Determine owner reference type for metrics
 	ownerKind := "Pod"

@@ -14,6 +14,7 @@ type PodMetricsRecord struct {
 	GPUPowerWatts   float64 // GPU power in Watts
 	PowerEstimate   float64 // Estimated power at this point across all hw in Watts
 	CarbonIntensity float64 // Carbon intensity at this point in gCO2eq/kWh
+	ElectricityRate float64 // Electricity rate at this point in $/kWh
 }
 
 // PodMetricsHistory stores a time series of pod metrics

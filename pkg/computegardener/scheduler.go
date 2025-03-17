@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -97,12 +98,43 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			"cpuProfiles", len(cfg.Power.HardwareProfiles.CPUProfiles),
 			"gpuProfiles", len(cfg.Power.HardwareProfiles.GPUProfiles),
 			"memProfiles", len(cfg.Power.HardwareProfiles.MemProfiles))
+
+		// Log detailed information about CPU profiles
+		for model, profile := range cfg.Power.HardwareProfiles.CPUProfiles {
+			klog.V(2).InfoS("CPU profile loaded",
+				"model", model,
+				"idlePower", profile.IdlePower,
+				"maxPower", profile.MaxPower)
+		}
+
+		// Log default power values
+		klog.V(2).InfoS("Default power values configured",
+			"defaultIdlePower", cfg.Power.DefaultIdlePower,
+			"defaultMaxPower", cfg.Power.DefaultMaxPower)
 	}
 
 	// Initialize pricing implementation if enabled
 	pricingImpl, err := pricing.Factory(cfg.Pricing)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing implementation: %v", err)
+	}
+
+	if cfg.Pricing.Enabled {
+		klog.InfoS("Price-aware scheduling enabled",
+			"provider", cfg.Pricing.Provider,
+			"numSchedules", len(cfg.Pricing.Schedules))
+
+		for i, schedule := range cfg.Pricing.Schedules {
+			klog.InfoS("Loaded pricing schedule",
+				"index", i,
+				"dayOfWeek", schedule.DayOfWeek,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"peakRate", schedule.PeakRate,
+				"offPeakRate", schedule.OffPeakRate)
+		}
+	} else {
+		klog.InfoS("Price-aware scheduling disabled")
 	}
 
 	// Initialize carbon implementation if enabled
@@ -161,9 +193,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		// Initialize GPU metrics client - use Prometheus if configured, otherwise use null client
 		if cfg.Metrics.Prometheus != nil && cfg.Metrics.Prometheus.URL != "" {
-			klog.InfoS("Initializing Prometheus GPU metrics client", 
+			klog.InfoS("Initializing Prometheus GPU metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
-			
+
 			promClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
 				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
@@ -176,7 +208,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				if cfg.Metrics.Prometheus.DCGMUtilMetric != "" {
 					promClient.SetDCGMUtilMetric(cfg.Metrics.Prometheus.DCGMUtilMetric)
 				}
-				
+
 				// Set useDCGM based on config (default to true if not explicitly disabled)
 				useDCGM := true // Default to true
 				// Only change if explicitly set to false
@@ -184,12 +216,12 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					useDCGM = false
 				}
 				promClient.SetUseDCGM(useDCGM)
-				
-				klog.InfoS("Prometheus GPU metrics client configured with DCGM", 
+
+				klog.InfoS("Prometheus GPU metrics client configured with DCGM",
 					"useDCGM", useDCGM,
 					"powerMetric", promClient.GetDCGMPowerMetric(),
 					"utilMetric", promClient.GetDCGMUtilMetric())
-				
+
 				gpuMetricsClient = promClient
 			}
 		} else {
@@ -234,7 +266,15 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			FilterFunc: func(obj interface{}) bool {
 				pod, ok := obj.(*v1.Pod)
 				if !ok {
-					return false
+					// Handle tombstone objects
+					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+					if !ok {
+						return false
+					}
+					pod, ok = tombstone.Obj.(*v1.Pod)
+					if !ok {
+						return false
+					}
 				}
 				return pod.Spec.SchedulerName == SchedulerName
 			},
@@ -269,6 +309,48 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 							"nodeName", newPod.Spec.NodeName)
 						scheduler.handlePodCompletion(newPod)
 					}
+				},
+				DeleteFunc: func(obj interface{}) {
+					// Handle pod deletion (like when scaling down deployments)
+					var pod *v1.Pod
+					var ok bool
+					
+					// Extract the pod from the object (which might be a tombstone)
+					pod, ok = obj.(*v1.Pod)
+					if !ok {
+						// When a delete is observed, we sometimes get a DeletedFinalStateUnknown
+						tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+						if !ok {
+							klog.V(2).InfoS("Error decoding object, invalid type")
+							return
+						}
+						pod, ok = tombstone.Obj.(*v1.Pod)
+						if !ok {
+							klog.V(2).InfoS("Error decoding object tombstone, invalid type")
+							return
+						}
+					}
+					
+					// Skip if pod doesn't have a node assigned
+					if pod.Spec.NodeName == "" {
+						return
+					}
+					
+					// Check if this pod was already processed for completion
+					if scheduler.metricsStore != nil {
+						if history, found := scheduler.metricsStore.GetHistory(string(pod.UID)); found && history.Completed {
+							klog.V(2).InfoS("Pod deletion detected, but already processed for completion",
+								"pod", klog.KObj(pod),
+								"phase", pod.Status.Phase)
+							return
+						}
+					}
+					
+					klog.V(2).InfoS("Pod deleted, handling as completion",
+						"pod", klog.KObj(pod),
+						"phase", pod.Status.Phase,
+						"nodeName", pod.Spec.NodeName)
+					scheduler.handlePodCompletion(pod)
 				},
 			},
 		},
@@ -336,11 +418,11 @@ func (cs *ComputeGardenerScheduler) Name() string {
 
 // PreFilter implements the PreFilter interface
 func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	klog.V(2).InfoS("PreFilter starting", 
+	klog.V(2).InfoS("PreFilter starting",
 		"pod", klog.KObj(pod),
 		"schedulerName", pod.Spec.SchedulerName,
 		"hasGPU", hasGPURequest(pod))
-	
+
 	startTime := cs.clock.Now()
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
@@ -366,9 +448,9 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
 	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
-	
-	klog.V(2).InfoS("PreFilter completed successfully", 
-		"pod", klog.KObj(pod), 
+
+	klog.V(2).InfoS("PreFilter completed successfully",
+		"pod", klog.KObj(pod),
 		"schedulerName", pod.Spec.SchedulerName)
 	return nil, framework.NewStatus(framework.Success, "")
 }
@@ -381,21 +463,45 @@ func (cs *ComputeGardenerScheduler) PreFilterExtensions() framework.PreFilterExt
 // Filter implements the Filter interface
 func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
 	// Log start of filter for debugging
-	klog.V(2).InfoS("Filter starting",
+	klog.V(3).InfoS("Filter starting",
 		"pod", klog.KObj(pod),
 		"node", nodeInfo.Node().Name,
 		"schedulerName", pod.Spec.SchedulerName)
 	startTime := cs.clock.Now()
+	
+	// Track decision path for concise logging
+	decisionPath := []string{"Start"}
+	
 	var returnStatus *framework.Status
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
+		
+		// Generate concise decision path log
+		pathMsg := strings.Join(decisionPath, " --> ")
+		decision := "SUCCESS"
+		if returnStatus != nil && !returnStatus.IsSuccess() {
+			decision = returnStatus.Code().String()
+			if returnStatus.Message() != "" {
+				decision += ": " + returnStatus.Message()
+			}
+		}
+		
+		// Log the decision path at v2 verbosity
+		klog.V(2).InfoS("Scheduling decision",
+			"pod", klog.KObj(pod),
+			"node", nodeInfo.Node().Name,
+			"path", pathMsg,
+			"decision", decision,
+			"durationMs", cs.clock.Since(startTime).Milliseconds())
+		
+		// More detailed logging at higher verbosity
 		if returnStatus != nil {
-			klog.V(2).InfoS("Filter function return status",
+			klog.V(3).InfoS("Filter function return status",
 				"pod", klog.KObj(pod),
 				"status", returnStatus.Message(),
 				"code", returnStatus.Code().String())
 		} else {
-			klog.V(2).InfoS("Filter function returning success (nil status)",
+			klog.V(3).InfoS("Filter function returning success (nil status)",
 				"pod", klog.KObj(pod))
 		}
 	}()
@@ -412,30 +518,61 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		// If state exists, check if it's valid
 		s, ok := v.(*preFilterState)
 		if !ok || !s.passed {
-			klog.V(2).InfoS("Invalid prefilter state but continuing with filter evaluation", 
+			klog.V(2).InfoS("Invalid prefilter state but continuing with filter evaluation",
 				"pod", klog.KObj(pod),
 				"correctType", ok,
 				"passed", ok && s.passed)
 		}
 	}
-	
+
 	// Check for opt-out annotation directly since we might not have prefilter state
 	if cs.isOptedOut(pod) {
-		klog.V(2).InfoS("Pod opted out of scheduling constraints", "pod", klog.KObj(pod))
+		decisionPath = append(decisionPath, "OptedOut")
+		klog.V(3).InfoS("Pod opted out of scheduling constraints", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success, "")
 	}
 
 	node := nodeInfo.Node()
 	if node == nil {
+		decisionPath = append(decisionPath, "NodeNotFound")
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
 	// Check pricing constraints if enabled
 	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		decisionPath = append(decisionPath, "CheckPricing")
+		
+		klog.V(3).InfoS("Checking price constraints",
+			"pod", klog.KObj(pod),
+			"enabled", cs.config.Pricing.Enabled,
+			"provider", cs.config.Pricing.Provider,
+			"numSchedules", len(cs.config.Pricing.Schedules),
+			"exactTime", cs.clock.Now().Format("2006-01-02 15:04:05 MST"),
+			"currentWeekday", cs.clock.Now().Weekday())
+
+		if len(cs.config.Pricing.Schedules) > 0 {
+			schedule := cs.config.Pricing.Schedules[0]
+			klog.V(3).InfoS("Schedule details",
+				"pod", klog.KObj(pod),
+				"dayOfWeek", schedule.DayOfWeek,
+				"startTime", schedule.StartTime,
+				"endTime", schedule.EndTime,
+				"peakRate", schedule.PeakRate,
+				"offPeakRate", schedule.OffPeakRate)
+		} else {
+			klog.V(3).InfoS("No pricing schedules found", "pod", klog.KObj(pod))
+		}
+
 		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
-			// Record metrics for price-based delay
+			// Record the decision path
 			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
-			threshold := cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
+			
+			// Determine threshold
+			threshold := 0.5 // Default threshold
+			if len(cs.config.Pricing.Schedules) > 0 {
+				threshold = cs.config.Pricing.Schedules[0].OffPeakRate // Default threshold
+			}
+
 			if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 				if t, err := strconv.ParseFloat(val, 64); err == nil {
 					threshold = t
@@ -446,37 +583,82 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if rate <= threshold {
 				period = "off-peak"
 			}
+			
+			// Determine time/schedule information for decision path
+			scheduleInfo := "unknownSchedule"
+			
+			// TODO: This assumes TOU pricing provider - in the future when multiple pricing 
+			// implementations exist, we should determine the actual pricing provider type and
+			// tailor the schedule info to that specific implementation rather than assuming TOU.
+			if len(cs.config.Pricing.Schedules) > 0 {
+				// Get first schedule for info (assumes TOU implementation)
+				schedule := cs.config.Pricing.Schedules[0]
+				
+				// Format as timeframe info for TOU
+				scheduleInfo = fmt.Sprintf("TOU(%s:%s-%s)", 
+					schedule.DayOfWeek,
+					schedule.StartTime, 
+					schedule.EndTime)
+			}
+			
+			decisionPath = append(decisionPath, fmt.Sprintf("PriceDelayed:%s", scheduleInfo))
+			
+			klog.V(3).InfoS("Price constraints check failed, delaying pod",
+				"pod", klog.KObj(pod),
+				"status", status.Message())
+
+			// Record metrics for price-based delay
 			PriceBasedDelays.WithLabelValues(period).Inc()
-			savings := rate - threshold
-			EstimatedSavings.WithLabelValues("cost", "dollars").Add(savings)
+			// Store the current rate as an annotation for later calculation of true savings,
+			// but only if we haven't recorded it already (to capture the first delay only)
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			// Only set the initial rate if it hasn't been set already
+			if _, exists := pod.Annotations[common.AnnotationInitialElectricityRate]; !exists {
+				pod.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(rate, 'f', 6, 64)
+				klog.V(3).InfoS("Recorded initial electricity rate for delayed pod", 
+					"pod", klog.KObj(pod),
+					"initialRate", rate)
+			}
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
 			return status
+		} else {
+			decisionPath = append(decisionPath, "PriceOK")
+			klog.V(3).InfoS("Price constraints check passed",
+				"pod", klog.KObj(pod))
 		}
+	} else {
+		decisionPath = append(decisionPath, "PricingSkipped")
+		klog.V(3).InfoS("Skipping price constraints check",
+			"pod", klog.KObj(pod),
+			"pricingEnabled", cs.config.Pricing.Enabled,
+			"pricingImpl", cs.pricingImpl != nil)
 	}
 
 	// Check carbon intensity constraints if enabled
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		klog.V(2).InfoS("Checking carbon intensity constraints",
+		decisionPath = append(decisionPath, "CheckCarbon")
+		
+		klog.V(3).InfoS("Checking carbon intensity constraints",
 			"pod", klog.KObj(pod),
 			"region", cs.config.Carbon.APIConfig.Region,
 			"enabled", cs.config.Carbon.Enabled,
-			"schedulerName", pod.Spec.SchedulerName,
-			"useOurScheduler", pod.Spec.SchedulerName == SchedulerName)
+			"schedulerName", pod.Spec.SchedulerName)
 
 		// Check if pod is using our scheduler
-
 		if pod.Spec.SchedulerName != SchedulerName {
+			decisionPath = append(decisionPath, "CarbonSkipped:WrongScheduler")
 			klog.V(4).InfoS("Skipping carbon check for pod using different scheduler",
 				"pod", klog.KObj(pod),
 				"schedulerName", pod.Spec.SchedulerName,
-				"ourSchedulerName", SchedulerName,
-				"result", "SKIPPED")
+				"ourSchedulerName", SchedulerName)
 		} else if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok && val == "false" {
 			// Skip carbon check if explicitly disabled for this pod
+			decisionPath = append(decisionPath, "CarbonSkipped:DisabledByAnnotation")
 			klog.V(3).InfoS("Carbon check disabled by pod annotation",
-				"pod", klog.KObj(pod),
-				"result", "DISABLED_BY_ANNOTATION")
+				"pod", klog.KObj(pod))
 		} else {
 			// Get threshold from pod annotation or use configured threshold
 			threshold := cs.config.Carbon.IntensityThreshold
@@ -488,6 +670,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 						"pod", klog.KObj(pod),
 						"threshold", threshold)
 				} else {
+					decisionPath = append(decisionPath, "CarbonError:InvalidThreshold")
 					klog.ErrorS(err, "Invalid carbon intensity threshold annotation",
 						"pod", pod.Name,
 						"namespace", pod.Namespace,
@@ -497,11 +680,11 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			}
 
 			// Get carbon intensity for both metrics and decision making
-			klog.V(4).InfoS("Getting carbon intensity",
-				"pod", klog.KObj(pod))
+			klog.V(4).InfoS("Getting carbon intensity", "pod", klog.KObj(pod))
 			intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 
 			if err != nil {
+				decisionPath = append(decisionPath, "CarbonSkipped:APIError")
 				klog.ErrorS(err, "Failed to get carbon intensity",
 					"region", cs.config.Carbon.APIConfig.Region)
 				// Skip the rest of the carbon check
@@ -509,38 +692,43 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			}
 
 			// Record the intensity in metrics regardless of decision
-			klog.V(2).InfoS("Current carbon intensity",
+			klog.V(3).InfoS("Current carbon intensity",
 				"region", cs.config.Carbon.APIConfig.Region,
 				"intensity", intensity,
 				"threshold", threshold,
 				"exceeds", intensity > threshold)
 			CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
 
-			// Now make the scheduling decision based on the intensity
-			klog.V(3).InfoS("Making carbon intensity decision",
-				"pod", klog.KObj(pod),
-				"intensity", intensity,
-				"threshold", threshold,
-				"shouldBlock", intensity > threshold)
-
 			if intensity > threshold {
+				decisionPath = append(decisionPath, fmt.Sprintf("CarbonDelayed:%s(%.1f>%.1f)", 
+				                    cs.config.Carbon.APIConfig.Region, intensity, threshold))
+				
 				klog.V(3).InfoS("Carbon intensity exceeds threshold",
 					"pod", klog.KObj(pod),
 					"intensity", intensity,
 					"threshold", threshold)
 				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-				savings := intensity - threshold
-				EstimatedSavings.WithLabelValues("carbon", "gCO2eq").Add(savings)
+				
+				// Store the current intensity as an annotation for later calculation of true savings,
+				// but only if we haven't recorded it already (to capture the first delay only)
+				if pod.Annotations == nil {
+					pod.Annotations = make(map[string]string)
+				}
+				// Only set the initial intensity if it hasn't been set already
+				if _, exists := pod.Annotations[common.AnnotationInitialCarbonIntensity]; !exists {
+					pod.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(intensity, 'f', 2, 64)
+					klog.V(3).InfoS("Recorded initial carbon intensity for delayed pod", 
+						"pod", klog.KObj(pod),
+						"initialIntensity", intensity)
+				}
 
 				// Return unschedulable status directly
 				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
-				klog.V(3).InfoS("Carbon intensity exceeds threshold",
-					"pod", klog.KObj(pod),
-					"node", nodeInfo.Node().Name,
-					"intensity", intensity,
-					"threshold", threshold)
 				return framework.NewStatus(framework.Unschedulable, msg)
 			} else {
+				decisionPath = append(decisionPath, fmt.Sprintf("CarbonOK:%s(%.1f≤%.1f)",
+				                    cs.config.Carbon.APIConfig.Region, intensity, threshold))
+				
 				klog.V(3).InfoS("Carbon intensity within threshold",
 					"pod", klog.KObj(pod),
 					"intensity", intensity,
@@ -548,13 +736,16 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			}
 		}
 	} else {
-		klog.V(2).InfoS("Carbon awareness check skipped", "pod", klog.KObj(pod),
+		decisionPath = append(decisionPath, "CarbonSkipped:Disabled")
+		klog.V(3).InfoS("Carbon awareness check skipped", "pod", klog.KObj(pod),
 			"carbonEnabled", cs.config.Carbon.Enabled,
 			"carbonImplNil", cs.carbonImpl == nil)
 	}
 
 	// Check hardware profile energy efficiency if available
 	if cs.hardwareProfiler != nil {
+		decisionPath = append(decisionPath, "CheckHardwareProfile")
+		
 		// Get node's power profile
 		powerProfile, err := cs.hardwareProfiler.GetNodePowerProfile(node)
 		if err == nil && powerProfile != nil {
@@ -569,6 +760,8 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationMaxPowerWatts]; ok {
 				maxPower, err := strconv.ParseFloat(val, 64)
 				if err == nil {
+					decisionPath = append(decisionPath, "CheckMaxPower")
+					
 					// Check if pod has a GPU workload type specified
 					workloadType := ""
 					if wt, ok := pod.Annotations[common.AnnotationGPUWorkloadType]; ok {
@@ -585,7 +778,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							if powerProfile.MaxGPUPower > 0 {
 								// Calculate adjusted max power by applying coefficient to GPU power only
 								adjustedGPUPower := powerProfile.MaxGPUPower * coefficient
-								klog.V(2).InfoS("Adjusting GPU power for workload type",
+								klog.V(3).InfoS("Adjusting GPU power for workload type",
 									"node", node.Name,
 									"workloadType", workloadType,
 									"originalGPUPower", powerProfile.MaxGPUPower,
@@ -601,7 +794,10 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 					if effectiveMaxPower > maxPower {
 						// Node's max power exceeds pod's requirement
-						klog.V(2).InfoS("Filtered node due to power requirements",
+						decisionPath = append(decisionPath, fmt.Sprintf("PowerExceeded:%.1fW>%.1fW", 
+						                     effectiveMaxPower, maxPower))
+						
+						klog.V(3).InfoS("Filtered node due to power requirements",
 							"node", node.Name,
 							"nodePower", effectiveMaxPower,
 							"podMaxPower", maxPower,
@@ -613,8 +809,11 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 						PowerFilteredNodes.WithLabelValues("max_power").Inc()
 
 						return framework.NewStatus(framework.Unschedulable,
-							fmt.Sprintf("node power profile (%v W) exceeds pod max power requirement (%v W)",
+							fmt.Sprintf("node power profile (%.1f W) exceeds pod max power requirement (%.1f W)",
 								effectiveMaxPower, maxPower))
+					} else {
+						decisionPath = append(decisionPath, fmt.Sprintf("PowerOK:%.1fW≤%.1fW", 
+						                     effectiveMaxPower, maxPower))
 					}
 				}
 			}
@@ -623,8 +822,13 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationMinEfficiency]; ok {
 				minEfficiency, err := strconv.ParseFloat(val, 64)
 				if err == nil {
+					decisionPath = append(decisionPath, "CheckEfficiency")
+					
 					if nodeEfficiency < minEfficiency {
-						klog.V(2).InfoS("Filtered node due to efficiency requirements",
+						decisionPath = append(decisionPath, fmt.Sprintf("EfficiencyTooLow:%.3f<%.3f", 
+						                     nodeEfficiency, minEfficiency))
+						
+						klog.V(3).InfoS("Filtered node due to efficiency requirements",
 							"node", node.Name,
 							"nodeEfficiency", nodeEfficiency,
 							"minEfficiency", minEfficiency)
@@ -634,17 +838,21 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 						return framework.NewStatus(framework.Unschedulable,
 							"node efficiency below pod's minimum requirement")
+					} else {
+						decisionPath = append(decisionPath, fmt.Sprintf("EfficiencyOK:%.3f≥%.3f", 
+						                     nodeEfficiency, minEfficiency))
 					}
 				}
 			}
 		} else {
-			if !cs.config.Carbon.Enabled {
-				klog.V(2).InfoS("Carbon-aware scheduling disabled in config", "pod", klog.KObj(pod))
-			}
-			if cs.carbonImpl == nil {
-				klog.V(2).InfoS("Carbon implementation is nil", "pod", klog.KObj(pod))
-			}
+			decisionPath = append(decisionPath, "HardwareProfileFailed")
+			klog.V(3).InfoS("Failed to get hardware profile", 
+				"pod", klog.KObj(pod),
+				"node", node.Name,
+				"error", err)
 		}
+	} else {
+		decisionPath = append(decisionPath, "HardwareProfilerDisabled")
 	}
 
 	return framework.NewStatus(framework.Success, "")

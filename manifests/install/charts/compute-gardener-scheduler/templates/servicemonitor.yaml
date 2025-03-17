@@ -1,4 +1,30 @@
 {{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- if .Values.metrics.gke }}
+# GKE-specific monitoring
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ .Values.scheduler.name }}-monitor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    component: scheduler
+    tier: control-plane
+    part-of: compute-gardener-scheduler
+    {{- include "compute-gardener-scheduler.exporterLabels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  endpoints:
+  - port: https
+    scheme: https
+    path: /metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    tlsConfig:
+      insecureSkipVerify: {{ .Values.metrics.serviceMonitor.insecureSkipVerify }}
+{{- else }}
+# Standard Prometheus Operator
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -20,4 +46,5 @@ spec:
   namespaceSelector:
     matchNames:
     - {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

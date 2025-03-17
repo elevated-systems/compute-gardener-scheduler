@@ -35,19 +35,35 @@ data:
       leaderElect: {{ .Values.scheduler.leaderElect }}
 {{- if .Values.priceAware.enabled }}
 ---
+# Create a ConfigMap with the pricing schedules
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .Values.scheduler.name }}-pricing-schedules
   namespace: {{ .Release.Namespace }}
 data:
+  # Important: We're using this key name to match the file path expected in the container
+  # It will be mounted into a separate directory for pricing schedules
   pricing-schedules.yaml: |
     schedules:
       {{- range .Values.priceAware.schedules }}
-      - dayOfWeek: "{{ .dayOfWeek }}"
+      - name: "{{ .name }}"
+        dayOfWeek: "{{ .dayOfWeek }}"
         startTime: "{{ .startTime }}"
         endTime: "{{ .endTime }}"
+        {{- if .timezone }}
+        timezone: "{{ .timezone }}"
+        {{- end }}
+        {{- if hasKey . "peakRate" }}
         peakRate: {{ .peakRate }}
+        {{- end }}
+        {{- if hasKey . "offPeakRate" }}
         offPeakRate: {{ .offPeakRate }}
+        {{- else }}
+        # Ensure rates are set even if not explicitly defined
+        # Default to placeholder rates since we only care about the time windows
+        peakRate: 1.0
+        offPeakRate: 0.5
+        {{- end }}
       {{- end }}
 {{- end }}

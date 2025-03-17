@@ -20,6 +20,8 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
   kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
   ```
   Or disable metrics with `--set metrics.enabled=false`
+  
+  **Note for GKE users**: GKE uses its own monitoring CRDs. For GKE, enable the GKE-specific monitoring with `--set metrics.gke=true` instead of installing the Prometheus Operator CRDs. This will use `PodMonitoring` from the `monitoring.googleapis.com/v1` API.
 
 ### Recommended Components
 
@@ -29,9 +31,9 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
 
 - **Node Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for CPU power calculations that reflect dynamic frequency scaling. Without it, the scheduler will estimate power based on static CPU models only.
 
-- **DCGM Exporter**: Optional component for NVIDIA GPU monitoring. When enabled, it provides accurate GPU power consumption data via Prometheus. The scheduler integrates with DCGM metrics (specifically using the `DCGM_FI_DEV_POWER_USAGE` metric) to capture real-time GPU power usage with per-device granularity.
+- **GPU Metrics Collection**: Optional component for NVIDIA GPU monitoring. When enabled, it provides accurate GPU power consumption data via Prometheus. The scheduler integrates with industry-standard GPU metrics to capture real-time GPU power usage with per-device granularity.
   
-  **GPU Support Requirements:** For GPU metrics collection, nodes must have NVIDIA GPUs with NVIDIA drivers installed. The scheduler will automatically detect GPU nodes when DCGM metrics are available through Prometheus.
+  **GPU Support Requirements:** For GPU metrics collection, nodes must have NVIDIA GPUs with NVIDIA drivers installed. The scheduler will automatically detect GPU nodes when GPU metrics are available through Prometheus.
 
 ## Installation
 
@@ -63,7 +65,7 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --namespace compute-gardener \
   --create-namespace \
   --set nodeExporter.enabled=true \
-  --set metrics.dcgmExporter.enabled=true \
+  --set metrics.gpuMetrics.enabled=true \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 
 # Installation without metrics (for clusters without Prometheus Operator)
@@ -86,16 +88,27 @@ helm uninstall compute-gardener-scheduler --namespace compute-gardener
 **Note on Simplified/Managed Cluster Types:**
 Simplified cluster types like GKE Autopilot and EKS Fargate have limitations that may prevent using custom schedulers:
 
-- **GKE Autopilot** does not support custom schedulers at all. You must use GKE Standard clusters:
-  ```bash
-  # Create a GKE Standard cluster in a region with typically lower carbon intensity
-  # The us-west1 (Oregon) region uses significant renewable energy
-  gcloud container clusters create compute-gardener-cluster \
-    --num-nodes=1 \
-    --disk-size=100 \
-    --machine-type=e2-standard-2 \
-    --zone=us-west1-a
-  ```
+- **GKE** considerations:
+  - **GKE Autopilot** does not support custom schedulers at all. You must use GKE Standard clusters:
+    ```bash
+    # Create a GKE Standard cluster in a region with typically lower carbon intensity
+    # The us-west1 (Oregon) region uses significant renewable energy
+    gcloud container clusters create compute-gardener-cluster \
+      --num-nodes=1 \
+      --disk-size=100 \
+      --machine-type=e2-standard-2 \
+      --zone=us-west1-a
+    ```
+  - **GKE Standard** with Google Cloud Managed Service for Prometheus: 
+    ```bash
+    # Install with GKE-specific monitoring
+    helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+      --namespace compute-gardener \
+      --create-namespace \
+      --set metrics.gke=true \
+      --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+    ```
+    This will use `PodMonitoring` resources from the `monitoring.googleapis.com/v1` API instead of the standard Prometheus Operator `ServiceMonitor` resources.
 
 - **EKS Fargate** has similar limitations with pod scheduling. Consider using regular EKS with EC2 nodes.
 
@@ -198,6 +211,7 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `carbonAware.electricityMap.apiKey` | ElectricityMap API key | `YOUR_ELECTRICITY_MAP_API_KEY` |
 | `priceAware.enabled` | Enable price-aware scheduling | `false` |
 | `priceAware.provider` | Pricing provider | `tou` |
+| `priceAware.schedules` | List of Time-of-Use schedules (see below) | `[]` |
 | `hardwareProfiles.enabled` | Enable hardware profiles | `true` |
 | `hardwareProfiles.mountPath` | Path to mount the hardware profiles | `/etc/kubernetes/compute-gardener-scheduler/hardware-profiles` |
 | `nodeExporter.enabled` | Enable hardware metrics exporter (CPU & GPU) | `false` |
@@ -206,8 +220,46 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `metrics.enabled` | Enable metrics | `true` |
 | `metrics.serviceMonitor.enabled` | Enable ServiceMonitor for Prometheus | `true` |
 | `metrics.serviceMonitor.namespace` | ServiceMonitor namespace | `cattle-monitoring-system` |
+| `metrics.gke` | Use GKE-specific PodMonitoring instead of ServiceMonitor | `false` |
 | `samplePod.enabled` | Deploy a sample pod to showcase scheduler | `true` |
 | `samplePod.image` | Image for the sample pod | `busybox:latest` |
+
+### Time-of-Use Schedule Configuration
+
+The Time-of-Use pricing configuration supports multiple schedules, each with its own timezone. Each schedule consists of:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `name` | Unique name to identify this schedule | `"california-pge"` |
+| `dayOfWeek` | Days this schedule applies to (0=Sunday, 1=Monday, etc.) | `"1-5"` for weekdays |
+| `startTime` | Start time of peak period (24h format) | `"16:00"` |
+| `endTime` | End time of peak period (24h format) | `"21:00"` |
+| `timezone` | IANA timezone identifier | `"America/Los_Angeles"` |
+| `peakRate` | Optional: Peak electricity rate in $/kWh | `0.30` |
+| `offPeakRate` | Optional: Off-peak electricity rate in $/kWh | `0.10` |
+
+Example configuration:
+
+```yaml
+priceAware:
+  enabled: true
+  provider: "tou"
+  schedules:
+    - name: "california-pge-weekday"
+      dayOfWeek: "1-5"
+      startTime: "16:00"
+      endTime: "21:00"
+      timezone: "America/Los_Angeles"
+      peakRate: 0.30
+      offPeakRate: 0.10
+    - name: "california-pge-weekend"
+      dayOfWeek: "0,6"
+      startTime: "17:00"
+      endTime: "20:00"
+      timezone: "America/Los_Angeles"
+      peakRate: 0.25
+      offPeakRate: 0.10
+```
 
 Specify each parameter using the `--set key=value[,key=value]` argument to `helm install`.
 

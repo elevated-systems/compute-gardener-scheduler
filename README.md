@@ -4,6 +4,8 @@
 
 The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables carbon and price-aware scheduling of pods based on real-time carbon intensity data and time-of-use electricity pricing.
 
+This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) framework to provide specialized energy and cost-aware scheduling capabilities.
+
 ## Features
 
 - **Carbon-Aware Scheduling** (Optional): Schedule pods based on real-time carbon intensity data from Electricity Map API or implement your own intensity source
@@ -78,23 +80,23 @@ ENABLE_TRACING=false                  # Optional: Enable tracing
 
 ### Time-of-Use Pricing Schedules
 
-Time-of-use pricing schedules are defined in a YAML file:
+Time-of-use pricing schedules are defined in a YAML file. Each schedule supports its own timezone, allowing for multi-region scheduling:
 
 ```yaml
 schedules:
-  # Monday-Friday peak pricing periods (4pm-9pm)
-  - dayOfWeek: "1-5"
-    startTime: "16:00"
-    endTime: "21:00"
-    peakRate: 0.30    # Peak electricity rate in $/kWh
-    offPeakRate: 0.10 # Off-peak electricity rate in $/kWh
-  # Weekend peak pricing periods (1pm-7pm)
-  - dayOfWeek: "0,6"
-    startTime: "13:00"
-    endTime: "19:00"
-    peakRate: 0.30    # Peak electricity rate in $/kWh
-    offPeakRate: 0.10 # Off-peak electricity rate in $/kWh
+  # Monday-Friday peak pricing periods (4pm-9pm Pacific Time)
+  - name: "california-pge"          # Unique name for this schedule
+    dayOfWeek: "1-5"                # Days this schedule applies to (0=Sunday, 1=Monday, etc.)
+    startTime: "16:00"              # Start time in 24h format
+    endTime: "21:00"                # End time in 24h format
+    timezone: "America/Los_Angeles" # IANA timezone for this schedule
+    peakRate: 0.30                  # Peak electricity rate in $/kWh (optional)
+    offPeakRate: 0.10               # Off-peak electricity rate in $/kWh (optional)
 ```
+
+Compute Gardener uses these schedules to determine when to delay pods based on electricity prices. Rate information is optional and only used for metrics and savings estimates.
+
+**Note:** The current implementation uses the first schedule in the list for all nodes. Future versions will support node-specific schedule assignment via node annotations.
 
 ### Pod Annotations
 
@@ -478,6 +480,16 @@ The scheduler follows this enhanced decision flow:
 
 
 ## Development
+
+### Integration with Kubernetes Scheduler Plugins
+
+This project uses the following plugins from the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) project:
+
+- **Network-aware scheduling**: Optimize pod placement based on network topology and latency requirements
+- **Node resource allocation**: More advanced resource allocation strategies beyond default scheduler
+- **Node resource topology**: NUMA-aware scheduling for optimized hardware resource utilization
+
+These plugins are imported directly from the upstream `sigs.k8s.io/scheduler-plugins` repository, allowing us to focus on our core energy-efficiency features while leveraging the community's work on specialized scheduling.
 
 ### Adding a New Carbon Intensity Source
 
