@@ -22,7 +22,7 @@ const (
 	AnnotationEnergyBudgetExceeded   = AnnotationBase + "/energy-budget-exceeded"
 	AnnotationEnergyUsageKWh         = AnnotationBase + "/energy-usage-kwh"
 	AnnotationEnergyBudgetExceededBy = AnnotationBase + "/energy-budget-exceeded-by"
-	
+
 	// Carbon and cost tracking annotations
 	AnnotationInitialCarbonIntensity = AnnotationBase + "/initial-carbon-intensity"
 	AnnotationInitialElectricityRate = AnnotationBase + "/initial-electricity-rate"
@@ -95,8 +95,9 @@ const (
 
 // Defaults for power and efficiency
 const (
-	DefaultPUE    = 1.15
-	DefaultGPUPUE = 1.2
+	DefaultPUE           = 1.15
+	DefaultGPUPUE        = 1.2
+	DefaultPowerExponent = 1.4 // Power-law exponent for CPU power modeling
 )
 
 // Prometheus metric names for hardware monitoring

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -17,6 +18,7 @@ import (
 // Scheduler handles time-of-use electricity pricing schedules
 type Scheduler struct {
 	config config.PricingConfig
+	mutex  sync.RWMutex // Protects against concurrent map access
 }
 
 // New creates a new TOU pricing scheduler
@@ -39,6 +41,9 @@ type schedulePeriod struct {
 // findActivePeriod checks if the given time falls within any schedule's peak period
 // and returns details about the matching period, or nil if not in peak time
 func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
 	klog.V(2).InfoS("Checking if current time is within any peak window",
 		"utcTime", now.Format("2006-01-02 15:04:05 MST"),
 		"numSchedules", len(s.config.Schedules))
@@ -142,6 +147,8 @@ func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
 // GetCurrentRate returns the current electricity rate based on configured schedules
 // Used mainly for metrics and reporting, not for scheduling decisions
 func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	// If we don't have rates configured, return nominal values for peak/off-peak
 	if len(s.config.Schedules) == 0 {
 		return 0 // No schedules configured
@@ -181,6 +188,9 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 
 // CheckPriceConstraints checks if scheduling should be allowed based on time-of-use schedule
 func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework.Status {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
 	// Default behavior: Don't schedule during peak times unless annotated to allow it
 	allowPeakScheduling := false
 	

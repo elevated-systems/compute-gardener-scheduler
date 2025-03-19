@@ -387,8 +387,8 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		}
 	}
 
-	// Power-law model (exponent 1.4) provides more realistic power scaling than linear model
-	powerExponent := 1.4
+	// Power-law model provides more realistic power scaling than linear model
+	powerExponent := common.DefaultPowerExponent
 	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*math.Pow(normalizedCPU, powerExponent)
 
 	klog.V(3).InfoS("CPU power calculation details",
