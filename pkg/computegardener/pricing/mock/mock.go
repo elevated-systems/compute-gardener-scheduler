@@ -14,17 +14,33 @@ import (
 
 // MockPricing implements the pricing.Implementation interface for testing
 type MockPricing struct {
-	rate float64
+	rate    float64
+	isPeak  bool
 }
 
 // New creates a new mock pricing implementation
 func New(rate float64) pricing.Implementation {
-	return &MockPricing{rate: rate}
+	return &MockPricing{rate: rate, isPeak: false}
+}
+
+// NewWithPeakStatus creates a new mock pricing with specific peak status
+func NewWithPeakStatus(rate float64, isPeak bool) pricing.Implementation {
+	return &MockPricing{rate: rate, isPeak: isPeak}
 }
 
 // GetCurrentRate returns the configured mock rate
 func (m *MockPricing) GetCurrentRate(now time.Time) float64 {
 	return m.rate
+}
+
+// IsPeakTime returns whether the given time is in a peak period
+func (m *MockPricing) IsPeakTime(now time.Time) bool {
+	return m.isPeak
+}
+
+// IsCurrentlyPeakTime is deprecated, use IsPeakTime instead
+func (m *MockPricing) IsCurrentlyPeakTime(now time.Time) bool {
+	return m.IsPeakTime(now)
 }
 
 // CheckPriceConstraints checks if current electricity rate exceeds pod's threshold

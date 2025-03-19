@@ -444,6 +444,75 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	if err := cs.applyNamespaceEnergyBudget(ctx, pod); err != nil {
 		klog.ErrorS(err, "Failed to apply namespace energy budget", "pod", klog.KObj(pod))
 	}
+	
+	// Check pricing constraints if enabled
+	if cs.config.Pricing.Enabled && cs.pricingImpl != nil && !cs.isOptedOut(pod) {
+		klog.V(3).InfoS("Checking price constraints in PreFilter",
+			"pod", klog.KObj(pod),
+			"enabled", cs.config.Pricing.Enabled)
+
+		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
+			klog.V(2).InfoS("Price constraints check failed in PreFilter",
+				"pod", klog.KObj(pod),
+				"status", status.Message())
+				
+			// Record metrics for price-based delay
+			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
+			period := "peak"
+			if !cs.pricingImpl.IsPeakTime(cs.clock.Now()) {
+				period = "off-peak"
+			}
+			PriceBasedDelays.WithLabelValues(period).Inc()
+			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
+				
+			return nil, status
+		}
+	}
+	
+	// Check carbon intensity constraints if enabled
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil && !cs.isOptedOut(pod) {
+		// Check if carbon constraint check is disabled for this pod
+		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok {
+			if enabled, _ := strconv.ParseBool(val); !enabled {
+				klog.V(2).InfoS("Carbon intensity check disabled via annotation",
+					"pod", klog.KObj(pod))
+			} else {
+				// Check carbon intensity
+				currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+				if err != nil {
+					klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
+						"pod", klog.KObj(pod))
+				} else if currentIntensity > cs.config.Carbon.IntensityThreshold {
+					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
+						currentIntensity, cs.config.Carbon.IntensityThreshold)
+					klog.V(2).InfoS("Carbon intensity check failed in PreFilter", 
+						"pod", klog.KObj(pod),
+						"currentIntensity", currentIntensity,
+						"threshold", cs.config.Carbon.IntensityThreshold)
+					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+					return nil, framework.NewStatus(framework.Unschedulable, msg)
+				}
+			}
+		} else {
+			// No explicit annotation, apply default carbon check
+			currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+			if err != nil {
+				klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
+					"pod", klog.KObj(pod))
+			} else if currentIntensity > cs.config.Carbon.IntensityThreshold {
+				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
+					currentIntensity, cs.config.Carbon.IntensityThreshold)
+				klog.V(2).InfoS("Carbon intensity check failed in PreFilter", 
+					"pod", klog.KObj(pod),
+					"currentIntensity", currentIntensity,
+					"threshold", cs.config.Carbon.IntensityThreshold)
+				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+				return nil, framework.NewStatus(framework.Unschedulable, msg)
+			}
+		}
+	}
 
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter

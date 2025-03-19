@@ -110,7 +110,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		pricingImpl: pricingmock.New(rate),
+		pricingImpl: pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
 		carbonImpl:  carbonImpl,
 		clock:       clock.NewMockClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes

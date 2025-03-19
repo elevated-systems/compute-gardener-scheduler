@@ -14,6 +14,9 @@ import (
 type Implementation interface {
 	// GetCurrentRate returns the current electricity rate in $/kWh
 	GetCurrentRate(now time.Time) float64
+	
+	// IsPeakTime checks if the given time is within a peak time window
+	IsPeakTime(now time.Time) bool
 
 	// CheckPriceConstraints checks if current electricity rate exceeds pod's threshold
 	CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework.Status

@@ -128,22 +128,15 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 	return nil // Not in any peak time window
 }
 
-// IsCurrentlyPeakTime checks if the current time is within a peak time window
-func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
-	// Debug time comparison for America/Los_Angeles
-	if loc, err := time.LoadLocation("America/Los_Angeles"); err == nil {
-		laTime := now.In(loc)
-		zone, offset := laTime.Zone()
-		klog.InfoS("DEBUG: Direct timezone conversion check",
-			"utcTime", now.Format("2006-01-02 15:04:05 MST"),
-			"losAngelesTime", laTime.Format("2006-01-02 15:04:05 MST"),
-			"zone", zone,
-			"offsetHours", offset/3600,
-			"isDST", laTime.IsDST())
-	}
-
+// IsPeakTime checks if the given time is within a peak time window
+func (s *Scheduler) IsPeakTime(now time.Time) bool {
 	period := s.findActivePeriod(now)
 	return period != nil && period.isPeakTime
+}
+
+// IsCurrentlyPeakTime is deprecated, use IsPeakTime instead
+func (s *Scheduler) IsCurrentlyPeakTime(now time.Time) bool {
+	return s.IsPeakTime(now)
 }
 
 // GetCurrentRate returns the current electricity rate based on configured schedules

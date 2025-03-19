@@ -13,10 +13,10 @@
 # limitations under the License.
 
 GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
-PLATFORMS ?= linux/amd64
+PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
 BUILDER ?= docker
 REGISTRY?=docker.io/dmasselink
-RELEASE_VERSION?=$(shell git tag -l "v*" --sort=-committerdate | head -n 1)-$(shell git rev-parse --short HEAD)
+RELEASE_VERSION?=v0.1.6-$(shell git rev-parse --short HEAD)
 RELEASE_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
 NODE_EXPORTER_IMAGE:=compute-gardener-node-exporter:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)

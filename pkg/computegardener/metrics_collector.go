@@ -72,6 +72,27 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 	}
 
+	// Get current electricity rate and update gauge - Ensure we're updating this periodically
+	// even when not making scheduling decisions
+	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		now := cs.clock.Now()
+		currentRate := cs.pricingImpl.GetCurrentRate(now)
+		
+		// Determine if we're in peak or off-peak period
+		isPeak := cs.pricingImpl.IsPeakTime(now)
+		period := "off-peak"
+		if isPeak {
+			period = "peak"
+		}
+
+		// Update electricity rate gauge
+		ElectricityRateGauge.WithLabelValues("tou", period).Set(currentRate)
+		klog.V(2).InfoS("Updated electricity rate gauge from metrics collector",
+			"rate", currentRate,
+			"period", period,
+			"isPeak", isPeak)
+	}
+
 	// Get metrics for all pods
 	podMetricsList, err := cs.coreMetricsClient.ListPodMetrics(ctx)
 	if err != nil {
@@ -149,7 +170,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		// Get GPU power for this pod
 		gpuPower := 0.0
 		key := podMetrics.Namespace + "/" + podMetrics.Name
-		
+
 		// First try direct mapping by pod name/namespace
 		if power, exists := gpuPowers[key]; exists {
 			gpuPower = power
@@ -157,13 +178,13 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		} else {
 			// Check if this is a GPU pod
 			isGPUPod := common.IsGPUPod(pod)
-			
+
 			// For GPU pods, find GPU power measurements from DCGM
 			if isGPUPod && len(gpuPowers) > 0 {
 				// Use the first GPU power value we find
 				for gpuKey, power := range gpuPowers {
 					gpuPower = power
-					klog.V(2).InfoS("Attributed GPU power to pod", 
+					klog.V(2).InfoS("Attributed GPU power to pod",
 						"pod", klog.KObj(pod), "gpuKey", gpuKey, "power", power)
 					break
 				}
@@ -178,7 +199,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			carbonIntensity,
 			cs.calculatePodPower,
 		)
-		
+
 		// Add electricity rate if pricing implementation is available
 		if cs.pricingImpl != nil {
 			currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
@@ -235,36 +256,36 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	var hasNodePower bool
 	var powerSource string = "unknown"
 	var diagnostics []string
-	
+
 	// First try to get the node from the Kubernetes API
 	node, err := cs.handle.ClientSet().CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 	if err != nil {
 		diagnostics = append(diagnostics, fmt.Sprintf("Failed to get node from API: %v", err))
 	}
-	
+
 	// Check if we have a hardware profiler and can get a node-specific power profile
 	if err == nil && cs.hardwareProfiler != nil {
 		// Try to get a node-specific profile based on detected hardware
 		profile, profileErr := cs.hardwareProfiler.GetNodePowerProfile(node)
-		
+
 		// Log CPU model annotation for diagnostics
 		cpuModel := "missing"
 		if val, ok := node.Annotations[common.AnnotationCPUModel]; ok {
 			cpuModel = val
 		}
-		
+
 		if profileErr != nil {
 			diagnostics = append(diagnostics, fmt.Sprintf("Hardware profile detection error: %v", profileErr))
 			diagnostics = append(diagnostics, fmt.Sprintf("Node CPU model annotation: %s", cpuModel))
 		}
-		
+
 		if profileErr == nil && profile != nil {
 			nodePower = profile
 			idlePower = profile.IdlePower
 			maxPower = profile.MaxPower
 			hasNodePower = true
 			powerSource = "hardware-profile"
-			
+
 			klog.V(2).InfoS("Using hardware-profiled power values",
 				"node", nodeName,
 				"cpuModel", cpuModel,
@@ -273,12 +294,12 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 				"hasCPUModelAnnotation", cpuModel != "missing")
 		} else {
 			diagnostics = append(diagnostics, fmt.Sprintf("Hardware profile failed or nil: err=%v, profile=%v", profileErr, profile != nil))
-			
+
 			// Log more details about the hardware profiler
 			if cs.hardwareProfiler != nil && cs.config.Power.HardwareProfiles != nil {
 				cpuProfileCount := len(cs.config.Power.HardwareProfiles.CPUProfiles)
 				diagnostics = append(diagnostics, fmt.Sprintf("Hardware profiler has %d CPU profiles", cpuProfileCount))
-				
+
 				// Check if the CPU model we have is in the profiles
 				if cpuModel != "missing" && cs.config.Power.HardwareProfiles.CPUProfiles != nil {
 					_, found := cs.config.Power.HardwareProfiles.CPUProfiles[cpuModel]
@@ -293,7 +314,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 	} else if cs.hardwareProfiler == nil {
 		diagnostics = append(diagnostics, "Hardware profiler is nil")
 	}
-	
+
 	// If no hardware profile, check manually configured power values
 	if !hasNodePower {
 		if np, ok := cs.config.Power.NodePowerConfig[nodeName]; ok {
@@ -302,7 +323,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 			maxPower = np.MaxPower
 			hasNodePower = true
 			powerSource = "manual-config"
-			klog.V(2).InfoS("Using manually configured power values", 
+			klog.V(2).InfoS("Using manually configured power values",
 				"node", nodeName,
 				"idlePower", idlePower,
 				"maxPower", maxPower)
@@ -355,7 +376,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 			totalCPUCores = float64(cpuQuantity.Value())
 		}
 	}
-	
+
 	// Normalize CPU utilization to 0-1 range by dividing by total cores
 	normalizedCPU := cpu
 	if totalCPUCores > 0 {
@@ -365,12 +386,12 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 			normalizedCPU = 1.0
 		}
 	}
-	
+
 	// Power-law model (exponent 1.4) provides more realistic power scaling than linear model
 	powerExponent := 1.4
 	cpuPower := adjustedIdlePower + (adjustedMaxPower-adjustedIdlePower)*math.Pow(normalizedCPU, powerExponent)
-	
-	klog.V(3).InfoS("CPU power calculation details", 
+
+	klog.V(3).InfoS("CPU power calculation details",
 		"node", nodeName,
 		"cpuCores", totalCPUCores,
 		"absoluteCpuUsage", cpu,
@@ -389,12 +410,12 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 		} else if cs.config.Power.DefaultGPUPUE > 0 {
 			gpuPUE = cs.config.Power.DefaultGPUPUE
 		}
-		
+
 		adjustedGPUPower = gpuPower * gpuPUE
-		klog.V(2).InfoS("GPU power with PUE applied", 
-			"node", nodeName, 
-			"rawPower", gpuPower, 
-			"pue", gpuPUE, 
+		klog.V(2).InfoS("GPU power with PUE applied",
+			"node", nodeName,
+			"rawPower", gpuPower,
+			"pue", gpuPUE,
 			"adjustedPower", adjustedGPUPower)
 	}
 
@@ -425,13 +446,13 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 	if cs.gpuMetricsClient == nil {
 		return 0, fmt.Errorf("prometheus client not available")
 	}
-	
+
 	// Get the Prometheus client from the GPU metrics client (which is a PrometheusGPUMetricsClient)
 	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusGPUMetricsClient)
 	if !ok {
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}
-	
+
 	// Query for CPU frequency using the node exporter metric
 	// The metric name is defined in common.MetricCPUFrequencyGHz
 	// This assumes that our node exporter is exporting this metric
@@ -439,7 +460,7 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 	if err != nil {
 		return 0, fmt.Errorf("failed to query CPU frequency: %v", err)
 	}
-	
+
 	// Return the frequency in GHz
 	return freq, nil
 }
