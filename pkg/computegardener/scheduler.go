@@ -8,6 +8,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -261,153 +262,160 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	// Register pod informer with filtering to only track completion for pods using our scheduler
-	h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				pod, ok := obj.(*v1.Pod)
-				if !ok {
-					// Handle tombstone objects
-					tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+	if h.SharedInformerFactory() != nil {
+		h.SharedInformerFactory().Core().V1().Pods().Informer().AddEventHandler(
+			cache.FilteringResourceEventHandler{
+				FilterFunc: func(obj interface{}) bool {
+					pod, ok := obj.(*v1.Pod)
 					if !ok {
-						return false
-					}
-					pod, ok = tombstone.Obj.(*v1.Pod)
-					if !ok {
-						return false
-					}
-				}
-				return pod.Spec.SchedulerName == SchedulerName
-			},
-			Handler: cache.ResourceEventHandlerFuncs{
-				UpdateFunc: func(oldObj, newObj interface{}) {
-					newPod := newObj.(*v1.Pod)
-
-					// Check for completion or failure
-					isCompleted := false
-					switch {
-					case newPod.Status.Phase == v1.PodSucceeded:
-						isCompleted = true
-					case newPod.Status.Phase == v1.PodFailed:
-						isCompleted = true
-					case len(newPod.Status.ContainerStatuses) > 0:
-						allTerminated := true
-						for _, status := range newPod.Status.ContainerStatuses {
-							if status.State.Terminated == nil {
-								allTerminated = false
-								break
-							}
-						}
-						if allTerminated {
-							isCompleted = true
-						}
-					}
-
-					if isCompleted {
-						klog.V(2).InfoS("Pod completed, handling completion",
-							"pod", klog.KObj(newPod),
-							"phase", newPod.Status.Phase,
-							"nodeName", newPod.Spec.NodeName)
-						scheduler.handlePodCompletion(newPod)
-					}
-				},
-				DeleteFunc: func(obj interface{}) {
-					// Handle pod deletion (like when scaling down deployments)
-					var pod *v1.Pod
-					var ok bool
-
-					// Extract the pod from the object (which might be a tombstone)
-					pod, ok = obj.(*v1.Pod)
-					if !ok {
-						// When a delete is observed, we sometimes get a DeletedFinalStateUnknown
+						// Handle tombstone objects
 						tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 						if !ok {
-							klog.V(2).InfoS("Error decoding object, invalid type")
-							return
+							return false
 						}
 						pod, ok = tombstone.Obj.(*v1.Pod)
 						if !ok {
-							klog.V(2).InfoS("Error decoding object tombstone, invalid type")
-							return
+							return false
 						}
 					}
+					return pod.Spec.SchedulerName == SchedulerName
+				},
+				Handler: cache.ResourceEventHandlerFuncs{
+					UpdateFunc: func(oldObj, newObj interface{}) {
+						newPod := newObj.(*v1.Pod)
 
-					// Skip if pod doesn't have a node assigned
-					if pod.Spec.NodeName == "" {
+						// Check for completion or failure
+						isCompleted := false
+						switch {
+						case newPod.Status.Phase == v1.PodSucceeded:
+							isCompleted = true
+						case newPod.Status.Phase == v1.PodFailed:
+							isCompleted = true
+						case len(newPod.Status.ContainerStatuses) > 0:
+							allTerminated := true
+							for _, status := range newPod.Status.ContainerStatuses {
+								if status.State.Terminated == nil {
+									allTerminated = false
+									break
+								}
+							}
+							if allTerminated {
+								isCompleted = true
+							}
+						}
+
+						if isCompleted {
+							klog.V(2).InfoS("Pod completed, handling completion",
+								"pod", klog.KObj(newPod),
+								"phase", newPod.Status.Phase,
+								"nodeName", newPod.Spec.NodeName)
+							scheduler.handlePodCompletion(newPod)
+						}
+					},
+					DeleteFunc: func(obj interface{}) {
+						// Handle pod deletion (like when scaling down deployments)
+						var pod *v1.Pod
+						var ok bool
+
+						// Extract the pod from the object (which might be a tombstone)
+						pod, ok = obj.(*v1.Pod)
+						if !ok {
+							// When a delete is observed, we sometimes get a DeletedFinalStateUnknown
+							tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+							if !ok {
+								klog.V(2).InfoS("Error decoding object, invalid type")
+								return
+							}
+							pod, ok = tombstone.Obj.(*v1.Pod)
+							if !ok {
+								klog.V(2).InfoS("Error decoding object tombstone, invalid type")
+								return
+							}
+						}
+
+						// Skip if pod doesn't have a node assigned
+						if pod.Spec.NodeName == "" {
+							return
+						}
+
+						// Check if this pod was already processed for completion
+						if scheduler.metricsStore != nil {
+							if history, found := scheduler.metricsStore.GetHistory(string(pod.UID)); found && history.Completed {
+								klog.V(2).InfoS("Pod deletion detected, but already processed for completion",
+									"pod", klog.KObj(pod),
+									"phase", pod.Status.Phase)
+								return
+							}
+						}
+
+						klog.V(2).InfoS("Pod deleted, handling as completion",
+							"pod", klog.KObj(pod),
+							"phase", pod.Status.Phase,
+							"nodeName", pod.Spec.NodeName)
+						scheduler.handlePodCompletion(pod)
+					},
+				},
+			},
+		)
+	} else {
+		klog.V(2).InfoS("Skipping pod informer setup when handler nil (ex: testing)")
+	}
+
+	// Register node handlers for initialization and cleanup
+	if h.SharedInformerFactory() != nil {
+		h.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(
+			cache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj interface{}) {
+					node, ok := obj.(*v1.Node)
+					if !ok {
+						return
+					}
+					// Initialize node with hardware profile if needed
+					if scheduler.hardwareProfiler != nil {
+						// Get node power profile with defaults applied
+						if profile, err := scheduler.hardwareProfiler.GetNodePowerProfile(node); err == nil {
+							cpuModel, gpuModel := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
+							memGB := float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024)
+							klog.V(2).InfoS("Automatically detected node hardware profile",
+								"node", node.Name,
+								"idlePower", profile.IdlePower,
+								"maxPower", profile.MaxPower,
+								"cpuModel", cpuModel,
+								"gpuModel", gpuModel != "" && gpuModel != "none",
+								"pue", profile.PUE,
+								"memGB", int(memGB))
+						}
+					}
+				},
+				UpdateFunc: func(oldObj, newObj interface{}) {
+					// Check if changes occurred that might affect hardware profile
+					oldNode, ok1 := oldObj.(*v1.Node)
+					newNode, ok2 := newObj.(*v1.Node)
+					if !ok1 || !ok2 {
 						return
 					}
 
-					// Check if this pod was already processed for completion
-					if scheduler.metricsStore != nil {
-						if history, found := scheduler.metricsStore.GetHistory(string(pod.UID)); found && history.Completed {
-							klog.V(2).InfoS("Pod deletion detected, but already processed for completion",
-								"pod", klog.KObj(pod),
-								"phase", pod.Status.Phase)
-							return
-						}
+					// Refresh hardware profile if node specs changed
+					if scheduler.hardwareProfiler != nil && metrics.NodeSpecsChanged(oldNode, newNode) {
+						klog.V(2).InfoS("Node specs changed, refreshing hardware profile", "node", newNode.Name)
+						scheduler.hardwareProfiler.RefreshNodeCache(newNode)
+					}
+				},
+				DeleteFunc: func(obj interface{}) {
+					// Handle possible node deletion
+					if node, ok := obj.(*v1.Node); ok && scheduler.hardwareProfiler != nil {
+						// Could clean up any node-specific cached data here if needed
+						klog.V(2).InfoS("Node deleted", "node", node.Name)
 					}
 
-					klog.V(2).InfoS("Pod deleted, handling as completion",
-						"pod", klog.KObj(pod),
-						"phase", pod.Status.Phase,
-						"nodeName", pod.Spec.NodeName)
-					scheduler.handlePodCompletion(pod)
+					klog.V(2).InfoS("Handling shutdown", "plugin", scheduler.Name())
+					scheduler.Close()
 				},
 			},
-		},
-	)
-
-	// Register node handlers for initialization and cleanup
-	h.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				node, ok := obj.(*v1.Node)
-				if !ok {
-					return
-				}
-				// Initialize node with hardware profile if needed
-				if scheduler.hardwareProfiler != nil {
-					// Get node power profile with defaults applied
-					if profile, err := scheduler.hardwareProfiler.GetNodePowerProfile(node); err == nil {
-						cpuModel, gpuModel := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
-						memGB := float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024)
-						klog.V(2).InfoS("Automatically detected node hardware profile",
-							"node", node.Name,
-							"idlePower", profile.IdlePower,
-							"maxPower", profile.MaxPower,
-							"cpuModel", cpuModel,
-							"gpuModel", gpuModel != "" && gpuModel != "none",
-							"pue", profile.PUE,
-							"memGB", int(memGB))
-					}
-				}
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				// Check if changes occurred that might affect hardware profile
-				oldNode, ok1 := oldObj.(*v1.Node)
-				newNode, ok2 := newObj.(*v1.Node)
-				if !ok1 || !ok2 {
-					return
-				}
-
-				// Refresh hardware profile if node specs changed
-				if scheduler.hardwareProfiler != nil && metrics.NodeSpecsChanged(oldNode, newNode) {
-					klog.V(2).InfoS("Node specs changed, refreshing hardware profile", "node", newNode.Name)
-					scheduler.hardwareProfiler.RefreshNodeCache(newNode)
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				// Handle possible node deletion
-				if node, ok := obj.(*v1.Node); ok && scheduler.hardwareProfiler != nil {
-					// Could clean up any node-specific cached data here if needed
-					klog.V(2).InfoS("Node deleted", "node", node.Name)
-				}
-
-				klog.V(2).InfoS("Handling shutdown", "plugin", scheduler.Name())
-				scheduler.Close()
-			},
-		},
-	)
-
+		)
+	} else {
+		klog.V(2).InfoS("Skipping node setup when handler nil (ex: testing)")
+	}
 	return scheduler, nil
 }
 
@@ -477,18 +485,35 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 				klog.V(2).InfoS("Carbon intensity check disabled via annotation",
 					"pod", klog.KObj(pod))
 			} else {
+				// Get pod-specific threshold if it exists, otherwise use the global threshold
+				threshold := cs.config.Carbon.IntensityThreshold
+				if threshStr, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
+					if threshVal, err := strconv.ParseFloat(threshStr, 64); err == nil {
+						threshold = threshVal
+						klog.V(2).InfoS("Using pod-specific carbon intensity threshold",
+							"pod", klog.KObj(pod),
+							"threshold", threshold)
+					} else {
+						klog.ErrorS(err, "Invalid carbon intensity threshold annotation, using global threshold",
+							"pod", klog.KObj(pod),
+							"annotation", threshStr,
+							"globalThreshold", threshold)
+					}
+				}
+
 				// Check carbon intensity
 				currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 				if err != nil {
 					klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
 						"pod", klog.KObj(pod))
-				} else if currentIntensity > cs.config.Carbon.IntensityThreshold {
+				} else if currentIntensity > threshold {
 					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
-						currentIntensity, cs.config.Carbon.IntensityThreshold)
+						currentIntensity, threshold)
 					klog.V(2).InfoS("Carbon intensity check failed in PreFilter",
 						"pod", klog.KObj(pod),
 						"currentIntensity", currentIntensity,
-						"threshold", cs.config.Carbon.IntensityThreshold)
+						"threshold", threshold,
+						"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
 					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
 					return nil, framework.NewStatus(framework.Unschedulable, msg)
@@ -496,17 +521,34 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 			}
 		} else {
 			// No explicit annotation, apply default carbon check
+			// First check if there's a pod-specific threshold
+			threshold := cs.config.Carbon.IntensityThreshold
+			if threshStr, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
+				if threshVal, err := strconv.ParseFloat(threshStr, 64); err == nil {
+					threshold = threshVal
+					klog.V(2).InfoS("Using pod-specific carbon intensity threshold",
+						"pod", klog.KObj(pod),
+						"threshold", threshold)
+				} else {
+					klog.ErrorS(err, "Invalid carbon intensity threshold annotation, using global threshold",
+						"pod", klog.KObj(pod),
+						"annotation", threshStr,
+						"globalThreshold", threshold)
+				}
+			}
+
 			currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 			if err != nil {
 				klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
 					"pod", klog.KObj(pod))
-			} else if currentIntensity > cs.config.Carbon.IntensityThreshold {
+			} else if currentIntensity > threshold {
 				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
-					currentIntensity, cs.config.Carbon.IntensityThreshold)
+					currentIntensity, threshold)
 				klog.V(2).InfoS("Carbon intensity check failed in PreFilter",
 					"pod", klog.KObj(pod),
 					"currentIntensity", currentIntensity,
-					"threshold", cs.config.Carbon.IntensityThreshold)
+					"threshold", threshold,
+					"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
 				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
 				return nil, framework.NewStatus(framework.Unschedulable, msg)
@@ -537,6 +579,10 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		"node", nodeInfo.Node().Name,
 		"schedulerName", pod.Spec.SchedulerName)
 	startTime := cs.clock.Now()
+
+	// Record initial carbon intensity and electricity rate for savings calculation
+	// This is done in Filter because it's called for each pod-node pair during scheduling
+	cs.recordInitialMetrics(ctx, pod)
 
 	// Track decision path for concise logging
 	decisionPath := []string{"Start"}
@@ -779,6 +825,65 @@ func (cs *ComputeGardenerScheduler) hasExceededMaxDelay(pod *v1.Pod) bool {
 
 func (cs *ComputeGardenerScheduler) isOptedOut(pod *v1.Pod) bool {
 	return pod.Annotations[common.AnnotationSkip] == "true"
+}
+
+// recordInitialMetrics records the initial carbon intensity and electricity rate
+// at the time of scheduling to enable savings calculations later.
+// This function will add the annotations only if they don't already exist.
+func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, pod *v1.Pod) {
+	// Don't modify the pod if it's opted out of compute gardener scheduling
+	if cs.isOptedOut(pod) {
+		return
+	}
+
+	// Skip if the pod already has these annotations
+	if _, hasCarbon := pod.Annotations[common.AnnotationInitialCarbonIntensity]; hasCarbon {
+		return
+	}
+	if _, hasElectricity := pod.Annotations[common.AnnotationInitialElectricityRate]; hasElectricity {
+		return
+	}
+
+	// Create a client to update the pod
+	clientset := cs.handle.ClientSet()
+
+	// Make a copy of the pod to modify
+	podCopy := pod.DeepCopy()
+	if podCopy.Annotations == nil {
+		podCopy.Annotations = make(map[string]string)
+	}
+
+	// Record current carbon intensity if enabled
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+		currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+		if err == nil && currentIntensity > 0 {
+			podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
+			klog.V(2).InfoS("Recorded initial carbon intensity for pod",
+				"pod", klog.KObj(pod),
+				"initialIntensity", currentIntensity)
+		}
+	}
+
+	// Record current electricity rate if enabled
+	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+		currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
+		if currentRate > 0 {
+			podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
+			klog.V(2).InfoS("Recorded initial electricity rate for pod",
+				"pod", klog.KObj(pod),
+				"initialRate", currentRate)
+		}
+	}
+
+	// Only update the pod if we added at least one annotation
+	if podCopy.Annotations[common.AnnotationInitialCarbonIntensity] != "" ||
+		podCopy.Annotations[common.AnnotationInitialElectricityRate] != "" {
+		_, err := clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
+		if err != nil {
+			klog.ErrorS(err, "Failed to update pod with initial metrics annotations",
+				"pod", klog.KObj(pod))
+		}
+	}
 }
 
 func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {

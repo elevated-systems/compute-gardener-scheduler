@@ -54,6 +54,14 @@ func WithCache(cache CacheInterface) ClientOption {
 	}
 }
 
+// Helper function to avoid divide by zero
+func ensureNonZero(n int) int {
+	if n <= 0 {
+		return 1 // Default to 1 request per second if RateLimit is not set
+	}
+	return n
+}
+
 // NewClient creates a new API client
 func NewClient(apiCfg config.ElectricityMapsAPIConfig, cacheCfg config.APICacheConfig, opts ...ClientOption) *Client {
 	client := &Client{
@@ -62,7 +70,7 @@ func NewClient(apiCfg config.ElectricityMapsAPIConfig, cacheCfg config.APICacheC
 		httpClient: &http.Client{
 			Timeout: cacheCfg.Timeout,
 		},
-		rateLimiter: time.NewTicker(time.Second / time.Duration(cacheCfg.RateLimit)),
+		rateLimiter: time.NewTicker(time.Second / time.Duration(ensureNonZero(cacheCfg.RateLimit))),
 	}
 
 	// Apply options

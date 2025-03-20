@@ -32,6 +32,14 @@ type metrics struct {
 
 // New creates a new cache instance
 func New(ttl time.Duration, maxAge time.Duration) *Cache {
+	// Ensure TTL and maxAge are positive
+	if ttl <= 0 {
+		ttl = time.Minute // Default to 1 minute if not set
+	}
+	if maxAge <= 0 {
+		maxAge = time.Hour // Default to 1 hour if not set
+	}
+	
 	c := &Cache{
 		data: make(map[string]*cacheEntry),
 		// For cache freshness purposes at get time.
@@ -110,9 +118,17 @@ func (c *Cache) recordMiss() {
 	c.metrics.mutex.Unlock()
 }
 
+// ensurePositiveDuration makes sure a duration is positive
+func ensurePositiveDuration(d time.Duration) time.Duration {
+	if d <= 0 {
+		return time.Minute // Default to 1 minute if duration is not positive
+	}
+	return d
+}
+
 // cleanup periodically removes expired entries
 func (c *Cache) cleanup() {
-	ticker := time.NewTicker(c.ttl)
+	ticker := time.NewTicker(ensurePositiveDuration(c.ttl))
 	defer ticker.Stop()
 
 	for {
