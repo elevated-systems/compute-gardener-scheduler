@@ -78,3 +78,33 @@ subjects:
 - kind: ServiceAccount
   name: {{ .Values.scheduler.name }}
   namespace: {{ .Release.Namespace }}
+---
+# Add permissions for the scheduler to update pods for initial metrics annotations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.scheduler.name }}-pod-updater
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.scheduler.name }}-pod-updater
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.scheduler.name }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Values.scheduler.name }}-pod-updater
+  apiGroup: rbac.authorization.k8s.io

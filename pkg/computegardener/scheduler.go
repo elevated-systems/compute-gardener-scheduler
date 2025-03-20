@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -584,40 +583,23 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 	// This is done in Filter because it's called for each pod-node pair during scheduling
 	cs.recordInitialMetrics(ctx, pod)
 
-	// Track decision path for concise logging
-	decisionPath := []string{"Start"}
-
 	var returnStatus *framework.Status
 	defer func() {
 		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
 
-		// Generate concise decision path log
-		pathMsg := strings.Join(decisionPath, " --> ")
-		decision := "SUCCESS"
+		// Log the filter result with timing information
 		if returnStatus != nil && !returnStatus.IsSuccess() {
-			decision = returnStatus.Code().String()
-			if returnStatus.Message() != "" {
-				decision += ": " + returnStatus.Message()
-			}
-		}
-
-		// Log the decision path at v2 verbosity
-		klog.V(2).InfoS("Scheduling decision",
-			"pod", klog.KObj(pod),
-			"node", nodeInfo.Node().Name,
-			"path", pathMsg,
-			"decision", decision,
-			"durationMs", cs.clock.Since(startTime).Milliseconds())
-
-		// More detailed logging at higher verbosity
-		if returnStatus != nil {
-			klog.V(3).InfoS("Filter function return status",
+			klog.V(2).InfoS("Node filtered out during scheduling",
 				"pod", klog.KObj(pod),
-				"status", returnStatus.Message(),
-				"code", returnStatus.Code().String())
+				"node", nodeInfo.Node().Name,
+				"reason", returnStatus.Message(),
+				"code", returnStatus.Code().String(),
+				"durationMs", cs.clock.Since(startTime).Milliseconds())
 		} else {
-			klog.V(3).InfoS("Filter function returning success (nil status)",
-				"pod", klog.KObj(pod))
+			klog.V(3).InfoS("Node passed filter evaluation",
+				"pod", klog.KObj(pod),
+				"node", nodeInfo.Node().Name,
+				"durationMs", cs.clock.Since(startTime).Milliseconds())
 		}
 	}()
 
@@ -642,20 +624,18 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	// Check for opt-out annotation directly since we might not have prefilter state
 	if cs.isOptedOut(pod) {
-		decisionPath = append(decisionPath, "OptedOut")
 		klog.V(3).InfoS("Pod opted out of scheduling constraints", "pod", klog.KObj(pod))
 		return framework.NewStatus(framework.Success, "")
 	}
 
 	node := nodeInfo.Node()
 	if node == nil {
-		decisionPath = append(decisionPath, "NodeNotFound")
 		return framework.NewStatus(framework.Error, "node not found")
 	}
 
 	// Check hardware profile energy efficiency if available
 	if cs.hardwareProfiler != nil {
-		decisionPath = append(decisionPath, "CheckHardwareProfile")
+		klog.V(3).InfoS("Checking hardware profile for node", "node", node.Name)
 
 		// Get node's power profile
 		powerProfile, err := cs.hardwareProfiler.GetNodePowerProfile(node)
@@ -671,7 +651,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationMaxPowerWatts]; ok {
 				maxPower, err := strconv.ParseFloat(val, 64)
 				if err == nil {
-					decisionPath = append(decisionPath, "CheckMaxPower")
+					klog.V(3).InfoS("Checking max power requirement", "pod", klog.KObj(pod), "maxPower", maxPower)
 
 					// Check if pod has a GPU workload type specified
 					workloadType := ""
@@ -705,10 +685,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 					if effectiveMaxPower > maxPower {
 						// Node's max power exceeds pod's requirement
-						decisionPath = append(decisionPath, fmt.Sprintf("PowerExceeded:%.1fW>%.1fW",
-							effectiveMaxPower, maxPower))
-
-						klog.V(3).InfoS("Filtered node due to power requirements",
+						klog.V(2).InfoS("Filtered node due to power requirements",
 							"node", node.Name,
 							"nodePower", effectiveMaxPower,
 							"podMaxPower", maxPower,
@@ -723,8 +700,10 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							fmt.Sprintf("node power profile (%.1f W) exceeds pod max power requirement (%.1f W)",
 								effectiveMaxPower, maxPower))
 					} else {
-						decisionPath = append(decisionPath, fmt.Sprintf("PowerOK:%.1fW≤%.1fW",
-							effectiveMaxPower, maxPower))
+						klog.V(3).InfoS("Node power within pod requirement",
+							"node", node.Name,
+							"nodePower", effectiveMaxPower,
+							"podMaxPower", maxPower)
 					}
 				}
 			}
@@ -733,13 +712,12 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 			if val, ok := pod.Annotations[common.AnnotationMinEfficiency]; ok {
 				minEfficiency, err := strconv.ParseFloat(val, 64)
 				if err == nil {
-					decisionPath = append(decisionPath, "CheckEfficiency")
+					klog.V(3).InfoS("Checking minimum efficiency requirement",
+						"pod", klog.KObj(pod),
+						"minEfficiency", minEfficiency)
 
 					if nodeEfficiency < minEfficiency {
-						decisionPath = append(decisionPath, fmt.Sprintf("EfficiencyTooLow:%.3f<%.3f",
-							nodeEfficiency, minEfficiency))
-
-						klog.V(3).InfoS("Filtered node due to efficiency requirements",
+						klog.V(2).InfoS("Filtered node due to efficiency requirements",
 							"node", node.Name,
 							"nodeEfficiency", nodeEfficiency,
 							"minEfficiency", minEfficiency)
@@ -750,20 +728,21 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 						return framework.NewStatus(framework.Unschedulable,
 							"node efficiency below pod's minimum requirement")
 					} else {
-						decisionPath = append(decisionPath, fmt.Sprintf("EfficiencyOK:%.3f≥%.3f",
-							nodeEfficiency, minEfficiency))
+						klog.V(3).InfoS("Node efficiency meets pod requirement",
+							"node", node.Name,
+							"nodeEfficiency", nodeEfficiency,
+							"minEfficiency", minEfficiency)
 					}
 				}
 			}
 		} else {
-			decisionPath = append(decisionPath, "HardwareProfileFailed")
 			klog.V(3).InfoS("Failed to get hardware profile",
 				"pod", klog.KObj(pod),
 				"node", node.Name,
 				"error", err)
 		}
 	} else {
-		decisionPath = append(decisionPath, "HardwareProfilerDisabled")
+		klog.V(3).InfoS("Hardware profiler not enabled", "pod", klog.KObj(pod))
 	}
 
 	return framework.NewStatus(framework.Success, "")
@@ -836,12 +815,12 @@ func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, po
 		return
 	}
 
-	// Skip if the pod already has these annotations
+	// Skip if the pod already has both annotations - check them together to reduce log spam
 	if _, hasCarbon := pod.Annotations[common.AnnotationInitialCarbonIntensity]; hasCarbon {
-		return
-	}
-	if _, hasElectricity := pod.Annotations[common.AnnotationInitialElectricityRate]; hasElectricity {
-		return
+		if _, hasElectricity := pod.Annotations[common.AnnotationInitialElectricityRate]; hasElectricity {
+			// Pod already has both annotations, no need to update
+			return
+		}
 	}
 
 	// Create a client to update the pod
@@ -853,35 +832,42 @@ func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, po
 		podCopy.Annotations = make(map[string]string)
 	}
 
-	// Record current carbon intensity if enabled
-	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
+	// Flag to track if we need to update the pod
+	needsUpdate := false
+
+	// Record current carbon intensity if enabled and not already present
+	if _, hasCarbon := podCopy.Annotations[common.AnnotationInitialCarbonIntensity]; !hasCarbon &&
+		cs.config.Carbon.Enabled && cs.carbonImpl != nil {
 		currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 		if err == nil && currentIntensity > 0 {
 			podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
-			klog.V(2).InfoS("Recorded initial carbon intensity for pod",
-				"pod", klog.KObj(pod),
-				"initialIntensity", currentIntensity)
+			needsUpdate = true
 		}
 	}
 
-	// Record current electricity rate if enabled
-	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+	// Record current electricity rate if enabled and not already present
+	if _, hasRate := podCopy.Annotations[common.AnnotationInitialElectricityRate]; !hasRate &&
+		cs.config.Pricing.Enabled && cs.pricingImpl != nil {
 		currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
 		if currentRate > 0 {
 			podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
-			klog.V(2).InfoS("Recorded initial electricity rate for pod",
-				"pod", klog.KObj(pod),
-				"initialRate", currentRate)
+			needsUpdate = true
 		}
 	}
 
-	// Only update the pod if we added at least one annotation
-	if podCopy.Annotations[common.AnnotationInitialCarbonIntensity] != "" ||
-		podCopy.Annotations[common.AnnotationInitialElectricityRate] != "" {
+	// Only update the pod if we need to add at least one annotation
+	if needsUpdate {
+		// Attempt to update the pod - if it fails, it will be tried again next cycle
 		_, err := clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
-		if err != nil {
-			klog.ErrorS(err, "Failed to update pod with initial metrics annotations",
-				"pod", klog.KObj(pod))
+		if err == nil {
+			klog.V(2).InfoS("Updated pod with initial metrics annotations",
+				"pod", klog.KObj(pod),
+				"carbonIntensity", podCopy.Annotations[common.AnnotationInitialCarbonIntensity],
+				"electricityRate", podCopy.Annotations[common.AnnotationInitialElectricityRate])
+		} else {
+			klog.V(3).InfoS("Failed to update pod with metrics annotations, will try again next cycle",
+				"pod", klog.KObj(pod),
+				"error", err)
 		}
 	}
 }
