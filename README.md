@@ -8,7 +8,7 @@ This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kub
 
 ## Core Features
 
-- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data
+- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data (requires [Electricity Maps API](https://api-portal.electricitymaps.com/) key)
 - **Price-Aware Scheduling**: Schedule pods based on time-of-use electricity pricing
 - **Pod-Level Controls**: Customize scheduling via annotations and thresholds
 - **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration
@@ -61,7 +61,7 @@ kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler
 
 ```bash
 # Required
-ELECTRICITY_MAP_API_KEY=<your-api-key>  # API key for Electricity Map
+ELECTRICITY_MAP_API_KEY=<your-api-key>  # API key for Electricity Maps API
 
 # Core Features
 CARBON_ENABLED=true                    # Enable carbon-aware scheduling
@@ -170,7 +170,7 @@ The scheduler consists of these key components:
 2. **Energy Policy Webhook**: Applies namespace-level energy policies
 3. **Hardware Profiler**: Models power consumption with PUE considerations
 4. **Energy Budget Tracker**: Monitors energy usage against budgets
-5. **API Client**: Communicates with Electricity Map API
+5. **API Client**: Communicates with Electricity Maps API
 6. **Cache**: Provides caching of API responses to reduce external API calls
 7. **TOU Scheduler**: Manages time-of-use pricing schedules
 
