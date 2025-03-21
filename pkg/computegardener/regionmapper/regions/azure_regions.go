@@ -1,0 +1,318 @@
+package regions
+
+// AzureRegionInfo maps Azure regions to relevant grid and location information
+var AzureRegionInfo = map[string]RegionInfo{
+	// North America
+	"eastus": {
+		ElectricityMapsZone: "US-PJM",
+		TimeZone:            "America/New_York",
+		ISO:                 "PJM",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "eastus",
+		Metadata: map[string]string{
+			"state": "Virginia",
+			"city":  "Reston",
+		},
+	},
+	"eastus2": {
+		ElectricityMapsZone: "US-PJM",
+		TimeZone:            "America/New_York",
+		ISO:                 "PJM",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "eastus2",
+		Metadata: map[string]string{
+			"state": "Virginia",
+			"city":  "Boydton",
+		},
+	},
+	"westus": {
+		ElectricityMapsZone: "US-CAL-CISO",
+		TimeZone:            "America/Los_Angeles",
+		ISO:                 "CAISO",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "westus",
+		Metadata: map[string]string{
+			"state": "California",
+			"city":  "San Francisco",
+		},
+	},
+	"westus2": {
+		ElectricityMapsZone: "US-NW-PACW",
+		TimeZone:            "America/Los_Angeles",
+		ISO:                 "PACW",
+		DefaultPUE:          1.2,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "westus2",
+		Metadata: map[string]string{
+			"state":        "Washington",
+			"city":         "Quincy",
+			"renewables":   "high",
+			"carbonStatus": "low",
+		},
+	},
+	"westus3": {
+		ElectricityMapsZone: "US-SW-AZPS",
+		TimeZone:            "America/Phoenix",
+		ISO:                 "AZPS",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "westus3",
+		Metadata: map[string]string{
+			"state": "Arizona",
+			"city":  "Phoenix",
+		},
+	},
+	"centralus": {
+		ElectricityMapsZone: "US-TEX-ERCO",
+		TimeZone:            "America/Chicago",
+		ISO:                 "ERCOT",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "centralus",
+		Metadata: map[string]string{
+			"state": "Iowa",
+			"city":  "Des Moines",
+		},
+	},
+	"northcentralus": {
+		ElectricityMapsZone: "US-MIDW-MISO",
+		TimeZone:            "America/Chicago",
+		ISO:                 "MISO",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "northcentralus",
+		Metadata: map[string]string{
+			"state": "Illinois",
+			"city":  "Chicago",
+		},
+	},
+	"southcentralus": {
+		ElectricityMapsZone: "US-TEX-ERCO",
+		TimeZone:            "America/Chicago",
+		ISO:                 "ERCOT",
+		DefaultPUE:          1.25,
+		Country:             "US",
+		CloudProvider:       "azure",
+		CloudRegion:         "southcentralus",
+		Metadata: map[string]string{
+			"state": "Texas",
+			"city":  "San Antonio",
+		},
+	},
+	"canadacentral": {
+		ElectricityMapsZone: "CA-ON",
+		TimeZone:            "America/Toronto",
+		ISO:                 "IESO",
+		DefaultPUE:          1.25,
+		Country:             "CA",
+		CloudProvider:       "azure",
+		CloudRegion:         "canadacentral",
+		Metadata: map[string]string{
+			"province": "Ontario",
+			"city":     "Toronto",
+		},
+	},
+	"canadaeast": {
+		ElectricityMapsZone: "CA-QC",
+		TimeZone:            "America/Montreal",
+		ISO:                 "QC",
+		DefaultPUE:          1.20,
+		Country:             "CA",
+		CloudProvider:       "azure",
+		CloudRegion:         "canadaeast",
+		Metadata: map[string]string{
+			"province":     "Quebec",
+			"city":         "Quebec City",
+			"renewables":   "high",
+			"carbonStatus": "low",
+		},
+	},
+
+	// Europe
+	"northeurope": {
+		ElectricityMapsZone: "IE",
+		TimeZone:            "Europe/Dublin",
+		ISO:                 "SEM",
+		DefaultPUE:          1.25,
+		Country:             "IE",
+		CloudProvider:       "azure",
+		CloudRegion:         "northeurope",
+		Metadata: map[string]string{
+			"city": "Dublin",
+		},
+	},
+	"westeurope": {
+		ElectricityMapsZone: "NL",
+		TimeZone:            "Europe/Amsterdam",
+		ISO:                 "NL",
+		DefaultPUE:          1.25,
+		Country:             "NL",
+		CloudProvider:       "azure",
+		CloudRegion:         "westeurope",
+		Metadata: map[string]string{
+			"city": "Amsterdam",
+		},
+	},
+	"uksouth": {
+		ElectricityMapsZone: "GB",
+		TimeZone:            "Europe/London",
+		ISO:                 "GB",
+		DefaultPUE:          1.25,
+		Country:             "GB",
+		CloudProvider:       "azure",
+		CloudRegion:         "uksouth",
+		Metadata: map[string]string{
+			"city": "London",
+		},
+	},
+	"ukwest": {
+		ElectricityMapsZone: "GB",
+		TimeZone:            "Europe/London",
+		ISO:                 "GB",
+		DefaultPUE:          1.25,
+		Country:             "GB",
+		CloudProvider:       "azure",
+		CloudRegion:         "ukwest",
+		Metadata: map[string]string{
+			"city": "Cardiff",
+		},
+	},
+	"francecentral": {
+		ElectricityMapsZone: "FR",
+		TimeZone:            "Europe/Paris",
+		ISO:                 "RTE",
+		DefaultPUE:          1.25,
+		Country:             "FR",
+		CloudProvider:       "azure",
+		CloudRegion:         "francecentral",
+		Metadata: map[string]string{
+			"city": "Paris",
+		},
+	},
+	"germanywestcentral": {
+		ElectricityMapsZone: "DE",
+		TimeZone:            "Europe/Berlin",
+		ISO:                 "DE",
+		DefaultPUE:          1.25,
+		Country:             "DE",
+		CloudProvider:       "azure",
+		CloudRegion:         "germanywestcentral",
+		Metadata: map[string]string{
+			"city": "Frankfurt",
+		},
+	},
+	"norwayeast": {
+		ElectricityMapsZone: "NO-NO1",
+		TimeZone:            "Europe/Oslo",
+		ISO:                 "NO",
+		DefaultPUE:          1.15, // Lower due to cooler climate
+		Country:             "NO",
+		CloudProvider:       "azure",
+		CloudRegion:         "norwayeast",
+		Metadata: map[string]string{
+			"city":         "Oslo",
+			"renewables":   "high",
+			"carbonStatus": "low",
+		},
+	},
+	"swedencentral": {
+		ElectricityMapsZone: "SE",
+		TimeZone:            "Europe/Stockholm",
+		ISO:                 "SE",
+		DefaultPUE:          1.15, // Lower due to cooler climate
+		Country:             "SE",
+		CloudProvider:       "azure",
+		CloudRegion:         "swedencentral",
+		Metadata: map[string]string{
+			"city":         "Gävle",
+			"renewables":   "high",
+			"carbonStatus": "low",
+		},
+	},
+
+	// Asia Pacific
+	"eastasia": {
+		ElectricityMapsZone: "HK",
+		TimeZone:            "Asia/Hong_Kong",
+		ISO:                 "HK",
+		DefaultPUE:          1.3, // Higher due to climate
+		Country:             "HK",
+		CloudProvider:       "azure",
+		CloudRegion:         "eastasia",
+		Metadata: map[string]string{
+			"city": "Hong Kong",
+		},
+	},
+	"southeastasia": {
+		ElectricityMapsZone: "SG",
+		TimeZone:            "Asia/Singapore",
+		ISO:                 "EMA",
+		DefaultPUE:          1.3, // Higher due to tropical climate
+		Country:             "SG",
+		CloudProvider:       "azure",
+		CloudRegion:         "southeastasia",
+		Metadata: map[string]string{
+			"city": "Singapore",
+		},
+	},
+	"japaneast": {
+		ElectricityMapsZone: "JP",
+		TimeZone:            "Asia/Tokyo",
+		ISO:                 "JEPX",
+		DefaultPUE:          1.25,
+		Country:             "JP",
+		CloudProvider:       "azure",
+		CloudRegion:         "japaneast",
+		Metadata: map[string]string{
+			"city": "Tokyo",
+		},
+	},
+	"japanwest": {
+		ElectricityMapsZone: "JP-KS",
+		TimeZone:            "Asia/Tokyo",
+		ISO:                 "JEPX",
+		DefaultPUE:          1.25,
+		Country:             "JP",
+		CloudProvider:       "azure",
+		CloudRegion:         "japanwest",
+		Metadata: map[string]string{
+			"city": "Osaka",
+		},
+	},
+	"australiaeast": {
+		ElectricityMapsZone: "AU-NSW",
+		TimeZone:            "Australia/Sydney",
+		ISO:                 "AEMO",
+		DefaultPUE:          1.25,
+		Country:             "AU",
+		CloudProvider:       "azure",
+		CloudRegion:         "australiaeast",
+		Metadata: map[string]string{
+			"city":  "Sydney",
+			"state": "New South Wales",
+		},
+	},
+	"australiasoutheast": {
+		ElectricityMapsZone: "AU-VIC",
+		TimeZone:            "Australia/Melbourne",
+		ISO:                 "AEMO",
+		DefaultPUE:          1.25,
+		Country:             "AU",
+		CloudProvider:       "azure",
+		CloudRegion:         "australiasoutheast",
+		Metadata: map[string]string{
+			"city":  "Melbourne",
+			"state": "Victoria",
+		},
+	},
+}
