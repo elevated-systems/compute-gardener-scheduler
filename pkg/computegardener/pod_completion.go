@@ -87,6 +87,9 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
+	
+	// Remove pod from our delay tracking map to clean up memory
+	delete(cs.delayedPods, podUID)
 
 	klog.V(2).InfoS("Found metrics history for pod",
 		"pod", klog.KObj(pod),
@@ -290,6 +293,16 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		NodeMemoryUsage.WithLabelValues(nodeName, podName, "final").Set(final.Memory)
 		NodeGPUPower.WithLabelValues(nodeName, podName, "final").Set(final.GPUPowerWatts)
 		NodePowerEstimate.WithLabelValues(nodeName, podName, "final").Set(final.PowerEstimate)
+		
+		// Reset current phase metrics to 0 to ensure completed pods don't appear in dashboards
+		NodeCPUUsage.WithLabelValues(nodeName, podName, "current").Set(0)
+		NodeMemoryUsage.WithLabelValues(nodeName, podName, "current").Set(0)
+		NodeGPUPower.WithLabelValues(nodeName, podName, "current").Set(0)
+		NodePowerEstimate.WithLabelValues(nodeName, podName, "current").Set(0)
+		
+		klog.V(2).InfoS("Reset current power metrics to zero for completed pod",
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
 	}
 }
 
