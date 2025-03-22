@@ -901,7 +901,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "Timeline showing pod scheduling states",
+        "description": "Timeline showing pod scheduling states over time with color-coded segments for different states (waiting, delayed, running, completed)",
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -915,30 +915,45 @@
             "mappings": [
               {
                 "options": {
-                  "Running": {
-                    "color": "green",
+                  "0": {
+                    "color": "transparent",
                     "index": 0,
-                    "text": "Running"
+                    "text": "None"
                   },
-                  "Pending": {
-                    "color": "orange",
+                  "1": {
+                    "color": "#FF9830",
                     "index": 1,
                     "text": "Pending"
                   },
-                  "Succeeded": {
-                    "color": "blue",
+                  "2": {
+                    "color": "green",
                     "index": 2,
+                    "text": "Running"
+                  },
+                  "3": {
+                    "color": "blue",
+                    "index": 3,
                     "text": "Completed"
                   },
-                  "Failed": {
+                  "4": {
                     "color": "red",
-                    "index": 3,
+                    "index": 4,
                     "text": "Failed"
                   },
-                  "Unknown": {
-                    "color": "purple",
-                    "index": 4,
-                    "text": "Unknown"
+                  "5": {
+                    "color": "#73BF69",
+                    "index": 5,
+                    "text": "Carbon Delay"
+                  },
+                  "6": {
+                    "color": "#F2CC0C",
+                    "index": 6,
+                    "text": "Price Delay"
+                  },
+                  "7": {
+                    "color": "#C4162A",
+                    "index": 7,
+                    "text": "Max Delay Exceeded"
                   }
                 },
                 "type": "value"
@@ -948,16 +963,17 @@
               "mode": "absolute",
               "steps": [
                 {
-                  "color": "green",
+                  "color": "transparent",
                   "value": null
                 }
               ]
-            }
+            },
+            "unit": "short"
           },
           "overrides": []
         },
         "gridPos": {
-          "h": 8,
+          "h": 10,
           "w": 24,
           "x": 0,
           "y": 27
@@ -970,7 +986,7 @@
             "placement": "bottom",
             "showLegend": true
           },
-          "mergeValues": true,
+          "mergeValues": false,
           "rowHeight": 0.9,
           "showValue": "auto",
           "tooltip": {
@@ -986,16 +1002,94 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "kube_pod_status_phase{phase=~\"Running|Pending|Succeeded|Failed\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})",
+            "expr": "sum by(exported_pod) (kube_pod_status_phase{phase=\"Pending\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})) * 1",
             "format": "time_series",
             "hide": false,
             "instant": false,
-            "legendFormat": "{{exported_namespace}}/{{exported_pod}}: {{phase}}",
+            "legendFormat": "{{exported_pod}} - Pending",
             "range": true,
             "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_pod) (kube_pod_status_phase{phase=\"Running\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})) * 2",
+            "format": "time_series",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "{{exported_pod}} - Running",
+            "range": true,
+            "refId": "B"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_pod) (kube_pod_status_phase{phase=\"Succeeded\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})) * 3",
+            "format": "time_series",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "{{exported_pod}} - Completed",
+            "range": true,
+            "refId": "C"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_pod) (kube_pod_status_phase{phase=\"Failed\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})) * 4",
+            "format": "time_series",
+            "hide": false,
+            "instant": false,
+            "legendFormat": "{{exported_pod}} - Failed",
+            "range": true,
+            "refId": "D"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "# Carbon delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_carbon_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 5",
+            "hide": false,
+            "legendFormat": "{{exported_pod}} - Carbon Delay",
+            "range": true,
+            "refId": "E"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "# Price delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_price_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 6",
+            "hide": false,
+            "legendFormat": "{{exported_pod}} - Price Delay",
+            "range": true,
+            "refId": "F"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "# Max delay exceeded - detect when scheduler gives up on delaying\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_scheduling_attempt_total{result=\"max_delay_exceeded\"}[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 7",
+            "hide": false,
+            "legendFormat": "{{exported_pod}} - Max Delay Exceeded",
+            "range": true,
+            "refId": "G"
           }
         ],
-        "title": "Pod Status Timeline (Under Development)",
+        "title": "Pod State Timeline",
         "transformations": [],
         "type": "state-timeline"
       },

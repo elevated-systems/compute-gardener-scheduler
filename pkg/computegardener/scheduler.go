@@ -283,7 +283,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 							return false
 						}
 					}
-					return pod.Spec.SchedulerName == SchedulerName
+					return pod.Spec.SchedulerName == SchedulerName || pod.Spec.SchedulerName == Name
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
 					UpdateFunc: func(oldObj, newObj interface{}) {

@@ -88,8 +88,13 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
 	
-	// Remove pod from our delay tracking map to clean up memory
-	delete(cs.delayedPods, podUID)
+	// Remove pod from our delay tracking map to clean up memory - only if map is initialized and used
+	if cs.delayedPods != nil {
+		delete(cs.delayedPods, podUID)
+		klog.V(2).InfoS("Removed pod from delay tracking map", 
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
+	}
 
 	klog.V(2).InfoS("Found metrics history for pod",
 		"pod", klog.KObj(pod),
@@ -158,7 +163,14 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"firstTimestamp", metricsHistory.Records[0].Timestamp,
 		"lastTimestamp", metricsHistory.Records[len(metricsHistory.Records)-1].Timestamp)
 
-	// Record the metrics
+	// Record the metrics with debug logging
+	klog.V(3).InfoS("Recording energy and carbon metrics",
+		"pod", klog.KObj(pod),
+		"namespace", namespace,
+		"energyKWh", totalEnergyKWh,
+		"carbonEmissions", totalCarbonEmissions, 
+		"metricsCount", len(metricsHistory.Records))
+		
 	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
 	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
 	
