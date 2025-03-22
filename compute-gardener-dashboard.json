@@ -141,7 +141,8 @@
                 }
               ]
             },
-            "unit": "currencyUSD"
+            "unit": "currencyUSD",
+            "decimals": 2
           },
           "overrides": [
             {
@@ -200,10 +201,15 @@
             "calcs": [
               "lastNotNull"
             ],
+            "limit": 1,
             "fields": "",
             "values": false
           },
-          "textMode": "value_and_name"
+          "textMode": "value_and_name",
+          "textSize": {
+            "titleSize": 16,
+            "valueSize": 20
+          }
         },
         "pluginVersion": "9.3.1",
         "targets": [
@@ -213,7 +219,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "scheduler_compute_gardener_electricity_rate{location=~\"$location\", period=~\"$period\"}",
+            "expr": "scheduler_compute_gardener_electricity_rate",
             "hide": false,
             "instant": true,
             "legendFormat": "{{period}}",
@@ -337,7 +343,7 @@
         "options": {
           "legend": {
             "calcs": [
-              "lastNotNull",
+              "mean",
               "max"
             ],
             "displayMode": "table",
@@ -501,8 +507,8 @@
           "legend": {
             "calcs": [
               "mean",
-              "max",
-              "min"
+              "min",
+              "max"
             ],
             "displayMode": "table",
             "placement": "bottom",
@@ -547,7 +553,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "Count of jobs delayed due to price optimization",
+        "description": "Total scheduler delays and their breakdown by reason (carbon/price)",
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -567,7 +573,7 @@
                 "tooltip": false,
                 "viz": false
               },
-              "lineInterpolation": "stepAfter",
+              "lineInterpolation": "linear",
               "lineWidth": 2,
               "pointSize": 5,
               "scaleDistribution": {
@@ -599,13 +605,13 @@
             {
               "matcher": {
                 "id": "byName",
-                "options": "Delayed Jobs - peak"
+                "options": "Carbon-based delays"
               },
               "properties": [
                 {
                   "id": "color",
                   "value": {
-                    "fixedColor": "yellow",
+                    "fixedColor": "green",
                     "mode": "fixed"
                   }
                 }
@@ -614,13 +620,13 @@
             {
               "matcher": {
                 "id": "byName",
-                "options": "Delayed Jobs - off-peak"
+                "options": "Price-based delays"
               },
               "properties": [
                 {
                   "id": "color",
                   "value": {
-                    "fixedColor": "green",
+                    "fixedColor": "yellow",
                     "mode": "fixed"
                   }
                 }
@@ -634,13 +640,12 @@
           "x": 12,
           "y": 10
         },
-        "id": 12,
+        "id": 48,
         "options": {
           "legend": {
             "calcs": [
               "mean",
-              "max",
-              "min"
+              "max"
             ],
             "displayMode": "table",
             "placement": "bottom",
@@ -659,14 +664,24 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "sum by (exported_pod) scheduler_compute_gardener_price_delay_total{period=~\"$period\"}",
-            "hide": false,
-            "legendFormat": "Delayed Jobs - {{period}}",
+            "expr": "sum by(exported_pod) (scheduler_compute_gardener_carbon_delay_total)",
+            "legendFormat": "Carbon-based delays",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_pod) (scheduler_compute_gardener_price_delay_total)",
+            "legendFormat": "Price-based delays",
             "range": true,
             "refId": "B"
           }
         ],
-        "title": "Jobs Delayed for Price Optimization",
+        "title": "Scheduler Delays by Reason",
         "type": "timeseries"
       },
       {
@@ -779,7 +794,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "Total scheduler delays and their breakdown by reason (carbon/price)",
+        "description": "Scheduling latency by plugin stage",
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -792,7 +807,7 @@
               "axisPlacement": "auto",
               "barAlignment": 0,
               "drawStyle": "line",
-              "fillOpacity": 40,
+              "fillOpacity": 20,
               "gradientMode": "none",
               "hideFrom": {
                 "legend": false,
@@ -805,7 +820,7 @@
               "scaleDistribution": {
                 "type": "linear"
               },
-              "showPoints": "auto",
+              "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
@@ -825,40 +840,9 @@
                 }
               ]
             },
-            "unit": "short"
+            "unit": "s"
           },
-          "overrides": [
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Carbon-based delays"
-              },
-              "properties": [
-                {
-                  "id": "color",
-                  "value": {
-                    "fixedColor": "green",
-                    "mode": "fixed"
-                  }
-                }
-              ]
-            },
-            {
-              "matcher": {
-                "id": "byName",
-                "options": "Price-based delays"
-              },
-              "properties": [
-                {
-                  "id": "color",
-                  "value": {
-                    "fixedColor": "yellow",
-                    "mode": "fixed"
-                  }
-                }
-              ]
-            }
-          ]
+          "overrides": []
         },
         "gridPos": {
           "h": 8,
@@ -866,12 +850,12 @@
           "x": 12,
           "y": 18
         },
-        "id": 48,
+        "id": 44,
         "options": {
           "legend": {
             "calcs": [
-              "max",
-              "mean"
+              "mean",
+              "max"
             ],
             "displayMode": "table",
             "placement": "bottom",
@@ -890,24 +874,13 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "sum by(exported_pod) (scheduler_compute_gardener_carbon_delay_total)",
-            "legendFormat": "Carbon-based delays",
+            "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{result}}",
             "range": true,
             "refId": "A"
-          },
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "editorMode": "code",
-            "expr": "sum by(exported_pod) (scheduler_compute_gardener_price_delay_total)",
-            "legendFormat": "Price-based delays",
-            "range": true,
-            "refId": "B"
           }
         ],
-        "title": "Scheduler Delays by Reason",
+        "title": "95th Percentile Scheduling Latency",
         "type": "timeseries"
       },
       {
@@ -1307,8 +1280,8 @@
         "options": {
           "legend": {
             "calcs": [
-              "max",
-              "mean"
+              "mean",
+              "max"
             ],
             "displayMode": "table",
             "placement": "right",
@@ -1671,8 +1644,8 @@
         "options": {
           "legend": {
             "calcs": [
-              "max",
-              "mean"
+              "mean",
+              "max"
             ],
             "displayMode": "table",
             "placement": "right",
@@ -2042,7 +2015,7 @@
         "gridPos": {
           "h": 8,
           "w": 12,
-          "x": 0,
+          "x": 12,
           "y": 77
         },
         "id": 42,
@@ -2085,100 +2058,6 @@
         ],
         "title": "Energy Budget Exceeded by Workload Type",
         "type": "piechart"
-      },
-      {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "description": "Scheduling latency by component",
-        "fieldConfig": {
-          "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
-            "custom": {
-              "axisCenteredZero": false,
-              "axisColorMode": "text",
-              "axisLabel": "",
-              "axisPlacement": "auto",
-              "barAlignment": 0,
-              "drawStyle": "line",
-              "fillOpacity": 20,
-              "gradientMode": "none",
-              "hideFrom": {
-                "legend": false,
-                "tooltip": false,
-                "viz": false
-              },
-              "lineInterpolation": "linear",
-              "lineWidth": 2,
-              "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
-              "showPoints": "never",
-              "spanNulls": false,
-              "stacking": {
-                "group": "A",
-                "mode": "none"
-              },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
-            },
-            "mappings": [],
-            "thresholds": {
-              "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                }
-              ]
-            },
-            "unit": "s"
-          },
-          "overrides": []
-        },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 77
-        },
-        "id": 44,
-        "options": {
-          "legend": {
-            "calcs": [
-              "mean",
-              "max"
-            ],
-            "displayMode": "table",
-            "placement": "bottom",
-            "showLegend": true
-          },
-          "tooltip": {
-            "mode": "multi",
-            "sort": "none"
-          }
-        },
-        "pluginVersion": "9.3.1",
-        "targets": [
-          {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "prometheus"
-            },
-            "editorMode": "code",
-            "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
-            "legendFormat": "{{result}}",
-            "range": true,
-            "refId": "A"
-          }
-        ],
-        "title": "95th Percentile Scheduling Latency",
-        "type": "timeseries"
       }
     ],
     "refresh": "30s",
@@ -2236,44 +2115,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "definition": "label_values(scheduler_compute_gardener_electricity_rate, location)",
-          "hide": 0,
-          "includeAll": true,
-          "multi": true,
-          "name": "location",
-          "options": [],
-          "query": {
-            "query": "label_values(scheduler_compute_gardener_electricity_rate, location)",
-            "refId": "StandardVariableQuery"
-          },
-          "refresh": 2,
-          "regex": "",
-          "skipUrlSync": false,
-          "sort": 0,
-          "type": "query"
-        },
-        {
-          "current": {
-            "selected": true,
-            "text": [
-              "All"
-            ],
-            "value": [
-              "$__all"
-            ]
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "definition": "label_values(scheduler_compute_gardener_electricity_rate)",
+          "definition": "label_values(scheduler_compute_gardener_electricity_rate, period)",
           "hide": 0,
           "includeAll": true,
           "multi": true,
           "name": "period",
           "options": [],
           "query": {
-            "query": "label_values(scheduler_compute_gardener_electricity_rate)",
+            "query": "label_values(scheduler_compute_gardener_electricity_rate, period)",
             "refId": "StandardVariableQuery"
           },
           "refresh": 2,
