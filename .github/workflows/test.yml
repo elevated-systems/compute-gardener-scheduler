@@ -37,7 +37,7 @@ jobs:
 
       - name: Debug Gist credentials
         run: |
-          echo "Gist ID: ${GIST_ID}"
+          echo "Gist ID length: ${#GIST_ID}"
           echo "PAT token exists: ${{ secrets.GIST_SECRET != '' }}"
           # Create a local file with the content
           echo '{"schemaVersion":1,"label":"Coverage","message":"'${{ steps.coverage.outputs.coverage }}'%","color":"green"}' > coverage_badge.json
