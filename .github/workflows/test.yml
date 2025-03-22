@@ -35,6 +35,16 @@ jobs:
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
 
+      - name: Debug Gist credentials
+        run: |
+          echo "Gist ID: ${GIST_ID}"
+          echo "PAT token exists: ${{ secrets.GIST_SECRET != '' }}"
+          # Create a local file with the content
+          echo '{"schemaVersion":1,"label":"Coverage","message":"'${{ steps.coverage.outputs.coverage }}'%","color":"green"}' > coverage_badge.json
+          cat coverage_badge.json
+        env:
+          GIST_ID: ${{ secrets.COVERAGE_GIST_ID }}
+      
       - name: Create coverage badge
         uses: schneegans/dynamic-badges-action@v1.6.0
         with:
@@ -43,6 +53,4 @@ jobs:
           filename: compute-gardener-coverage.json
           label: Coverage
           message: ${{ steps.coverage.outputs.coverage }}%
-          valColorRange: ${{ steps.coverage.outputs.coverage }}
-          maxColorRange: 100
-          minColorRange: 0
+          color: ${{ steps.coverage.outputs.coverage >= 80 && 'green' || steps.coverage.outputs.coverage >= 70 && 'yellow' || steps.coverage.outputs.coverage >= 60 && 'orange' || 'red' }}
