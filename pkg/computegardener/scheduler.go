@@ -265,6 +265,11 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	} else {
 		klog.V(2).InfoS("Metrics collection worker disabled - no sampling interval configured")
 	}
+	
+	// Start carbon intensity cache refresh worker if carbon is enabled
+	if scheduler.config.Carbon.Enabled && scheduler.carbonImpl != nil {
+		go scheduler.carbonCacheRefreshWorker(ctx)
+	}
 
 	// Register pod informer with filtering to only track completion for pods using our scheduler
 	if h.SharedInformerFactory() != nil {
@@ -506,99 +511,15 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 				klog.V(2).InfoS("Carbon intensity check disabled via annotation",
 					"pod", klog.KObj(pod))
 			} else {
-				// Get pod-specific threshold if it exists, otherwise use the global threshold
-				threshold := cs.config.Carbon.IntensityThreshold
-				if threshStr, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
-					if threshVal, err := strconv.ParseFloat(threshStr, 64); err == nil {
-						threshold = threshVal
-						klog.V(2).InfoS("Using pod-specific carbon intensity threshold",
-							"pod", klog.KObj(pod),
-							"threshold", threshold)
-					} else {
-						klog.ErrorS(err, "Invalid carbon intensity threshold annotation, using global threshold",
-							"pod", klog.KObj(pod),
-							"annotation", threshStr,
-							"globalThreshold", threshold)
-					}
-				}
-
-				// Check carbon intensity
-				currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-				if err != nil {
-					klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
-						"pod", klog.KObj(pod))
-				} else if currentIntensity > threshold {
-					msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
-						currentIntensity, threshold)
-					klog.V(2).InfoS("Carbon intensity check failed in PreFilter",
-						"pod", klog.KObj(pod),
-						"currentIntensity", currentIntensity,
-						"threshold", threshold,
-						"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
-					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
-
-					// Only count carbon delay once per pod
-					podUID := string(pod.UID)
-					if !cs.delayedPods[podUID] {
-						CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-						cs.delayedPods[podUID] = true
-						klog.V(2).InfoS("Recorded new carbon-based delay",
-							"pod", klog.KObj(pod),
-							"podUID", podUID)
-					} else {
-						klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
-							"pod", klog.KObj(pod),
-							"podUID", podUID)
-					}
-					return nil, framework.NewStatus(framework.Unschedulable, msg)
+				// Process with carbon intensity check since it's explicitly enabled
+				if result, status := cs.applyCarbonIntensityCheck(ctx, pod); !status.IsSuccess() {
+					return result, status
 				}
 			}
 		} else {
 			// No explicit annotation, apply default carbon check
-			// First check if there's a pod-specific threshold
-			threshold := cs.config.Carbon.IntensityThreshold
-			if threshStr, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
-				if threshVal, err := strconv.ParseFloat(threshStr, 64); err == nil {
-					threshold = threshVal
-					klog.V(2).InfoS("Using pod-specific carbon intensity threshold",
-						"pod", klog.KObj(pod),
-						"threshold", threshold)
-				} else {
-					klog.ErrorS(err, "Invalid carbon intensity threshold annotation, using global threshold",
-						"pod", klog.KObj(pod),
-						"annotation", threshStr,
-						"globalThreshold", threshold)
-				}
-			}
-
-			currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-			if err != nil {
-				klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
-					"pod", klog.KObj(pod))
-			} else if currentIntensity > threshold {
-				msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
-					currentIntensity, threshold)
-				klog.V(2).InfoS("Carbon intensity check failed in PreFilter",
-					"pod", klog.KObj(pod),
-					"currentIntensity", currentIntensity,
-					"threshold", threshold,
-					"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
-				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
-
-				// Only count carbon delay once per pod
-				podUID := string(pod.UID)
-				if !cs.delayedPods[podUID] {
-					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-					cs.delayedPods[podUID] = true
-					klog.V(2).InfoS("Recorded new carbon-based delay",
-						"pod", klog.KObj(pod),
-						"podUID", podUID)
-				} else {
-					klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
-						"pod", klog.KObj(pod),
-						"podUID", podUID)
-				}
-				return nil, framework.NewStatus(framework.Unschedulable, msg)
+			if result, status := cs.applyCarbonIntensityCheck(ctx, pod); !status.IsSuccess() {
+				return result, status
 			}
 		}
 	}
@@ -854,6 +775,63 @@ func (cs *ComputeGardenerScheduler) isOptedOut(pod *v1.Pod) bool {
 	return pod.Annotations[common.AnnotationSkip] == "true"
 }
 
+// applyCarbonIntensityCheck performs carbon intensity threshold checks and returns appropriate status
+func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Context, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
+	// Get pod-specific threshold if it exists, otherwise use the global threshold
+	threshold := cs.config.Carbon.IntensityThreshold
+	if threshStr, ok := pod.Annotations[common.AnnotationCarbonIntensityThreshold]; ok {
+		if threshVal, err := strconv.ParseFloat(threshStr, 64); err == nil {
+			threshold = threshVal
+			klog.V(2).InfoS("Using pod-specific carbon intensity threshold",
+				"pod", klog.KObj(pod),
+				"threshold", threshold)
+		} else {
+			klog.ErrorS(err, "Invalid carbon intensity threshold annotation, using global threshold",
+				"pod", klog.KObj(pod),
+				"annotation", threshStr,
+				"globalThreshold", threshold)
+		}
+	}
+
+	// Check carbon intensity
+	currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+	if err != nil {
+		klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
+			"pod", klog.KObj(pod))
+		return nil, framework.NewStatus(framework.Success, "")
+	} 
+	
+	// Update metrics regardless of threshold check result
+	CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+	
+	if currentIntensity > threshold {
+		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
+			currentIntensity, threshold)
+		klog.V(2).InfoS("Carbon intensity check failed in PreFilter",
+			"pod", klog.KObj(pod),
+			"currentIntensity", currentIntensity,
+			"threshold", threshold,
+			"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
+
+		// Only count carbon delay once per pod
+		podUID := string(pod.UID)
+		if !cs.delayedPods[podUID] {
+			CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+			cs.delayedPods[podUID] = true
+			klog.V(2).InfoS("Recorded new carbon-based delay",
+				"pod", klog.KObj(pod),
+				"podUID", podUID)
+		} else {
+			klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
+				"pod", klog.KObj(pod),
+				"podUID", podUID)
+		}
+		return nil, framework.NewStatus(framework.Unschedulable, msg)
+	}
+	
+	return nil, framework.NewStatus(framework.Success, "")
+}
+
 // recordInitialMetrics records the initial carbon intensity and electricity rate
 // at the time of scheduling to enable savings calculations later.
 // This function will add the annotations only if they don't already exist.
@@ -988,4 +966,68 @@ func hasGPURequest(pod *v1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// carbonCacheRefreshWorker refreshes the carbon intensity cache at regular intervals
+// to ensure that the cache never becomes stale when scheduling decisions are made
+func (cs *ComputeGardenerScheduler) carbonCacheRefreshWorker(ctx context.Context) {
+	// Calculate refresh interval as 1/3 of the cache TTL to ensure we always have fresh data
+	refreshInterval := cs.config.Cache.CacheTTL / 3
+	
+	// Ensure the interval is not too short or too long
+	if refreshInterval < 10*time.Second {
+		refreshInterval = 10 * time.Second // Minimum 10 seconds
+	} else if refreshInterval > 5*time.Minute {
+		refreshInterval = 5 * time.Minute // Maximum 5 minutes
+	}
+	
+	klog.InfoS("Starting carbon intensity cache refresh worker", 
+		"refreshInterval", refreshInterval.String(),
+		"cacheTTL", cs.config.Cache.CacheTTL.String(),
+		"region", cs.config.Carbon.APIConfig.Region)
+	
+	ticker := time.NewTicker(refreshInterval)
+	defer ticker.Stop()
+	
+	// Get all regions that need to be refreshed
+	regions := []string{cs.config.Carbon.APIConfig.Region}
+	
+	// Initial refresh on startup
+	cs.refreshCarbonCache(ctx, regions)
+	
+	for {
+		select {
+		case <-cs.stopCh:
+			klog.V(2).InfoS("Stopping carbon intensity cache refresh worker")
+			return
+		case <-ticker.C:
+			cs.refreshCarbonCache(ctx, regions)
+		}
+	}
+}
+
+// refreshCarbonCache refreshes the carbon intensity data for given regions
+func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regions []string) {
+	for _, region := range regions {
+		// Create a context with timeout for the API request
+		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		
+		// Force refresh by calling GetCurrentIntensity which will update the cache
+		intensity, err := cs.carbonImpl.GetCurrentIntensity(requestCtx)
+		
+		// Always cancel the context after use to prevent leaks
+		cancel()
+		
+		if err != nil {
+			klog.ErrorS(err, "Failed to refresh carbon intensity cache", 
+				"region", region)
+		} else {
+			klog.V(2).InfoS("Successfully refreshed carbon intensity cache", 
+				"region", region, 
+				"intensity", intensity)
+			
+			// Update metrics
+			CarbonIntensityGauge.WithLabelValues(region).Set(intensity)
+		}
+	}
 }

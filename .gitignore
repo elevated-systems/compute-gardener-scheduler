@@ -1,3 +1,49 @@
-bin/*
-build/*
+### Go ###
+# Binaries for programs and plugins
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+*.prof
+.coverage/
+coverage.txt
+coverage.html
+
+# Dependency directories
+vendor/
+
+### Build directories ###
+build/
+dist/
+_output/
+
+### Environment and temporary files ###
+.env
+.envrc
+*.env
+*.log
+*.swp
+*.swo
+.idea/
+.vscode/
+*.sublime-workspace
 .DS_Store
+
+### Kubernetes generated files ###
+kubeconfig
+.kube/
+.kubeconfig
+
+# Test data
+testdata/tmp/
+
+# Debug binaries
+__debug_bin*

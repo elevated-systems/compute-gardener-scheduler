@@ -67,6 +67,18 @@ update-gomod:
 unit-test: install-envtest
 	hack/unit-test.sh $(ARGS)
 
+.PHONY: unit-test-coverage
+unit-test-coverage: install-envtest
+	mkdir -p .coverage
+	go test -coverprofile=.coverage/coverage.out -covermode=atomic ./cmd/... ./pkg/... ./apis/...
+	go tool cover -func=.coverage/coverage.out | grep total: | awk '{print "Total coverage: " $$3}'
+	@echo "Package coverage breakdown:"
+	@go tool cover -func=.coverage/coverage.out | grep -v "100.0%" | sort -k 3 -r | head -n 10
+	@echo "To view detailed coverage report in browser, run: go tool cover -html=.coverage/coverage.out"
+	@# Extract coverage percentage for the badge
+	@COVERAGE=$$(go tool cover -func=.coverage/coverage.out | grep total: | awk '{print $$3}' | tr -d '%') && \
+	echo "Coverage: $$COVERAGE%" > .coverage/coverage.txt
+
 .PHONY: install-envtest
 install-envtest:
 	hack/install-envtest.sh

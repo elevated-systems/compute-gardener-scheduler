@@ -874,13 +874,35 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
-            "legendFormat": "{{result}}",
+            "expr": "histogram_quantile(0.75, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+            "legendFormat": "p75 {{result}}",
             "range": true,
             "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95 {{result}}",
+            "range": true,
+            "refId": "B"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "histogram_quantile(0.99, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99 {{result}}",
+            "range": true,
+            "refId": "C"
           }
         ],
-        "title": "95th Percentile Scheduling Latency",
+        "title": "Scheduling Latency by Percentile",
         "type": "timeseries"
       },
       {

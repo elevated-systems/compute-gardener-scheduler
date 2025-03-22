@@ -139,6 +139,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		carbonImpl:  carbonImpl,
 		clock:       clock.NewMockClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		delayedPods: make(map[string]bool),           // Initialize delayed pods map
 	}
 }
 
@@ -635,6 +636,7 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		carbonImpl:  carbonmock.NewWithError(),
 		clock:       clock.NewMockClock(baseTime),
 		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		delayedPods: make(map[string]bool),           // Initialize delayed pods map
 	}
 
 	// Test PreFilter first (should succeed)
@@ -1111,6 +1113,7 @@ func TestHealthCheck(t *testing.T) {
 				carbonImpl:  carbonImpl,
 				clock:       clock.NewMockClock(baseTime),
 				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+				delayedPods: make(map[string]bool),           // Initialize delayed pods map
 			}
 
 			// Test health check
