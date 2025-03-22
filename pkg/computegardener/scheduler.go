@@ -64,6 +64,9 @@ type ComputeGardenerScheduler struct {
 	// Scheduler state
 	startTime time.Time
 	stopCh    chan struct{}
+
+	// Metrics deduplication - track pods we've already counted for delay metrics
+	delayedPods map[string]bool // Map of pod UIDs to prevent double-counting of delays
 }
 
 var (
@@ -248,6 +251,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		startTime: time.Now(),
 		stopCh:    make(chan struct{}),
+
+		// Initialize delay tracking map
+		delayedPods: make(map[string]bool),
 	}
 
 	// Start health check worker
@@ -463,14 +469,30 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 				"pod", klog.KObj(pod),
 				"status", status.Message())
 
-			// Record metrics for price-based delay
+			// Get current rate and period
 			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
 			period := "peak"
 			if !cs.pricingImpl.IsPeakTime(cs.clock.Now()) {
 				period = "off-peak"
 			}
-			PriceBasedDelays.WithLabelValues(period).Inc()
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
+
+			// Record metrics for price-based delay - only count each pod once
+			podUID := string(pod.UID)
+			if !cs.delayedPods[podUID] {
+				// Increment the delay counter only for new pods
+				PriceBasedDelays.WithLabelValues(period).Inc()
+
+				// Mark this pod as counted so we don't count it again
+				cs.delayedPods[podUID] = true
+				klog.V(2).InfoS("Recorded new price-based delay",
+					"pod", klog.KObj(pod),
+					"podUID", podUID)
+			} else {
+				klog.V(3).InfoS("Skipping duplicate price-based delay count",
+					"pod", klog.KObj(pod),
+					"podUID", podUID)
+			}
 
 			return nil, status
 		}
@@ -513,8 +535,21 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 						"currentIntensity", currentIntensity,
 						"threshold", threshold,
 						"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
-					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 					CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+
+					// Only count carbon delay once per pod
+					podUID := string(pod.UID)
+					if !cs.delayedPods[podUID] {
+						CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+						cs.delayedPods[podUID] = true
+						klog.V(2).InfoS("Recorded new carbon-based delay",
+							"pod", klog.KObj(pod),
+							"podUID", podUID)
+					} else {
+						klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
+							"pod", klog.KObj(pod),
+							"podUID", podUID)
+					}
 					return nil, framework.NewStatus(framework.Unschedulable, msg)
 				}
 			}
@@ -548,8 +583,21 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 					"currentIntensity", currentIntensity,
 					"threshold", threshold,
 					"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
-				CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 				CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+
+				// Only count carbon delay once per pod
+				podUID := string(pod.UID)
+				if !cs.delayedPods[podUID] {
+					CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+					cs.delayedPods[podUID] = true
+					klog.V(2).InfoS("Recorded new carbon-based delay",
+						"pod", klog.KObj(pod),
+						"podUID", podUID)
+				} else {
+					klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
+						"pod", klog.KObj(pod),
+						"podUID", podUID)
+				}
 				return nil, framework.NewStatus(framework.Unschedulable, msg)
 			}
 		}
