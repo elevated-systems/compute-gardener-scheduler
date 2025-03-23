@@ -29,7 +29,7 @@ func LoadFromEnv() (*Config, error) {
 			EnablePodPriorities: getBoolOrDefault("ENABLE_POD_PRIORITIES", false),
 		},
 		Carbon: CarbonConfig{
-			Enabled:            true,
+			Enabled:            getBoolOrDefault("CARBON_ENABLED", true),
 			Provider:           "electricity-maps-api",
 			IntensityThreshold: getFloatOrDefault("CARBON_INTENSITY_THRESHOLD", 150.0),
 			APIConfig: ElectricityMapsAPIConfig{
@@ -38,7 +38,7 @@ func LoadFromEnv() (*Config, error) {
 				Region: getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
 			},
 		},
-		Pricing: PricingConfig{
+		Pricing: PriceConfig{
 			Enabled:   getBoolOrDefault("PRICING_ENABLED", false),
 			Provider:  getEnvOrDefault("PRICING_PROVIDER", "tou"),
 			Schedules: []Schedule{},
@@ -263,9 +263,16 @@ func loadPricingSchedules(cfg *Config, path string) error {
 		return fmt.Errorf("failed to read pricing schedules file: %v", err)
 	}
 
-	schedules := &PricingConfig{}
+	schedules := &PriceConfig{}
 	if err := yaml.Unmarshal(data, schedules); err != nil {
 		return fmt.Errorf("failed to parse pricing schedules: %v", err)
+	}
+
+	// Validate all schedules
+	for i, schedule := range schedules.Schedules {
+		if err := validateSchedule(schedule); err != nil {
+			return fmt.Errorf("invalid schedule at index %d: %v", i, err)
+		}
 	}
 
 	// Validate all schedules have same off-peak rate

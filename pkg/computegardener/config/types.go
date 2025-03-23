@@ -102,7 +102,7 @@ type Config struct {
 	Cache      APICacheConfig   `yaml:"cache"`
 	Scheduling SchedulingConfig `yaml:"scheduling"`
 	Carbon     CarbonConfig     `yaml:"carbon"`
-	Pricing    PricingConfig    `yaml:"pricing"`
+	Pricing    PriceConfig    `yaml:"pricing"`
 	Power      PowerConfig      `yaml:"power"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 }
@@ -149,8 +149,8 @@ type CarbonConfig struct {
 	APIConfig          ElectricityMapsAPIConfig `yaml:"api"`
 }
 
-// PricingConfig holds configuration for price-aware scheduling
-type PricingConfig struct {
+// PriceConfig holds configuration for price-aware scheduling
+type PriceConfig struct {
 	Enabled   bool       `yaml:"enabled"`
 	Provider  string     `yaml:"provider"`                // e.g. "tou" for time-of-use pricing
 	Schedules []Schedule `yaml:"schedules"`               // Time-based pricing periods with their rates

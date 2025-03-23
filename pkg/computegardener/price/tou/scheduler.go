@@ -17,12 +17,12 @@ import (
 
 // Scheduler handles time-of-use electricity pricing schedules
 type Scheduler struct {
-	config config.PricingConfig
+	config config.PriceConfig
 	mutex  sync.RWMutex // Protects against concurrent map access
 }
 
 // New creates a new TOU pricing scheduler
-func New(config config.PricingConfig) *Scheduler {
+func New(config config.PriceConfig) *Scheduler {
 	return &Scheduler{
 		config: config,
 	}

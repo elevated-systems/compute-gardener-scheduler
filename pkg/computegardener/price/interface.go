@@ -1,4 +1,4 @@
-package pricing
+package price
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing/tou"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price/tou"
 )
 
 // Implementation defines the interface for electricity pricing implementations
@@ -23,7 +23,7 @@ type Implementation interface {
 }
 
 // Factory creates pricing implementations based on configuration
-func Factory(config config.PricingConfig) (Implementation, error) {
+func Factory(config config.PriceConfig) (Implementation, error) {
 	if !config.Enabled {
 		return nil, nil
 	}

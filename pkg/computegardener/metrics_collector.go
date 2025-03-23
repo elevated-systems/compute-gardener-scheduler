@@ -74,12 +74,12 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 
 	// Get current electricity rate and update gauge - Ensure we're updating this periodically
 	// even when not making scheduling decisions
-	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
+	if cs.config.Pricing.Enabled && cs.priceImpl != nil {
 		now := cs.clock.Now()
-		currentRate := cs.pricingImpl.GetCurrentRate(now)
+		currentRate := cs.priceImpl.GetCurrentRate(now)
 		
 		// Determine if we're in peak or off-peak period
-		isPeak := cs.pricingImpl.IsPeakTime(now)
+		isPeak := cs.priceImpl.IsPeakTime(now)
 		period := "off-peak"
 		if isPeak {
 			period = "peak"
@@ -201,8 +201,8 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		)
 
 		// Add electricity rate if pricing implementation is available
-		if cs.pricingImpl != nil {
-			currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
+		if cs.priceImpl != nil {
+			currentRate := cs.priceImpl.GetCurrentRate(time.Now())
 			record.ElectricityRate = currentRate
 		}
 

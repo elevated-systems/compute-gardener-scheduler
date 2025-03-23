@@ -47,3 +47,25 @@ func (m *MockCarbon) CheckIntensityConstraints(ctx context.Context, threshold fl
 
 	return framework.NewStatus(framework.Success, "")
 }
+
+// MockCarbonImplementation is another mock implementation that provides more control for tests
+type MockCarbonImplementation struct {
+	GetCurrentIntensityFunc       func(ctx context.Context) (float64, error)
+	CheckIntensityConstraintsFunc func(ctx context.Context, threshold float64) *framework.Status
+}
+
+// GetCurrentIntensity delegates to the mock function
+func (m *MockCarbonImplementation) GetCurrentIntensity(ctx context.Context) (float64, error) {
+	if m.GetCurrentIntensityFunc != nil {
+		return m.GetCurrentIntensityFunc(ctx)
+	}
+	return 0, nil
+}
+
+// CheckIntensityConstraints delegates to the mock function
+func (m *MockCarbonImplementation) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {
+	if m.CheckIntensityConstraintsFunc != nil {
+		return m.CheckIntensityConstraintsFunc(ctx, threshold)
+	}
+	return framework.NewStatus(framework.Success, "")
+}

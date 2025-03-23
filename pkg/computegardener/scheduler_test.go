@@ -4,21 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	core "k8s.io/client-go/testing"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
@@ -28,7 +33,9 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
-	pricingmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing/mock"
+	metricsmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/mock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
+	pricingmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price/mock"
 )
 
 // mockHTTPClient implements api.HTTPClient for testing
@@ -70,6 +77,7 @@ func (c *testConfig) GetObjectKind() schema.ObjectKind {
 type mockHandle struct {
 	framework.Handle
 	informerFactory informers.SharedInformerFactory
+	clientSet       kubernetes.Interface
 }
 
 func (m *mockHandle) KubeConfig() *rest.Config {
@@ -80,6 +88,9 @@ func (m *mockHandle) KubeConfig() *rest.Config {
 }
 
 func (m *mockHandle) ClientSet() kubernetes.Interface {
+	if m.clientSet != nil {
+		return m.clientSet
+	}
 	return &mockClientSet{}
 }
 
@@ -135,7 +146,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		pricingImpl: pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
+		priceImpl: pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
 		carbonImpl:  carbonImpl,
 		clock:       clock.NewMockClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -168,7 +179,7 @@ func TestNew(t *testing.T) {
 							URL:    "http://mock-url/",
 						},
 					},
-					Pricing: config.PricingConfig{
+					Pricing: config.PriceConfig{
 						Enabled:  true,
 						Provider: "tou",
 						Schedules: []config.Schedule{
@@ -210,7 +221,7 @@ func TestNew(t *testing.T) {
 				if cs.carbonImpl == nil {
 					t.Errorf("Carbon implementation not initialized")
 				}
-				if cs.pricingImpl == nil {
+				if cs.priceImpl == nil {
 					t.Errorf("Pricing implementation not initialized")
 				}
 			},
@@ -439,7 +450,7 @@ func TestPreFilter(t *testing.T) {
 							URL:    "http://mock-url/",
 						},
 					},
-					Pricing: config.PricingConfig{
+					Pricing: config.PriceConfig{
 						Enabled:  true,
 						Provider: "tou",
 						Schedules: []config.Schedule{
@@ -632,7 +643,7 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		pricingImpl: pricingmock.New(0.1),
+		priceImpl: pricingmock.New(0.1),
 		carbonImpl:  carbonmock.NewWithError(),
 		clock:       clock.NewMockClock(baseTime),
 		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -790,7 +801,7 @@ func TestRecordInitialMetrics(t *testing.T) {
 						URL:    "http://mock-url/",
 					},
 				},
-				Pricing: config.PricingConfig{
+				Pricing: config.PriceConfig{
 					Enabled:  tt.pricingEnabled,
 					Provider: "tou",
 					Schedules: []config.Schedule{
@@ -1066,7 +1077,7 @@ func TestHealthCheck(t *testing.T) {
 						URL:    "http://mock-url/",
 					},
 				},
-				Pricing: config.PricingConfig{
+				Pricing: config.PriceConfig{
 					Enabled:  true,
 					Provider: "tou",
 					Schedules: []config.Schedule{
@@ -1109,7 +1120,7 @@ func TestHealthCheck(t *testing.T) {
 				config:      cfg,
 				apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 				cache:       cache,
-				pricingImpl: pricingmock.New(0.1),
+				priceImpl: pricingmock.New(0.1),
 				carbonImpl:  carbonImpl,
 				clock:       clock.NewMockClock(baseTime),
 				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -1124,5 +1135,406 @@ func TestHealthCheck(t *testing.T) {
 				t.Errorf("healthCheck() error = %v, expectError %v", err, tt.expectError)
 			}
 		})
+	}
+}
+
+// TestFilterWithUnknownHardwareProfile tests that the scheduler uses defaults
+// for unknown hardware and that the scheduler does not crash
+func TestFilterWithUnknownHardwareProfile(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	cfg := &config.Config{
+		Power: config.PowerConfig{
+			HardwareProfiles: &config.HardwareProfiles{
+				CPUProfiles: map[string]config.PowerProfile{
+					"testCPU": {
+						IdlePower: 10,
+						MaxPower:  50,
+					},
+				},
+			},
+			DefaultIdlePower: 5,
+			DefaultMaxPower:  25,
+		},
+	}
+
+	scheduler := newTestScheduler(cfg, 0.1, 0.1, baseTime)
+
+	// Create a node with an UNKNOWN CPU model
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "unknown-node",
+			Labels: map[string]string{common.AnnotationCPUModel: "unknown-cpu"},
+		},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("4"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: "gce://test-project/test-zone/unknown-node",
+		},
+	}
+
+	// Create a pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-pod",
+			Namespace:   "default",
+			Annotations: map[string]string{common.AnnotationMaxPowerWatts: "30"},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: SchedulerName,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("1"),
+							v1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create a node info object
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	// Call filter and check for success
+	status := scheduler.Filter(context.Background(), framework.NewCycleState(), pod, nodeInfo)
+	if !status.IsSuccess() {
+		t.Errorf("Expected successful filter, got: %v", status)
+	}
+}
+
+// TestFilterWithMismatchedHardwareInfo tests that the scheduler works with partially filled node info
+func TestFilterWithMismatchedHardwareInfo(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	cfg := &config.Config{
+		Power: config.PowerConfig{
+			HardwareProfiles: &config.HardwareProfiles{
+				CPUProfiles: map[string]config.PowerProfile{
+					"testCPU": {
+						IdlePower: 10,
+						MaxPower:  50,
+					},
+				},
+			},
+			DefaultIdlePower: 5,
+			DefaultMaxPower:  25,
+		},
+	}
+
+	scheduler := newTestScheduler(cfg, 0.1, 0.1, baseTime)
+
+	// Create a node with mismatched CPU and GPU info
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "mismatched-node",
+			Labels: map[string]string{common.AnnotationCPUModel: "testCPU"}, // Valid CPU
+		},
+		Status: v1.NodeStatus{
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("4"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: "gce://test-project/test-zone/mismatched-node",
+		},
+	}
+
+	// Create a pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-pod",
+			Namespace:   "default",
+			Annotations: map[string]string{common.AnnotationMaxPowerWatts: "30"},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: SchedulerName,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("1"),
+							v1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create a node info object
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	// Call filter and check for success
+	status := scheduler.Filter(context.Background(), framework.NewCycleState(), pod, nodeInfo)
+	if !status.IsSuccess() {
+		t.Errorf("Expected successful filter, got: %v", status)
+	}
+}
+
+// TestRecordInitialMetricsUpdateFailure tests pod annotation update failure handling
+func TestRecordInitialMetricsUpdateFailure(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &config.Config{
+		Carbon: config.CarbonConfig{
+			Enabled: true,
+		},
+		Pricing: config.PriceConfig{
+			Enabled: true,
+		},
+	}
+
+	mockCarbon := &carbonmock.MockCarbonImplementation{
+		GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
+			return 0.5, nil
+		},
+	}
+
+	mockPricing := &pricingmock.MockPriceImplementation{
+		GetCurrentRateFunc: func(currentTime time.Time) float64 {
+			return 0.1
+		},
+		IsPeakTimeFunc: func(currentTime time.Time) bool {
+			return false
+		},
+	}
+
+	// Create a fake client that simulates update failure
+	kubeClient := &fake.Clientset{}
+	kubeClient.AddReactor("update", "pods", func(action core.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("simulated pod update error")
+	})
+
+	scheduler := newTestSchedulerWithCustomClients(cfg, nil, nil, mockCarbon, mockPricing, 0.1, baseTime, kubeClient)
+
+	// Create a pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       "test-pod-uid",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: SchedulerName,
+		},
+	}
+
+	// Call recordInitialMetrics and check for no panic/error
+	scheduler.recordInitialMetrics(context.Background(), pod)
+}
+
+// TestPreFilterWithCarbonFailure tests that a pod can still be scheduled when carbon api fails
+func TestPreFilterWithCarbonFailure(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &config.Config{
+		Carbon: config.CarbonConfig{
+			Enabled:            true,
+			IntensityThreshold: 0.6,
+		},
+	}
+
+	mockCarbon := &carbonmock.MockCarbonImplementation{
+		GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
+			return 0.0, errors.New("simulated carbon api error")
+		},
+	}
+
+	scheduler := newTestSchedulerWithCustomClients(cfg, nil, nil, mockCarbon, nil, 0.1, baseTime, &fake.Clientset{})
+
+	// Create a pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       "test-pod-uid",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: SchedulerName,
+		},
+	}
+
+	// Call PreFilter and check for no error
+	_, status := scheduler.PreFilter(context.Background(), framework.NewCycleState(), pod)
+
+	if !status.IsSuccess() {
+		t.Errorf("PreFilter returned an error, wanted no error, got: %v", status)
+	}
+}
+
+// TestPreFilterWithPricingFailure tests that a pod can still be scheduled when pricing api fails
+func TestPreFilterWithPricingFailure(t *testing.T) {
+	cleanup := setupTest(t)
+	defer cleanup()
+
+	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	cfg := &config.Config{
+		Pricing: config.PriceConfig{
+			Enabled: true,
+		},
+	}
+
+	mockPricing := &pricingmock.MockPriceImplementation{
+		GetCurrentRateFunc: func(currentTime time.Time) float64 {
+			return -1.0
+		},
+		IsPeakTimeFunc: func(currentTime time.Time) bool {
+			return false
+		},
+	}
+
+	scheduler := newTestSchedulerWithCustomClients(cfg, nil, nil, nil, mockPricing, 0.1, baseTime, &fake.Clientset{})
+
+	// Create a pod
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       "test-pod-uid",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: SchedulerName,
+		},
+	}
+
+	// Call PreFilter and check for no error
+	_, status := scheduler.PreFilter(context.Background(), framework.NewCycleState(), pod)
+
+	if !status.IsSuccess() {
+		t.Errorf("PreFilter returned an error, wanted no error, got: %v", status)
+	}
+}
+
+// --- Helper Functions ---
+// newTestSchedulerWithMetricsClient creates a new test scheduler
+// with a custom metrics client and all the other defaults
+func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient metrics.CoreMetricsClient, gpuClient metrics.GPUMetricsClient, electricityRate float64, baseTime time.Time) *ComputeGardenerScheduler {
+	// Use default if not specified
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+
+	if metricsClient == nil {
+		metricsClient = &metricsmock.MockCoreMetricsClient{
+			GetPodMetricsFunc: func(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error) {
+				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
+			},
+		}
+	}
+
+	if gpuClient == nil {
+		gpuClient = metrics.NewNullGPUMetricsClient()
+	}
+
+	// Initialize hardware profiler if hardware profiles are configured
+	var hardwareProfiler *metrics.HardwareProfiler
+	if cfg.Power.HardwareProfiles != nil {
+		hardwareProfiler = metrics.NewHardwareProfiler(cfg.Power.HardwareProfiles)
+	}
+
+	// Initialize a cache
+	dataCache := schedulercache.New(time.Minute, time.Hour)
+
+	return &ComputeGardenerScheduler{
+		config: cfg,
+		priceImpl: &pricingmock.MockPriceImplementation{
+			GetCurrentRateFunc: func(currentTime time.Time) float64 { return electricityRate },
+			IsPeakTimeFunc:     func(currentTime time.Time) bool { return false },
+		},
+		cache:             dataCache,
+		apiClient:         &api.Client{},
+		coreMetricsClient: metricsClient,
+		gpuMetricsClient:  gpuClient,
+		hardwareProfiler:  hardwareProfiler,
+		clock:             clock.NewMockClock(baseTime),
+		stopCh:            make(chan struct{}),
+		delayedPods:       make(map[string]bool),
+	}
+}
+
+// newTestSchedulerWithCustomClients creates a new test scheduler
+// with a custom metrics client, carbon, pricing implementations, and clientset.
+func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient metrics.CoreMetricsClient, gpuClient metrics.GPUMetricsClient, carbonImpl carbon.Implementation, priceImpl price.Implementation, electricityRate float64, baseTime time.Time, kubeClient *fake.Clientset) *ComputeGardenerScheduler {
+	// Use default if not specified
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+
+	if metricsClient == nil {
+		metricsClient = &metricsmock.MockCoreMetricsClient{
+			GetPodMetricsFunc: func(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error) {
+				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
+			},
+		}
+	}
+
+	if gpuClient == nil {
+		gpuClient = metrics.NewNullGPUMetricsClient()
+	}
+
+	if carbonImpl == nil {
+		carbonImpl = &carbonmock.MockCarbonImplementation{
+			GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
+				return 0.0, nil // No carbon by default
+			},
+		}
+	}
+
+	if priceImpl == nil {
+		priceImpl = &pricingmock.MockPriceImplementation{
+			GetCurrentRateFunc: func(currentTime time.Time) float64 { return electricityRate },
+			IsPeakTimeFunc:     func(currentTime time.Time) bool { return false },
+		}
+	}
+
+	// Initialize hardware profiler if hardware profiles are configured
+	var hardwareProfiler *metrics.HardwareProfiler
+	if cfg.Power.HardwareProfiles != nil {
+		hardwareProfiler = metrics.NewHardwareProfiler(cfg.Power.HardwareProfiles)
+	}
+
+	// Create a mock handle that provides the clientset
+	handle := &mockHandle{}
+	// Set the mock handle to use our test clientset
+	if kubeClient != nil {
+		handle.clientSet = kubeClient
+	}
+
+	// Initialize a cache
+	dataCache := schedulercache.New(time.Minute, time.Hour)
+
+	return &ComputeGardenerScheduler{
+		config:            cfg,
+		priceImpl:       priceImpl,
+		carbonImpl:        carbonImpl,
+		cache:             dataCache,
+		apiClient:         &api.Client{},
+		coreMetricsClient: metricsClient,
+		gpuMetricsClient:  gpuClient,
+		hardwareProfiler:  hardwareProfiler,
+		clock:             clock.NewMockClock(baseTime),
+		stopCh:            make(chan struct{}),
+		delayedPods:       make(map[string]bool),
+		handle:            handle,
 	}
 }

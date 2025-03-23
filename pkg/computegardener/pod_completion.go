@@ -221,9 +221,9 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			var finalRate float64
 			if len(metricsHistory.Records) > 0 && metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate > 0 {
 				finalRate = metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate
-			} else if cs.pricingImpl != nil {
+			} else if cs.priceImpl != nil {
 				// If not in history, try to get current rate
-				finalRate = cs.pricingImpl.GetCurrentRate(time.Now())
+				finalRate = cs.priceImpl.GetCurrentRate(time.Now())
 			}
 			
 			if finalRate > 0 && initialRate > finalRate {

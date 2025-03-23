@@ -21,7 +21,7 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/pricing"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 )
 
 const (
@@ -51,7 +51,7 @@ type ComputeGardenerScheduler struct {
 	// Components
 	apiClient        *api.Client
 	cache            *schedulercache.Cache
-	pricingImpl      pricing.Implementation
+	priceImpl      price.Implementation
 	carbonImpl       carbon.Implementation
 	clock            clock.Clock
 	hardwareProfiler *metrics.HardwareProfiler
@@ -117,7 +117,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	// Initialize pricing implementation if enabled
-	pricingImpl, err := pricing.Factory(cfg.Pricing)
+	priceImpl, err := price.Factory(cfg.Pricing)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize pricing implementation: %v", err)
 	}
@@ -239,7 +239,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		config:           cfg,
 		apiClient:        apiClient,
 		cache:            dataCache,
-		pricingImpl:      pricingImpl,
+		priceImpl:      priceImpl,
 		carbonImpl:       carbonImpl,
 		clock:            clock.RealClock{},
 		hardwareProfiler: hardwareProfiler,
@@ -464,20 +464,20 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check pricing constraints if enabled
-	if cs.config.Pricing.Enabled && cs.pricingImpl != nil && !cs.isOptedOut(pod) {
+	if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
 		klog.V(3).InfoS("Checking price constraints in PreFilter",
 			"pod", klog.KObj(pod),
 			"enabled", cs.config.Pricing.Enabled)
 
-		if status := cs.pricingImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
+		if status := cs.priceImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
 			klog.V(2).InfoS("Price constraints check failed in PreFilter",
 				"pod", klog.KObj(pod),
 				"status", status.Message())
 
 			// Get current rate and period
-			rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
+			rate := cs.priceImpl.GetCurrentRate(cs.clock.Now())
 			period := "peak"
-			if !cs.pricingImpl.IsPeakTime(cs.clock.Now()) {
+			if !cs.priceImpl.IsPeakTime(cs.clock.Now()) {
 				period = "off-peak"
 			}
 			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
@@ -873,8 +873,8 @@ func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, po
 
 	// Record current electricity rate if enabled and not already present
 	if _, hasRate := podCopy.Annotations[common.AnnotationInitialElectricityRate]; !hasRate &&
-		cs.config.Pricing.Enabled && cs.pricingImpl != nil {
-		currentRate := cs.pricingImpl.GetCurrentRate(time.Now())
+		cs.config.Pricing.Enabled && cs.priceImpl != nil {
+		currentRate := cs.priceImpl.GetCurrentRate(time.Now())
 		if currentRate > 0 {
 			podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
 			needsUpdate = true
@@ -948,8 +948,8 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 	}
 
 	// If pricing enabled, verify we can get current rate
-	if cs.config.Pricing.Enabled && cs.pricingImpl != nil {
-		rate := cs.pricingImpl.GetCurrentRate(cs.clock.Now())
+	if cs.config.Pricing.Enabled && cs.priceImpl != nil {
+		rate := cs.priceImpl.GetCurrentRate(cs.clock.Now())
 		if rate < 0 {
 			return fmt.Errorf("pricing health check failed: invalid rate returned")
 		}
