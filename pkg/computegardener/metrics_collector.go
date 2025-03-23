@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
@@ -119,6 +120,9 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	skippedNoNode := 0
 	skippedNotRunning := 0
 
+	// Track active pods and their status for heartbeat monitoring
+	activePods := make(map[string]*v1.Pod)
+
 	for _, podMetrics := range podMetricsList {
 		// Get pod details
 		pod, err := cs.handle.ClientSet().CoreV1().Pods(podMetrics.Namespace).Get(ctx, podMetrics.Name, metav1.GetOptions{})
@@ -129,6 +133,9 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 				"error", err)
 			continue
 		}
+
+		// Keep track of this pod for heartbeat monitoring
+		activePods[string(pod.UID)] = pod
 
 		// Add debugging log to check scheduler names
 		klog.V(4).InfoS("Checking pod scheduler name",
@@ -158,7 +165,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			continue
 		}
 
-		// Skip pods not in Running phase
+		// Check if this pod is no longer running - handle completed pods separately below
 		if pod.Status.Phase != v1.PodRunning {
 			skippedNotRunning++
 			klog.V(3).InfoS("Skipping pod not in Running phase",
@@ -224,11 +231,16 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		processedCount++
 	}
 
+	// Perform pod heartbeat check - looking for pods that need final energy calculations
+	if cs.metricsStore != nil {
+		cs.checkPodsForCompletion(ctx, activePods)
+	}
+
 	// Update metrics store stats
 	cacheSize := cs.metricsStore.Size()
 	MetricsCacheSize.Set(float64(cacheSize))
 
-	// Update samples stored metric for each pod
+	// Update samples stored metric for active pods
 	for _, podMetrics := range podMetricsList {
 		if hist, found := cs.metricsStore.GetHistory(string(podMetrics.UID)); found {
 			MetricsSamplesStored.WithLabelValues(podMetrics.Name, podMetrics.Namespace).Set(float64(len(hist.Records)))
@@ -245,7 +257,108 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			"skippedNotRunning", skippedNotRunning,
 			"cacheSize", cacheSize)
 	}
+}
 
+// checkPodsForCompletion performs a "heartbeat" check on all tracked pods
+// to ensure we properly handle completed pods even if we missed their completion events
+func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, activePods map[string]*v1.Pod) {
+	if cs.metricsStore == nil {
+		return
+	}
+
+	// Get all unique pod UIDs from our metrics store that aren't marked as completed
+	trackedPods := make(map[string]bool)
+	
+	// Find active pods in our metrics cache
+	cs.metricsStore.ForEach(func(podUID string, history *metrics.PodMetricsHistory) {
+		// Skip pods already marked as completed - we only care about active ones
+		if !history.Completed {
+			trackedPods[podUID] = true
+		}
+	})
+	
+	completedCount := 0
+	checkedCount := 0
+	
+	// Check each tracked pod that's not yet marked as completed
+	for podUID := range trackedPods {
+		checkedCount++
+		
+		// Get pod metrics history
+		history, found := cs.metricsStore.GetHistory(podUID)
+		if !found || history.Completed {
+			continue // Skip if not found or already completed
+		}
+		
+		// Case 1: Check if the pod is in our active pods list but in a terminal state
+		if pod, exists := activePods[podUID]; exists {
+			if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+				klog.V(2).InfoS("Found pod in terminal state that needs final energy calculation",
+					"pod", klog.KObj(pod),
+					"podUID", podUID,
+					"phase", pod.Status.Phase)
+					
+				// Process this pod's metrics as if we caught the completion event normally
+				cs.processPodCompletionMetrics(pod, podUID, pod.Name, pod.Namespace, pod.Spec.NodeName)
+				completedCount++
+				continue
+			}
+		} else {
+			// Case 2: The pod isn't in our active pods list at all
+			// We need to look it up to see if it still exists but in a completed state, or if it's gone
+			
+			// Try to fetch the pod directly
+			pod, err := cs.handle.ClientSet().CoreV1().Pods(history.Namespace).Get(ctx, history.PodName, metav1.GetOptions{})
+			if err != nil {
+				// Pod likely doesn't exist anymore
+				klog.V(2).InfoS("Pod in metrics cache no longer exists",
+					"podUID", podUID,
+					"podName", history.PodName,
+					"namespace", history.Namespace,
+					"error", err)
+					
+				// Do final calculations and zero out the metrics
+				// We'll create a skeleton pod with the minimum information needed
+				skeletonPod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:       types.UID(podUID),
+						Name:      history.PodName,
+						Namespace: history.Namespace,
+					},
+					Spec: v1.PodSpec{
+						NodeName: history.NodeName,
+					},
+				}
+				
+				// Process this pod's completion metrics
+				cs.processPodCompletionMetrics(skeletonPod, podUID, history.PodName, history.Namespace, history.NodeName)
+				completedCount++
+			} else if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+				// Pod exists but is in a terminal state
+				klog.V(2).InfoS("Found completed pod that needs final energy calculation",
+					"pod", klog.KObj(pod),
+					"podUID", podUID,
+					"phase", pod.Status.Phase)
+					
+				// Process this pod's metrics as if we caught the completion event normally
+				cs.processPodCompletionMetrics(pod, podUID, pod.Name, pod.Namespace, pod.Spec.NodeName)
+				completedCount++
+			} else {
+				// Pod exists but in a non-terminal state - log this unusual situation at high visibility
+				klog.V(1).InfoS("Pod in metrics cache not in active list but still exists in non-terminal state",
+					"podUID", podUID,
+					"podName", history.PodName,
+					"namespace", history.Namespace,
+					"phase", pod.Status.Phase)
+			}
+		}
+	}
+	
+	if completedCount > 0 {
+		klog.V(1).InfoS("Pod heartbeat check completed",
+			"checkedPods", checkedCount,
+			"completedPods", completedCount)
+	}
 }
 
 // calculatePodPower estimates power consumption for a pod based on resource usage

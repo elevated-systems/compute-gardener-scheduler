@@ -106,20 +106,26 @@ func (s *InMemoryStore) GetHistory(podUID string) (*PodMetricsHistory, bool) {
 
 // Cleanup removes old completed pod data
 func (s *InMemoryStore) Cleanup() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	
 	now := time.Now()
 	removedCount := 0
+	podsToRemove := []string{}
 	
-	for podUID, history := range s.data {
+	// Collect pods that need to be removed (using read lock via ForEach)
+	s.ForEach(func(podUID string, history *PodMetricsHistory) {
 		if history.Completed && now.Sub(history.LastSeen) > s.retentionTime {
+			podsToRemove = append(podsToRemove, podUID)
+		}
+	})
+	
+	// Acquire write lock for actual removal from the map
+	if len(podsToRemove) > 0 {
+		s.mutex.Lock()
+		for _, podUID := range podsToRemove {
 			delete(s.data, podUID)
 			removedCount++
 		}
-	}
-	
-	if removedCount > 0 {
+		s.mutex.Unlock()
+		
 		klog.V(2).InfoS("Removed expired pod metrics", "count", removedCount)
 	}
 }
@@ -149,4 +155,14 @@ func (s *InMemoryStore) Size() int {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	return len(s.data)
+}
+
+// ForEach executes a function for each pod history in the store
+func (s *InMemoryStore) ForEach(fn func(string, *PodMetricsHistory)) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
+	for podUID, history := range s.data {
+		fn(podUID, history)
+	}
 }

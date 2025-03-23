@@ -49,6 +49,9 @@ type PodMetricsStorage interface {
 
 	// Size returns the number of pods being tracked
 	Size() int
+	
+	// ForEach executes a function for each pod history in the store
+	ForEach(func(string, *PodMetricsHistory))
 }
 
 // DownsamplingStrategy defines how to reduce the number of metrics points
