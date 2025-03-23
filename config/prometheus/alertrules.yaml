@@ -1,0 +1,58 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: compute-gardener-budget-rules
+  namespace: system
+  labels:
+    app: compute-gardener-scheduler
+spec:
+  groups:
+  - name: namespace-budget-recording-rules
+    rules:
+    - record: namespace:energy_usage_monthly:kwh
+      expr: sum by(exported_namespace) (increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[30d]))
+      
+    - record: namespace:carbon_emissions_monthly:kgco2
+      expr: sum by(exported_namespace) (increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[30d])) / 1000
+      
+  - name: namespace-budget-alerts
+    rules:
+    - alert: NamespaceEnergyBudgetWarning
+      expr: namespace:energy_usage_monthly:kwh{exported_namespace="$budget_namespace"} / scalar(namespace_energy_budget_kwh) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+        type: energy
+      annotations:
+        summary: "Namespace {{ $labels.exported_namespace }} approaching energy budget"
+        description: "Namespace {{ $labels.exported_namespace }} is approaching its monthly energy budget ({{ printf \"%.2f%%\" $value }})"
+        
+    - alert: NamespaceEnergyBudgetCritical
+      expr: namespace:energy_usage_monthly:kwh{exported_namespace="$budget_namespace"} / scalar(namespace_energy_budget_kwh) > 1.0
+      for: 5m
+      labels:
+        severity: critical
+        type: energy
+      annotations:
+        summary: "Namespace {{ $labels.exported_namespace }} exceeded energy budget"
+        description: "Namespace {{ $labels.exported_namespace }} has exceeded its monthly energy budget ({{ printf \"%.2f%%\" $value }})"
+        
+    - alert: NamespaceCarbonBudgetWarning
+      expr: namespace:carbon_emissions_monthly:kgco2{exported_namespace="$budget_namespace"} / scalar(namespace_carbon_budget_kgco2) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+        type: carbon
+      annotations:
+        summary: "Namespace {{ $labels.exported_namespace }} approaching carbon budget"
+        description: "Namespace {{ $labels.exported_namespace }} is approaching its monthly carbon budget ({{ printf \"%.2f%%\" $value }})"
+        
+    - alert: NamespaceCarbonBudgetCritical
+      expr: namespace:carbon_emissions_monthly:kgco2{exported_namespace="$budget_namespace"} / scalar(namespace_carbon_budget_kgco2) > 1.0
+      for: 5m
+      labels:
+        severity: critical
+        type: carbon
+      annotations:
+        summary: "Namespace {{ $labels.exported_namespace }} exceeded carbon budget"
+        description: "Namespace {{ $labels.exported_namespace }} has exceeded its monthly carbon budget ({{ printf \"%.2f%%\" $value }})"

@@ -407,7 +407,7 @@
           "h": 1,
           "w": 24,
           "x": 0,
-          "y": 9
+          "y": 18
         },
         "id": 26,
         "panels": [],
@@ -1535,7 +1535,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "Power consumption estimates by node",
+        "description": "Power consumption estimates by node and pod",
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -1621,7 +1621,7 @@
             "refId": "A"
           }
         ],
-        "title": "Power Consumption by Node",
+        "title": "Power Consumption by Node and Pod",
         "type": "timeseries"
       },
       {
@@ -1700,7 +1700,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "GPU power consumption by node",
+        "description": "GPU power consumption by node and pod",
         "fieldConfig": {
           "defaults": {
             "color": {
@@ -1786,7 +1786,7 @@
             "refId": "A"
           }
         ],
-        "title": "GPU Power Consumption",
+        "title": "GPU Power Consumption by Node and Pod",
         "type": "timeseries"
       },
       {
@@ -1796,6 +1796,238 @@
           "w": 24,
           "x": 0,
           "y": 68
+        },
+        "id": 52,
+        "panels": [],
+        "title": "Namespace Energy & Carbon Budgets",
+        "type": "row"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Energy usage by namespace over time with configurable budget thresholds",
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 30,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "lineInterpolation": "smooth",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "line+area"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "transparent",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": "${namespace_energy_budget_kwh}"
+                }
+              ]
+            },
+            "unit": "kwatth"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 69
+        },
+        "id": 53,
+        "options": {
+          "legend": {
+            "calcs": [
+              "lastNotNull",
+              "max"
+            ],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_namespace) (increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[$__range]))",
+            "hide": false,
+            "legendFormat": "{{exported_namespace}} - Energy (kWh)",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum(increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[$__range])) by(exported_namespace) and on() label_replace(vector($namespace_energy_budget_kwh), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
+            "hide": true,
+            "legendFormat": "Budget Threshold ({{exported_namespace}})",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "Energy Usage by Namespace",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Carbon emissions by namespace over time with configurable budget thresholds",
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 30,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "lineInterpolation": "smooth",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "line+area"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "transparent",
+                  "value": null
+                },
+                {
+                  "color": "red",
+                  "value": "${namespace_carbon_budget_kgco2}"
+                }
+              ]
+            },
+            "unit": "kg"
+          },
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 69
+        },
+        "id": 54,
+        "options": {
+          "legend": {
+            "calcs": [
+              "lastNotNull",
+              "max"
+            ],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum by(exported_namespace) (increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[$__range])) / 1000",
+            "legendFormat": "{{exported_namespace}} - Carbon (kg CO2)",
+            "range": true,
+            "refId": "A"
+          },
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "editorMode": "code",
+            "expr": "sum(increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[$__range]) / 1000) by(exported_namespace) and on() label_replace(vector($namespace_carbon_budget_kgco2), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
+            "hide": true,
+            "legendFormat": "Budget Threshold ({{exported_namespace}})",
+            "range": true,
+            "refId": "B"
+          }
+        ],
+        "title": "Carbon Emissions by Namespace",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {
+          "h": 1,
+          "w": 24,
+          "x": 0,
+          "y": 77
         },
         "id": 36,
         "panels": [],
@@ -1861,7 +2093,7 @@
           "h": 8,
           "w": 12,
           "x": 0,
-          "y": 69
+          "y": 78
         },
         "id": 8,
         "options": {
@@ -1954,7 +2186,7 @@
           "h": 8,
           "w": 12,
           "x": 0,
-          "y": 69
+          "y": 78
         },
         "id": 38,
         "options": {
@@ -2071,7 +2303,7 @@
           "h": 8,
           "w": 12,
           "x": 12,
-          "y": 69
+          "y": 78
         },
         "id": 40,
         "options": {
@@ -2132,7 +2364,7 @@
           "h": 8,
           "w": 12,
           "x": 12,
-          "y": 77
+          "y": 86
         },
         "id": 42,
         "options": {
@@ -2187,6 +2419,76 @@
     ],
     "templating": {
       "list": [
+        {
+          "current": {
+            "selected": false,
+            "text": "default",
+            "value": "default"
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "definition": "label_values(scheduler_compute_gardener_job_energy_usage_kwh_sum, exported_namespace)",
+          "description": "Filter namespace for budget monitoring",
+          "hide": 0,
+          "includeAll": false,
+          "label": "Namespace for Budget",
+          "multi": false,
+          "name": "budget_namespace",
+          "options": [],
+          "query": {
+            "query": "label_values(scheduler_compute_gardener_job_energy_usage_kwh_sum, exported_namespace)",
+            "refId": "StandardVariableQuery"
+          },
+          "refresh": 2,
+          "regex": "",
+          "skipUrlSync": false,
+          "sort": 1,
+          "type": "query"
+        },        
+        {
+          "current": {
+            "selected": false,
+            "text": "100",
+            "value": "100"
+          },
+          "description": "Monthly energy budget in kWh for the selected namespace",
+          "hide": 0,
+          "label": "Namespace Energy Budget (kWh)",
+          "name": "namespace_energy_budget_kwh",
+          "options": [
+            {
+              "selected": true,
+              "text": "100",
+              "value": "100"
+            }
+          ],
+          "query": "100",
+          "skipUrlSync": false,
+          "type": "textbox"
+        },
+        {
+          "current": {
+            "selected": false,
+            "text": "50",
+            "value": "50"
+          },
+          "description": "Monthly carbon budget in kg CO2 for the selected namespace",
+          "hide": 0,
+          "label": "Namespace Carbon Budget (kg CO2)",
+          "name": "namespace_carbon_budget_kgco2",
+          "options": [
+            {
+              "selected": true,
+              "text": "50",
+              "value": "50"
+            }
+          ],
+          "query": "50",
+          "skipUrlSync": false,
+          "type": "textbox"
+        },
         {
           "current": {
             "selected": true,
