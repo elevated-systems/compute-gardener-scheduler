@@ -8,8 +8,7 @@ metadata:
     {{- include "compute-gardener-scheduler.labels" . | nindent 4 }}
     component: sample-pod
   annotations:
-    compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "150.0"
-    compute-gardener-scheduler.kubernetes.io/skip: "false"
+    compute-gardener-scheduler.kubernetes.io/skip: "true"
 spec:
   schedulerName: {{ .Values.scheduler.name }}
   restartPolicy: Never
