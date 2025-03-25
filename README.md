@@ -1,4 +1,4 @@
-[![Go Report Card](https://goreportcard.com/badge/github.com/elevated-systems/compute-gardener-scheduler)](https://goreportcard.com/report/github.com/elevated-systems/compute-gardener-scheduler) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/elevated-systems/compute-gardener-scheduler/blob/master/LICENSE) [![Build Status](https://github.com/elevated-systems/compute-gardener-scheduler/workflows/Release%20Charts/badge.svg)](https://github.com/elevated-systems/compute-gardener-scheduler/actions/workflows/release-charts.yml) [![GitHub release](https://img.shields.io/github/release/elevated-systems/compute-gardener-scheduler/all.svg?style=flat)](https://github.com/elevated-systems/compute-gardener-scheduler/releases) [![Test Coverage](https://byob.yarr.is/elevated-systems/compute-gardener-scheduler/coverage)](https://github.com/elevated-systems/compute-gardener-scheduler/actions/workflows/test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/elevated-systems/compute-gardener-scheduler)](https://goreportcard.com/report/github.com/elevated-systems/compute-gardener-scheduler) [![Test Coverage](https://byob.yarr.is/elevated-systems/compute-gardener-scheduler/coverage)](https://github.com/elevated-systems/compute-gardener-scheduler/actions/workflows/test.yml) [![Build Status](https://github.com/elevated-systems/compute-gardener-scheduler/workflows/Release%20Charts/badge.svg)](https://github.com/elevated-systems/compute-gardener-scheduler/actions/workflows/release-charts.yml) [![GitHub release](https://img.shields.io/github/release/elevated-systems/compute-gardener-scheduler/all.svg?style=flat)](https://github.com/elevated-systems/compute-gardener-scheduler/releases) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/elevated-systems/compute-gardener-scheduler/blob/master/LICENSE) 
 
 # Compute Gardener Scheduler
 
@@ -14,11 +14,14 @@ This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kub
 - **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration
 - **Region Mapping**: Automatically map most major cloud provider regions to their corresponding Electricity Maps API carbon intensity regions.
 - **Grafana Dashboard**: View workload and scheduler performance metrics in simple visualizations.
- **Energy Budget Tracking**: Define and monitor energy usage limits for workloads
+- **Energy Budget Tracking**: Define and monitor energy usage limits for workloads
 
-## Installation
+## Getting Started
+Please see our new [getting started guide](./docs/getting-started.md) for an in-depth workflow, installing the scheduler, getting carbon awarenes, price awareness and metrics working.
 
-### Using Helm
+## Quick Start
+
+### Install Using Helm
 
 ```bash
 # Add the Helm repository
@@ -39,38 +42,52 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-For more options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
-
-### Using YAML Manifests
-
-```bash
-# Standard installation with metrics
-kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler.yaml
-
-# Installation without metrics (for clusters without Prometheus)
-kubectl apply -f manifests/compute-gardener-scheduler/compute-gardener-scheduler-no-metrics.yaml
-```
+For more options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md). Also, if you prefer a raw manifest based install, see our [all-in-one](./manifests/compute-gardener-scheduler/) manifests.
 
 ## Additional Features
 
-- **Workload-Specific Optimizations**: Different policies for workload types (batch, service, stateful)
-- **Namespace-Level Policies**: Define energy policies at namespace level
 - **GPU & CPU Power Monitoring**: Integrated with DCGM and CPU frequency monitoring
 - **Caching**: Built-in caching of API responses to limit external API calls
 - **Observability**: Comprehensive Prometheus metrics
+- **Workload-Specific Optimizations**: Different policies for workload types (batch, service, stateful)
+- **Namespace-Level Policies**: Define energy policies at namespace level
 
-### Environment Variables
+## Architecture
 
-```bash
-# Required
-ELECTRICITY_MAP_API_KEY=<your-api-key>  # API key for Electricity Maps API
+The scheduler consists of these key components:
 
-# Core Features
-CARBON_ENABLED=true                    # Enable carbon-aware scheduling
-CARBON_INTENSITY_THRESHOLD=200.0       # Base carbon threshold (gCO2/kWh)
-PRICING_ENABLED=false                  # Enable time-of-use pricing
-MAX_SCHEDULING_DELAY=24h               # Maximum pod scheduling delay
-```
+1. **Main Scheduler Plugin**: Implements Kubernetes scheduler framework interfaces (PreFilter and Filter for now)
+2. **Carbon Scheduler**: Considers carbon intensity in scheduling
+3. **Hardware Profiler**: Models power consumption with PUE considerations
+4. **TOU Scheduler**: Manages time-of-use pricing schedules
+5. **API Client**: Communicates with Electricity Maps API
+6. **Cache**: Provides caching of API responses to reduce external API calls
+7. **Energy Budget Tracker**: Monitors energy usage against budgets
+8. **Energy Policy Webhook**: Applies namespace-level energy policies
+
+### Scheduling Logic
+
+The scheduler follows this decision flow:
+
+1. **PreFilter Stage**: 
+   - Check if pod has exceeded maximum scheduling delay or has opted-out
+   - If pricing is enabled:
+     - Get current rate from pricing implementation
+     - Compare against threshold
+   - If carbon-aware scheduling is enabled:
+     - Get current carbon intensity from implementation
+     - Compare against threshold
+
+2. **Filter Stage**:
+    - Recheck if pod has exceeded maximum scheduling delay or has opeted-out
+   - If hardware efficiency controls are enabled:
+     - Calculate effective power consumption with PUE
+     - Filter nodes based on power limits and efficiency
+
+3. **Post-scheduling**:
+   - Track energy usage over time
+   - Compare against energy budgets
+   - Take configurable actions when budgets are exceeded
 
 ### Time-of-Use Pricing Schedules
 
@@ -99,29 +116,14 @@ compute-gardener-scheduler.kubernetes.io/energy-budget-kwh: "5.0"          # Ene
 compute-gardener-scheduler.kubernetes.io/gpu-workload-type: "inference"    # GPU workload type
 ```
 
-### Namespace-Level Energy Policies
-
-Enable with namespace label:
-
-```yaml
-labels:
-  compute-gardener-scheduler.kubernetes.io/energy-policies: "enabled"
-```
-
-Set default policies with annotations:
-
-```yaml
-annotations:
-  compute-gardener-scheduler.kubernetes.io/policy-carbon-intensity-threshold: "200"
-  compute-gardener-scheduler.kubernetes.io/policy-energy-budget-kwh: "10"
-```
-
 ## Hardware Power Profiles
 
-The scheduler uses hardware-specific power profiles to accurately estimate energy consumption. For optimal performance, you can label your nodes with their hardware details:
+The scheduler uses hardware-specific power profiles to accurately estimate energy consumption.
+
+Optional: For optimal performance (skip run-time checks), you can label your nodes with their hardware details:
 
 ```bash
-# Label all nodes
+# Label all nodes (optional)
 ./hack/label-node-hardware.sh
 ```
 
@@ -164,48 +166,43 @@ Key metrics available:
 **Hardware**
 - `scheduler_compute_gardener_node_power_estimate_watts`: Power consumption
 
-## Architecture
 
-The scheduler consists of these key components:
+### Namespace-Level Energy Policies
 
-1. **Main Scheduler Plugin**: Implements Kubernetes scheduler framework interfaces
-2. **Energy Policy Webhook**: Applies namespace-level energy policies
-3. **Hardware Profiler**: Models power consumption with PUE considerations
-4. **Energy Budget Tracker**: Monitors energy usage against budgets
-5. **API Client**: Communicates with Electricity Maps API
-6. **Cache**: Provides caching of API responses to reduce external API calls
-7. **TOU Scheduler**: Manages time-of-use pricing schedules
+Enable with namespace label:
 
-### Scheduling Logic
+```yaml
+labels:
+  compute-gardener-scheduler.kubernetes.io/energy-policies: "enabled"
+```
 
-The scheduler follows this decision flow:
+Set default policies with annotations:
 
-1. **PreFilter Stage**: 
-   - Check if pod has exceeded maximum scheduling delay
-   - Check for opt-out annotations
-   - Apply namespace energy policy annotations if needed
-
-2. **Filter Stage**:
-   - If pricing is enabled:
-     - Get current rate from pricing implementation
-     - Compare against threshold
-   - If carbon-aware scheduling is enabled:
-     - Get current carbon intensity from implementation
-     - Compare against threshold
-   - If hardware efficiency controls are enabled:
-     - Calculate effective power consumption with PUE
-     - Filter nodes based on power limits and efficiency
-
-3. **Post-scheduling**:
-   - Track energy usage over time
-   - Compare against energy budgets
-   - Take configurable actions when budgets are exceeded
+```yaml
+annotations:
+  compute-gardener-scheduler.kubernetes.io/policy-carbon-intensity-threshold: "200"
+  compute-gardener-scheduler.kubernetes.io/policy-energy-budget-kwh: "10"
+```
 
 ## Development
 
+We'd be thrilled to have your dev assistance and shared wisdom!
+
+Peruse our [issues](https://github.com/elevated-systems/compute-gardener-scheduler/issues) to see if anything speaks to you or you have any bugs or suggested features.
+
 ```bash
+# Build
+make build
+
+# Build and Push Images (scheduler and node-exporter)
+# Be sure to set your registry details in Makefile first
+make build-push-images
+
 # Run tests
 make unit-test
+
+# Run tests with coverage report
+make unit-test-coverage
 ```
 
 ## Contributing

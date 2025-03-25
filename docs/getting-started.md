@@ -186,7 +186,9 @@ You might see output like:
 
 This means the current carbon intensity (245.6 gCO2eq/kWh) exceeds our threshold (200 gCO2eq/kWh), so the scheduler is delaying our job.
 
-The following chart shows roughly two days of scheduler operation. The purple sawtooth is the scheduler queue depth. In normal cluster operation this is flat at zero. In normal Compute Gardener operation, it will increment when a pod is delayed. The green series is carbon intensity in CalISO. The queue depth rises when a job is triggered but carbon intensity is higher than the threshold.
+The following chart shows roughly two days of scheduler operation. The purple "staircase" is the scheduler queue depth. In normal cluster operation this is flat at zero. In normal Compute Gardener operation, it will increment whenever a new pod is delayed. In our case we're running a regularly scheduled CronJob, hence the regular staircase pattern. Your usage patterns, of course, may differ.
+
+The green series is carbon intensity in the CalISO region. The queue depth rises when a job is triggered but carbon intensity is higher than the threshold.
 
 ![Carbon Intensity and Scheduler Queue Depth](./img/carbonIntensityQueueDepth.png)
 
