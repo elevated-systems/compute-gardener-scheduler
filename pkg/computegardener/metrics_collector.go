@@ -290,9 +290,10 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 			continue // Skip if not found or already completed
 		}
 		
-		// Case 1: Check if the pod is in our active pods list but in a terminal state
+		// Check if the pod is in our active pods list
 		if pod, exists := activePods[podUID]; exists {
-			if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+			// Even if the pod exists in the active pods list, check if it's in a terminal state
+			if isTerminalState(pod) {
 				klog.V(2).InfoS("Found pod in terminal state that needs final energy calculation",
 					"pod", klog.KObj(pod),
 					"podUID", podUID,
@@ -304,8 +305,8 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 				continue
 			}
 		} else {
-			// Case 2: The pod isn't in our active pods list at all
-			// We need to look it up to see if it still exists but in a completed state, or if it's gone
+			// The pod isn't in our active pods list at all - either it was deleted or
+			// it completed and our metrics server didn't capture it in the activePods list
 			
 			// Try to fetch the pod directly
 			pod, err := cs.handle.ClientSet().CoreV1().Pods(history.Namespace).Get(ctx, history.PodName, metav1.GetOptions{})
@@ -333,7 +334,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 				// Process this pod's completion metrics
 				cs.processPodCompletionMetrics(skeletonPod, podUID, history.PodName, history.Namespace, history.NodeName)
 				completedCount++
-			} else if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+			} else if isTerminalState(pod) {
 				// Pod exists but is in a terminal state
 				klog.V(2).InfoS("Found completed pod that needs final energy calculation",
 					"pod", klog.KObj(pod),
@@ -359,6 +360,45 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 			"checkedPods", checkedCount,
 			"completedPods", completedCount)
 	}
+}
+
+// isTerminalState checks if a pod is in a terminal state (completed, failed, or all containers terminated)
+// This function is a more comprehensive check than just looking at pod phase
+func isTerminalState(pod *v1.Pod) bool {
+	// Check pod phase
+	if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
+		return true
+	}
+	
+	// Check if all containers are terminated
+	if len(pod.Status.ContainerStatuses) > 0 {
+		allTerminated := true
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.State.Terminated == nil {
+				allTerminated = false
+				break
+			}
+		}
+		if allTerminated {
+			return true
+		}
+	}
+	
+	// Check completion timestamp - if present, the pod has completed regardless of phase
+	if pod.DeletionTimestamp != nil {
+		return true
+	}
+	
+	// Additional Kubernetes-specific conditions that indicate pod termination
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == v1.PodReady && 
+		   condition.Status == v1.ConditionFalse && 
+		   (condition.Reason == "PodCompleted" || condition.Reason == "PodFailed") {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // calculatePodPower estimates power consumption for a pod based on resource usage

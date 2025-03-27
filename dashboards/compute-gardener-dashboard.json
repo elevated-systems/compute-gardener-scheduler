@@ -1487,7 +1487,7 @@
                 }
               ]
             },
-            "unit": "percentunit"
+            "unit": "cores"
           },
           "overrides": []
         },
@@ -1521,13 +1521,13 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_cpu_usage_cores{node=~\"$node\", phase=\"current\"} > 0) / scalar(sum(kube_node_status_capacity{resource=\"cpu\"}))",
+            "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_cpu_usage_cores{node=~\"$node\", phase=\"current\"} > 0)",
             "legendFormat": "{{node}}/{{exported_pod}}",
             "range": true,
             "refId": "A"
           }
         ],
-        "title": "CPU Usage by Node and Pod",
+        "title": "CPU Usage by Node and Pod (cores)",
         "type": "timeseries"
       },
       {
