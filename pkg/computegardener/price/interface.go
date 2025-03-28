@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"time"
 
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price/tou"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // Implementation defines the interface for electricity pricing implementations
 type Implementation interface {
 	// GetCurrentRate returns the current electricity rate in $/kWh
 	GetCurrentRate(now time.Time) float64
-	
+
 	// IsPeakTime checks if the given time is within a peak time window
 	IsPeakTime(now time.Time) bool
 

@@ -99,7 +99,7 @@ func getStaticCPUFrequencyInfo() (map[string]float64, error) {
 				}
 			}
 		}
-		
+
 		// Some systems use base_frequency instead
 		if _, ok := result["base"]; !ok {
 			baseFiles, err := filepath.Glob("/sys/devices/system/cpu/cpu*/cpufreq/base_frequency")
@@ -150,7 +150,7 @@ func getCPUCount() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	
+
 	return len(cpuDirs), nil
 }
 
@@ -159,7 +159,7 @@ func getCurrentCPUFrequency(cpuID int) (float64, error) {
 	// First try with the scaling_cur_freq file
 	freqFile := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpuID)
 	data, err := os.ReadFile(freqFile)
-	
+
 	// If that doesn't work, try the cpuinfo_cur_freq file
 	if err != nil {
 		freqFile = fmt.Sprintf("/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_cur_freq", cpuID)
@@ -168,13 +168,13 @@ func getCurrentCPUFrequency(cpuID int) (float64, error) {
 			return 0, fmt.Errorf("failed to read CPU frequency: %v", err)
 		}
 	}
-	
+
 	// Parse the frequency value (in kHz)
 	freqKHz, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse CPU frequency: %v", err)
 	}
-	
+
 	// Convert from kHz to GHz
 	return freqKHz / 1000000, nil
 }
@@ -186,7 +186,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 		return 0
 	}
 	defer file.Close()
-	
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -202,7 +202,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 			}
 			break
 		}
-		
+
 		// Also check for "model name" in case it contains the frequency
 		if strings.Contains(line, "model name") && strings.Contains(line, "GHz") {
 			// Extract the frequency if it's in the model name (like "Intel i7 @ 2.60GHz")
@@ -213,7 +213,7 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 				ghzPart = strings.TrimSpace(ghzPart)
 				ghzPart = strings.Split(ghzPart, " ")[0] // Get just the number
 				ghzPart = strings.Replace(ghzPart, "GHz", "", 1)
-				
+
 				freq, err := strconv.ParseFloat(ghzPart, 64)
 				if err == nil {
 					return freq
@@ -222,13 +222,13 @@ func estimateBaseFrequencyFromCPUInfo() float64 {
 			break
 		}
 	}
-	
+
 	return 0
 }
 
 // estimateMaxFrequencyFromCPUInfo tries to get max frequency
 func estimateMaxFrequencyFromCPUInfo() float64 {
-	// Often max frequency is about 20-30% higher than base, 
+	// Often max frequency is about 20-30% higher than base,
 	// but we'd need more info to estimate accurately
 	baseFreq := estimateBaseFrequencyFromCPUInfo()
 	if baseFreq > 0 {
@@ -328,7 +328,7 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 		return "", "", "", err
 	}
 	defer file.Close()
-	
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()

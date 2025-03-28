@@ -33,10 +33,10 @@ func (m *MockCoreMetricsClient) ListPodMetrics(ctx context.Context) ([]metricsv1
 
 // MockGPUMetricsClient implements GPUMetricsClient for testing
 type MockGPUMetricsClient struct {
-	GetPodGPUUtilizationFunc    func(ctx context.Context, namespace, name string) (float64, error)
-	ListPodsGPUUtilizationFunc  func(ctx context.Context) (map[string]float64, error)
-	GetPodGPUPowerFunc          func(ctx context.Context, namespace, name string) (float64, error)
-	ListPodsGPUPowerFunc        func(ctx context.Context) (map[string]float64, error)
+	GetPodGPUUtilizationFunc   func(ctx context.Context, namespace, name string) (float64, error)
+	ListPodsGPUUtilizationFunc func(ctx context.Context) (map[string]float64, error)
+	GetPodGPUPowerFunc         func(ctx context.Context, namespace, name string) (float64, error)
+	ListPodsGPUPowerFunc       func(ctx context.Context) (map[string]float64, error)
 }
 
 // GetPodGPUUtilization delegates to the mock function

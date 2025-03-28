@@ -100,7 +100,7 @@ func TestConfigValidate(t *testing.T) {
 			name: "invalid pricing config - peak rate less than off-peak",
 			config: &Config{
 				Carbon: CarbonConfig{
-					Enabled:            false,
+					Enabled: false,
 				},
 				Pricing: PriceConfig{
 					Enabled:  true,
@@ -378,16 +378,16 @@ func TestConfigValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.config.Validate()
-			
+
 			if (err != nil) != tt.expectErr {
 				t.Errorf("Config.Validate() error = %v, expectErr %v", err, tt.expectErr)
 				return
 			}
-			
+
 			if err != nil && tt.errMessage != "" && !contains(err.Error(), tt.errMessage) {
 				t.Errorf("Config.Validate() error = %v, expected to contain %v", err, tt.errMessage)
 			}
-			
+
 			// Check default values are set
 			if !tt.expectErr && tt.name == "default PUE values" {
 				if tt.config.Power.DefaultPUE != 1.1 {
@@ -520,12 +520,12 @@ func TestValidateSchedule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateSchedule(tt.schedule)
-			
+
 			if (err != nil) != tt.expectErr {
 				t.Errorf("validateSchedule() error = %v, expectErr %v", err, tt.expectErr)
 				return
 			}
-			
+
 			if err != nil && tt.errMessage != "" && !contains(err.Error(), tt.errMessage) {
 				t.Errorf("validateSchedule() error = %v, expected to contain %v", err, tt.errMessage)
 			}
@@ -574,8 +574,8 @@ func TestValidatePricing(t *testing.T) {
 	}
 
 	// Test missing off-peak rate
-	config.Pricing.Schedules[0].PeakRate = 0.30     // Fix peak rate
-	config.Pricing.Schedules[0].OffPeakRate = 0     // Invalid
+	config.Pricing.Schedules[0].PeakRate = 0.30 // Fix peak rate
+	config.Pricing.Schedules[0].OffPeakRate = 0 // Invalid
 	err = config.validatePricing()
 	if err == nil {
 		t.Error("validatePricing() expected error for missing off-peak rate")
@@ -693,27 +693,27 @@ func TestValidateHardwareProfiles(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Start with valid profiles and create a deep copy
 			testProfiles := &HardwareProfiles{
-				CPUProfiles: make(map[string]PowerProfile),
-				GPUProfiles: make(map[string]PowerProfile),
-				MemProfiles: make(map[string]MemoryPowerProfile),
+				CPUProfiles:          make(map[string]PowerProfile),
+				GPUProfiles:          make(map[string]PowerProfile),
+				MemProfiles:          make(map[string]MemoryPowerProfile),
 				CloudInstanceMapping: make(map[string]map[string]HardwareComponents),
 			}
-			
+
 			// Copy CPU profiles
 			for k, v := range validProfiles.CPUProfiles {
 				testProfiles.CPUProfiles[k] = v
 			}
-			
+
 			// Copy GPU profiles
 			for k, v := range validProfiles.GPUProfiles {
 				testProfiles.GPUProfiles[k] = v
 			}
-			
+
 			// Copy memory profiles
 			for k, v := range validProfiles.MemProfiles {
 				testProfiles.MemProfiles[k] = v
 			}
-			
+
 			// Copy cloud instance mapping
 			for provider, instances := range validProfiles.CloudInstanceMapping {
 				testProfiles.CloudInstanceMapping[provider] = make(map[string]HardwareComponents)
@@ -721,10 +721,10 @@ func TestValidateHardwareProfiles(t *testing.T) {
 					testProfiles.CloudInstanceMapping[provider][instanceType] = components
 				}
 			}
-			
+
 			// Apply the modification
 			tt.modifyFunc(testProfiles)
-			
+
 			// Create a new config with the test profiles
 			testConfig := &Config{
 				Power: PowerConfig{
@@ -734,16 +734,16 @@ func TestValidateHardwareProfiles(t *testing.T) {
 					HardwareProfiles: testProfiles,
 				},
 			}
-			
+
 			// Validate the profiles
 			err := testConfig.validateHardwareProfiles()
-			
+
 			// Check if the error is as expected
 			if err == nil {
 				t.Errorf("validateHardwareProfiles() expected error containing '%s', got nil", tt.errContains)
 				return
 			}
-			
+
 			if !contains(err.Error(), tt.errContains) {
 				t.Errorf("validateHardwareProfiles() expected error containing '%s', got '%v'", tt.errContains, err)
 			}

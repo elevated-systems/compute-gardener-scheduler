@@ -170,7 +170,7 @@ func TestGetRegionInfoForNode(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "aws-node-topology",
 					Labels: map[string]string{
-						"topology.kubernetes.io/region": "us-west-2",
+						"topology.kubernetes.io/region":    "us-west-2",
 						"node.kubernetes.io/instance-type": "m5.large",
 					},
 				},
@@ -187,8 +187,8 @@ func TestGetRegionInfoForNode(t *testing.T) {
 			expectOk: false,
 		},
 		{
-			name: "nil node",
-			node: nil,
+			name:     "nil node",
+			node:     nil,
 			expectOk: false,
 		},
 	}
@@ -276,13 +276,13 @@ func TestGetElectricityMapsZoneForNode(t *testing.T) {
 					Name: "unknown-node",
 				},
 			},
-			expectOk: false,
+			expectOk:   false,
 			expectZone: "",
 		},
 		{
-			name: "nil node",
-			node: nil,
-			expectOk: false,
+			name:       "nil node",
+			node:       nil,
+			expectOk:   false,
 			expectZone: "",
 		},
 	}
@@ -311,12 +311,12 @@ func TestGetElectricityMapsZoneForNode(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "aws-unknown-region",
 			Labels: map[string]string{
-				"node.kubernetes.io/instance-type": "m5.large", // This will trigger AWS provider detection
-				"topology.kubernetes.io/region": "non-existent-region",  // Use a region that doesn't exist
+				"node.kubernetes.io/instance-type": "m5.large",            // This will trigger AWS provider detection
+				"topology.kubernetes.io/region":    "non-existent-region", // Use a region that doesn't exist
 			},
 		},
 	}
-	
+
 	zone, ok := defaultMapper.GetElectricityMapsZoneForNode(unknownNode)
 	if !ok {
 		t.Error("Expected ok=true when default zone is available")
@@ -332,12 +332,12 @@ func TestGetTimeZone(t *testing.T) {
 		config: &Config{
 			DefaultTimeZone: "", // Explicitly empty to not use defaults
 		},
-		awsRegionMap:   make(map[string]RegionInfo),
-		gcpRegionMap:   make(map[string]RegionInfo),
-		azureRegionMap: make(map[string]RegionInfo),
+		awsRegionMap:           make(map[string]RegionInfo),
+		gcpRegionMap:           make(map[string]RegionInfo),
+		azureRegionMap:         make(map[string]RegionInfo),
 		electricityMapsZoneMap: make(map[string]map[string]string),
 	}
-	
+
 	// Add known test values
 	mapperWithoutDefaults.awsRegionMap["us-east-1"] = RegionInfo{
 		TimeZone: "America/New_York",
@@ -350,10 +350,10 @@ func TestGetTimeZone(t *testing.T) {
 	}
 
 	testCases := []struct {
-		provider     string
-		region       string
-		expectOk     bool
-		expectTZ     string
+		provider string
+		region   string
+		expectOk bool
+		expectTZ string
 	}{
 		{"aws", "us-east-1", true, "America/New_York"},
 		{"gcp", "us-west1", true, "America/Los_Angeles"},
@@ -437,10 +437,10 @@ func TestGetISO(t *testing.T) {
 	usWest1ISO, _ := mapper.GetISO("gcp", "us-west1")
 
 	testCases := []struct {
-		provider    string
-		region      string
-		expectOk    bool
-		expectISO   string
+		provider  string
+		region    string
+		expectOk  bool
+		expectISO string
 	}{
 		{"aws", "us-east-1", true, usEast1ISO},
 		{"gcp", "us-west1", true, usWest1ISO},
@@ -506,12 +506,12 @@ func TestGetPUE(t *testing.T) {
 		config: &Config{
 			DefaultPUE: 0, // Explicitly zero to not use defaults
 		},
-		awsRegionMap:   make(map[string]RegionInfo),
-		gcpRegionMap:   make(map[string]RegionInfo),
-		azureRegionMap: make(map[string]RegionInfo),
+		awsRegionMap:           make(map[string]RegionInfo),
+		gcpRegionMap:           make(map[string]RegionInfo),
+		azureRegionMap:         make(map[string]RegionInfo),
 		electricityMapsZoneMap: make(map[string]map[string]string),
 	}
-	
+
 	// Add known test values
 	mapperWithoutDefaults.awsRegionMap["us-east-1"] = RegionInfo{
 		DefaultPUE: 1.2,
@@ -521,10 +521,10 @@ func TestGetPUE(t *testing.T) {
 	}
 
 	testCases := []struct {
-		provider   string
-		region     string
-		expectOk   bool
-		expectPUE  float64
+		provider  string
+		region    string
+		expectOk  bool
+		expectPUE float64
 	}{
 		{"aws", "us-east-1", true, 1.2},
 		{"gcp", "us-west1", true, 1.09},
@@ -641,11 +641,11 @@ func TestDetectCloudProvider(t *testing.T) {
 
 func TestDetectCloudProviderAndRegion(t *testing.T) {
 	testCases := []struct {
-		name            string
-		node            *v1.Node
-		expectProvider  string
-		expectRegion    string
-		expectOk        bool
+		name           string
+		node           *v1.Node
+		expectProvider string
+		expectRegion   string
+		expectOk       bool
 	}{
 		{
 			name: "AWS node with providerID",
@@ -663,7 +663,7 @@ func TestDetectCloudProviderAndRegion(t *testing.T) {
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"topology.kubernetes.io/region": "us-west-2",
+						"topology.kubernetes.io/region":    "us-west-2",
 						"node.kubernetes.io/instance-type": "m5.large",
 					},
 				},
@@ -688,7 +688,7 @@ func TestDetectCloudProviderAndRegion(t *testing.T) {
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"topology.kubernetes.io/zone": "us-west1-a",
+						"topology.kubernetes.io/zone":   "us-west1-a",
 						"cloud.google.com/gke-nodepool": "pool-1",
 					},
 				},
@@ -724,26 +724,26 @@ func TestDetectCloudProviderAndRegion(t *testing.T) {
 			expectOk:       false,
 		},
 		{
-			name:            "Nil node",
-			node:            nil,
-			expectProvider:  "",
-			expectRegion:    "",
-			expectOk:        false,
+			name:           "Nil node",
+			node:           nil,
+			expectProvider: "",
+			expectRegion:   "",
+			expectOk:       false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			provider, region, ok := DetectCloudProviderAndRegion(tc.node)
-			
+
 			if provider != tc.expectProvider {
 				t.Errorf("Expected provider %q, got %q", tc.expectProvider, provider)
 			}
-			
+
 			if region != tc.expectRegion {
 				t.Errorf("Expected region %q, got %q", tc.expectRegion, region)
 			}
-			
+
 			if ok != tc.expectOk {
 				t.Errorf("Expected ok=%v, got %v", tc.expectOk, ok)
 			}

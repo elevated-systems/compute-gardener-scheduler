@@ -31,11 +31,11 @@ func New(config config.PriceConfig) *Scheduler {
 // schedulePeriod represents the result of checking a schedule against a timestamp
 type schedulePeriod struct {
 	schedule    *config.Schedule // The schedule that matched
-	localTime   time.Time       // The time in the schedule's timezone
-	isPeakTime  bool            // Whether the time is within peak hours
-	tzName      string          // Name of the timezone used
-	weekday     string          // Day of week as string
-	currentTime string          // Current time formatted as HH:MM
+	localTime   time.Time        // The time in the schedule's timezone
+	isPeakTime  bool             // Whether the time is within peak hours
+	tzName      string           // Name of the timezone used
+	weekday     string           // Day of week as string
+	currentTime string           // Current time formatted as HH:MM
 }
 
 // findActivePeriod checks if the given time falls within any schedule's peak period
@@ -43,7 +43,7 @@ type schedulePeriod struct {
 func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	
+
 	klog.V(2).InfoS("Checking if current time is within any peak window",
 		"utcTime", now.Format("2006-01-02 15:04:05 MST"),
 		"numSchedules", len(s.config.Schedules))
@@ -52,14 +52,14 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 		// Convert UTC time to schedule's timezone if specified, otherwise use UTC
 		localTime := now
 		var tzName string = "UTC"
-		
+
 		if schedule.Timezone != "" {
 			if loc, err := time.LoadLocation(schedule.Timezone); err == nil {
 				localTime = now.In(loc)
 				tzName = schedule.Timezone
 				zoneName, offset := localTime.Zone()
 				isDST := localTime.IsDST()
-				klog.V(2).InfoS("Using schedule timezone", 
+				klog.V(2).InfoS("Using schedule timezone",
 					"scheduleName", schedule.Name,
 					"timezone", schedule.Timezone,
 					"utcTime", now.Format("2006-01-02 15:04:05 MST"),
@@ -68,15 +68,15 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 					"offsetHours", offset/3600,
 					"isDST", isDST)
 			} else {
-				klog.ErrorS(err, "Failed to load timezone, using UTC", 
+				klog.ErrorS(err, "Failed to load timezone, using UTC",
 					"scheduleName", schedule.Name,
 					"timezone", schedule.Timezone)
 			}
 		}
-		
+
 		weekday := fmt.Sprintf("%d", localTime.Weekday())
 		currentTime := localTime.Format("15:04")
-		
+
 		// Check if current day is in schedule
 		isDayMatched := containsDay(schedule.DayOfWeek, weekday)
 		klog.V(2).InfoS("Checking schedule",
@@ -87,7 +87,7 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 			"endTime", schedule.EndTime,
 			"timezone", tzName,
 			"isDayMatched", isDayMatched)
-			
+
 		if !isDayMatched {
 			continue
 		}
@@ -103,18 +103,18 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 			"endTime", schedule.EndTime,
 			"timezone", tzName,
 			"isInRange", isTimeInRange)
-			
+
 		if isTimeInRange {
-			klog.V(2).InfoS("Current time is within peak period", 
+			klog.V(2).InfoS("Current time is within peak period",
 				"scheduleName", schedule.Name,
 				"weekday", weekday,
 				"currentTime", currentTime,
 				"timezone", tzName,
-				"schedule", fmt.Sprintf("%s from %s to %s", 
-					describeDays(schedule.DayOfWeek), 
-					schedule.StartTime, 
+				"schedule", fmt.Sprintf("%s from %s to %s",
+					describeDays(schedule.DayOfWeek),
+					schedule.StartTime,
 					schedule.EndTime))
-			
+
 			// Return the active period details
 			return &schedulePeriod{
 				schedule:    &schedule,
@@ -127,9 +127,9 @@ func (s *Scheduler) findActivePeriod(now time.Time) *schedulePeriod {
 		}
 	}
 
-	klog.V(2).InfoS("Current time is NOT within any peak window", 
+	klog.V(2).InfoS("Current time is NOT within any peak window",
 		"utcTime", now.Format("2006-01-02 15:04:05 MST"))
-	
+
 	return nil // Not in any peak time window
 }
 
@@ -157,23 +157,23 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 	// Default nominal values for metrics purposes
 	peakRate := 1.0
 	offPeakRate := 0.5
-	
+
 	// Check if we're in a peak period right now
 	period := s.findActivePeriod(now)
-	
+
 	if period != nil && period.isPeakTime {
 		// We found a matching peak period
 		schedule := period.schedule
-		
+
 		// If this schedule has rates defined, use those
 		if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
 			peakRate = schedule.PeakRate
 			offPeakRate = schedule.OffPeakRate
 		}
-		
+
 		return peakRate
 	}
-	
+
 	// If we reach here, we're not in peak time, so return off-peak rate
 	// First try to find a schedule that defines off-peak rate
 	for _, schedule := range s.config.Schedules {
@@ -181,7 +181,7 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 			return schedule.OffPeakRate
 		}
 	}
-	
+
 	// Otherwise return default off-peak value
 	return offPeakRate
 }
@@ -190,23 +190,23 @@ func (s *Scheduler) GetCurrentRate(now time.Time) float64 {
 func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework.Status {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	
+
 	// Default behavior: Don't schedule during peak times unless annotated to allow it
 	allowPeakScheduling := false
-	
+
 	// Check if pod has annotation to explicitly allow peak scheduling
 	if val, ok := pod.Annotations[common.AnnotationPriceThreshold]; ok {
 		klog.V(2).InfoS("Found price threshold annotation",
 			"pod", pod.Name,
 			"namespace", pod.Namespace,
 			"value", val)
-			
+
 		// If the pod has a threshold annotation, it's essentially setting a custom allowance value
 		// A high threshold effectively allows scheduling during peak times
 		if t, err := strconv.ParseFloat(val, 64); err == nil {
 			// Find applicable schedule to check rates
 			var peakRate float64 = 1.0 // Default nominal value
-			
+
 			// Try to find an appropriate peak rate from schedules
 			for _, schedule := range s.config.Schedules {
 				if schedule.PeakRate > 0 {
@@ -214,9 +214,9 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 					break
 				}
 			}
-			
+
 			allowPeakScheduling = t >= peakRate
-			
+
 			klog.V(2).InfoS("Evaluated price threshold annotation",
 				"pod", pod.Name,
 				"namespace", pod.Namespace,
@@ -231,20 +231,20 @@ func (s *Scheduler) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framework
 			return framework.NewStatus(framework.Error, "invalid electricity price threshold annotation")
 		}
 	}
-	
+
 	// Find active peak period, if any
 	period := s.findActivePeriod(now)
-	
+
 	// If we're in peak time and the pod isn't allowed to schedule during peak, block scheduling
 	if period != nil && period.isPeakTime && !allowPeakScheduling {
 		schedule := period.schedule
 		days := describeDays(schedule.DayOfWeek)
-		
+
 		// Create a human-readable schedule description
-		scheduleInfo := fmt.Sprintf("%s from %s to %s (%s, schedule: %s)", 
+		scheduleInfo := fmt.Sprintf("%s from %s to %s (%s, schedule: %s)",
 			days, schedule.StartTime, schedule.EndTime, period.tzName, schedule.Name)
-		
-		// Record this in metrics if rates are available 
+
+		// Record this in metrics if rates are available
 		if schedule.PeakRate > 0 && schedule.OffPeakRate > 0 {
 			savingsEstimate := schedule.PeakRate - schedule.OffPeakRate
 			klog.V(2).InfoS("Estimated savings for delaying pod",
@@ -278,17 +278,17 @@ func containsDay(days string, day string) bool {
 			if len(rangeParts) != 2 {
 				continue
 			}
-			
+
 			start, err := strconv.Atoi(rangeParts[0])
 			if err != nil {
 				continue
 			}
-			
+
 			end, err := strconv.Atoi(rangeParts[1])
 			if err != nil {
 				continue
 			}
-			
+
 			if dayNum >= start && dayNum <= end {
 				return true
 			}
@@ -296,7 +296,7 @@ func containsDay(days string, day string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -306,7 +306,7 @@ func describeDays(daySpec string) string {
 	if len(parts) == 0 {
 		return "unknown days"
 	}
-	
+
 	// Handle common patterns
 	if daySpec == "1-5" {
 		return "weekdays"
@@ -315,18 +315,18 @@ func describeDays(daySpec string) string {
 	} else if daySpec == "0-6" {
 		return "all days"
 	}
-	
+
 	// Map day numbers to names
 	dayNames := map[string]string{
 		"0": "Sunday",
 		"1": "Monday",
-		"2": "Tuesday", 
+		"2": "Tuesday",
 		"3": "Wednesday",
 		"4": "Thursday",
 		"5": "Friday",
 		"6": "Saturday",
 	}
-	
+
 	var result []string
 	for _, part := range parts {
 		if strings.Contains(part, "-") {
@@ -352,6 +352,6 @@ func describeDays(daySpec string) string {
 			}
 		}
 	}
-	
+
 	return strings.Join(result, ", ")
 }

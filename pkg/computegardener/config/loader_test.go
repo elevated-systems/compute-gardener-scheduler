@@ -111,7 +111,7 @@ schedules: [not-valid-yaml
 	os.Setenv("PRICING_ENABLED", "true")
 	os.Setenv("MAX_SCHEDULING_DELAY", "2h")
 	os.Setenv("METRICS_SAMPLING_INTERVAL", "15s")
-	
+
 	defer func() {
 		os.Unsetenv("CARBON_ENABLED")
 		os.Unsetenv("CARBON_INTENSITY_THRESHOLD")
@@ -120,30 +120,30 @@ schedules: [not-valid-yaml
 		os.Unsetenv("MAX_SCHEDULING_DELAY")
 		os.Unsetenv("METRICS_SAMPLING_INTERVAL")
 	}()
-	
+
 	// Test loading config from environment
 	cfg, err := LoadFromEnv()
 	if err != nil {
 		t.Fatalf("LoadFromEnv() error = %v", err)
 	}
-	
+
 	// Verify environment variables were properly loaded
 	if cfg.Carbon.Enabled {
 		t.Errorf("Expected Carbon.Enabled to be false, got true")
 	}
-	
+
 	if cfg.Carbon.IntensityThreshold != 250 {
 		t.Errorf("Expected Carbon.IntensityThreshold to be 250, got %v", cfg.Carbon.IntensityThreshold)
 	}
-	
+
 	if !cfg.Pricing.Enabled {
 		t.Errorf("Expected Pricing.Enabled to be true")
 	}
-	
+
 	if cfg.Scheduling.MaxSchedulingDelay != 2*time.Hour {
 		t.Errorf("Expected MaxSchedulingDelay to be 2h, got %v", cfg.Scheduling.MaxSchedulingDelay)
 	}
-	
+
 	if cfg.Metrics.SamplingInterval != "15s" {
 		t.Errorf("Expected SamplingInterval to be 15s, got %v", cfg.Metrics.SamplingInterval)
 	}

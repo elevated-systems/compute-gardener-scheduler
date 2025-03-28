@@ -9,9 +9,9 @@ import (
 
 func TestDetectAWSRegion(t *testing.T) {
 	testCases := []struct {
-		name       string
-		node       *v1.Node
-		expectOk   bool
+		name         string
+		node         *v1.Node
+		expectOk     bool
 		expectRegion string
 	}{
 		{
@@ -21,7 +21,7 @@ func TestDetectAWSRegion(t *testing.T) {
 					ProviderID: "aws://us-east-1/i-12345",
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "us-east-1",
 		},
 		{
@@ -33,7 +33,7 @@ func TestDetectAWSRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "us-west-2",
 		},
 		{
@@ -45,7 +45,7 @@ func TestDetectAWSRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "us-east-1",
 		},
 		{
@@ -55,7 +55,7 @@ func TestDetectAWSRegion(t *testing.T) {
 					ProviderID: "aws://invalid-format",
 				},
 			},
-			expectOk: false,
+			expectOk:     false,
 			expectRegion: "",
 		},
 		{
@@ -67,13 +67,13 @@ func TestDetectAWSRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk: false,
+			expectOk:     false,
 			expectRegion: "",
 		},
 		{
-			name: "no AWS metadata",
-			node: &v1.Node{},
-			expectOk: false,
+			name:         "no AWS metadata",
+			node:         &v1.Node{},
+			expectOk:     false,
 			expectRegion: "",
 		},
 	}
@@ -81,11 +81,11 @@ func TestDetectAWSRegion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			region, ok := detectAWSRegion(tc.node)
-			
+
 			if ok != tc.expectOk {
 				t.Errorf("Expected ok=%v, got %v", tc.expectOk, ok)
 			}
-			
+
 			if region != tc.expectRegion {
 				t.Errorf("Expected region %q, got %q", tc.expectRegion, region)
 			}
@@ -95,9 +95,9 @@ func TestDetectAWSRegion(t *testing.T) {
 
 func TestDetectGCPRegion(t *testing.T) {
 	testCases := []struct {
-		name       string
-		node       *v1.Node
-		expectOk   bool
+		name         string
+		node         *v1.Node
+		expectOk     bool
 		expectRegion string
 	}{
 		{
@@ -107,7 +107,7 @@ func TestDetectGCPRegion(t *testing.T) {
 					ProviderID: "gce://project-id/us-central1-a/vm-1",
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "us-central1",
 		},
 		{
@@ -119,7 +119,7 @@ func TestDetectGCPRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "us-west1",
 		},
 		{
@@ -129,7 +129,7 @@ func TestDetectGCPRegion(t *testing.T) {
 					ProviderID: "gce://invalid-format",
 				},
 			},
-			expectOk: false,
+			expectOk:     false,
 			expectRegion: "",
 		},
 		{
@@ -141,13 +141,13 @@ func TestDetectGCPRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "uswest1", // Returns the full zone when can't extract region
 		},
 		{
-			name: "no GCP metadata",
-			node: &v1.Node{},
-			expectOk: false,
+			name:         "no GCP metadata",
+			node:         &v1.Node{},
+			expectOk:     false,
 			expectRegion: "",
 		},
 	}
@@ -155,11 +155,11 @@ func TestDetectGCPRegion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			region, ok := detectGCPRegion(tc.node)
-			
+
 			if ok != tc.expectOk {
 				t.Errorf("Expected ok=%v, got %v", tc.expectOk, ok)
 			}
-			
+
 			if region != tc.expectRegion {
 				t.Errorf("Expected region %q, got %q", tc.expectRegion, region)
 			}
@@ -169,9 +169,9 @@ func TestDetectGCPRegion(t *testing.T) {
 
 func TestDetectAzureRegion(t *testing.T) {
 	testCases := []struct {
-		name       string
-		node       *v1.Node
-		expectOk   bool
+		name         string
+		node         *v1.Node
+		expectOk     bool
 		expectRegion string
 	}{
 		{
@@ -183,7 +183,7 @@ func TestDetectAzureRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "eastus",
 		},
 		{
@@ -195,7 +195,7 @@ func TestDetectAzureRegion(t *testing.T) {
 					},
 				},
 			},
-			expectOk:   true,
+			expectOk:     true,
 			expectRegion: "westus2",
 		},
 		{
@@ -205,13 +205,13 @@ func TestDetectAzureRegion(t *testing.T) {
 					ProviderID: "azure:///subscriptions/sub-id/resourceGroups/resource-group/providers/Microsoft.Compute/virtualMachines/node-name",
 				},
 			},
-			expectOk: false,
+			expectOk:     false,
 			expectRegion: "",
 		},
 		{
-			name: "no Azure metadata",
-			node: &v1.Node{},
-			expectOk: false,
+			name:         "no Azure metadata",
+			node:         &v1.Node{},
+			expectOk:     false,
 			expectRegion: "",
 		},
 	}
@@ -219,11 +219,11 @@ func TestDetectAzureRegion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			region, ok := detectAzureRegion(tc.node)
-			
+
 			if ok != tc.expectOk {
 				t.Errorf("Expected ok=%v, got %v", tc.expectOk, ok)
 			}
-			
+
 			if region != tc.expectRegion {
 				t.Errorf("Expected region %q, got %q", tc.expectRegion, region)
 			}

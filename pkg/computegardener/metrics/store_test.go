@@ -278,7 +278,7 @@ func TestInMemoryStore_CleanupWorker(t *testing.T) {
 
 func TestCalculateTotalEnergy(t *testing.T) {
 	now := time.Now()
-	
+
 	testCases := []struct {
 		name           string
 		records        []PodMetricsRecord
@@ -318,10 +318,10 @@ func TestCalculateTotalEnergy(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			energy := CalculateTotalEnergy(tc.records)
-			
+
 			// Use small epsilon for floating point comparison
 			epsilon := 0.0001
-			if abs(energy - tc.expectedEnergy) > epsilon {
+			if abs(energy-tc.expectedEnergy) > epsilon {
 				t.Errorf("Expected energy: %f kWh, got: %f kWh", tc.expectedEnergy, energy)
 			}
 		})
@@ -330,16 +330,16 @@ func TestCalculateTotalEnergy(t *testing.T) {
 
 func TestCalculateTotalCarbonEmissions(t *testing.T) {
 	now := time.Now()
-	
+
 	testCases := []struct {
-		name                string
-		records             []PodMetricsRecord
-		expectedEmissions   float64
+		name              string
+		records           []PodMetricsRecord
+		expectedEmissions float64
 	}{
 		{
-			name:                "EmptyRecords",
-			records:             []PodMetricsRecord{},
-			expectedEmissions:   0,
+			name:              "EmptyRecords",
+			records:           []PodMetricsRecord{},
+			expectedEmissions: 0,
 		},
 		{
 			name: "SingleRecord",
@@ -373,10 +373,10 @@ func TestCalculateTotalCarbonEmissions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			emissions := CalculateTotalCarbonEmissions(tc.records)
-			
+
 			// Use small epsilon for floating point comparison
 			epsilon := 0.0001
-			if abs(emissions - tc.expectedEmissions) > epsilon {
+			if abs(emissions-tc.expectedEmissions) > epsilon {
 				t.Errorf("Expected emissions: %f gCO2eq, got: %f gCO2eq", tc.expectedEmissions, emissions)
 			}
 		})

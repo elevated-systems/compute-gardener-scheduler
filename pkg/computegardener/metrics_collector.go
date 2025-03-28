@@ -78,7 +78,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	if cs.config.Pricing.Enabled && cs.priceImpl != nil {
 		now := cs.clock.Now()
 		currentRate := cs.priceImpl.GetCurrentRate(now)
-		
+
 		// Determine if we're in peak or off-peak period
 		isPeak := cs.priceImpl.IsPeakTime(now)
 		period := "off-peak"
@@ -268,7 +268,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 
 	// Get all unique pod UIDs from our metrics store that aren't marked as completed
 	trackedPods := make(map[string]bool)
-	
+
 	// Find active pods in our metrics cache
 	cs.metricsStore.ForEach(func(podUID string, history *metrics.PodMetricsHistory) {
 		// Skip pods already marked as completed - we only care about active ones
@@ -276,20 +276,20 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 			trackedPods[podUID] = true
 		}
 	})
-	
+
 	completedCount := 0
 	checkedCount := 0
-	
+
 	// Check each tracked pod that's not yet marked as completed
 	for podUID := range trackedPods {
 		checkedCount++
-		
+
 		// Get pod metrics history
 		history, found := cs.metricsStore.GetHistory(podUID)
 		if !found || history.Completed {
 			continue // Skip if not found or already completed
 		}
-		
+
 		// Check if the pod is in our active pods list
 		if pod, exists := activePods[podUID]; exists {
 			// Even if the pod exists in the active pods list, check if it's in a terminal state
@@ -298,7 +298,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 					"pod", klog.KObj(pod),
 					"podUID", podUID,
 					"phase", pod.Status.Phase)
-					
+
 				// Process this pod's metrics as if we caught the completion event normally
 				cs.processPodCompletionMetrics(pod, podUID, pod.Name, pod.Namespace, pod.Spec.NodeName)
 				completedCount++
@@ -307,7 +307,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 		} else {
 			// The pod isn't in our active pods list at all - either it was deleted or
 			// it completed and our metrics server didn't capture it in the activePods list
-			
+
 			// Try to fetch the pod directly
 			pod, err := cs.handle.ClientSet().CoreV1().Pods(history.Namespace).Get(ctx, history.PodName, metav1.GetOptions{})
 			if err != nil {
@@ -317,7 +317,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 					"podName", history.PodName,
 					"namespace", history.Namespace,
 					"error", err)
-					
+
 				// Do final calculations and zero out the metrics
 				// We'll create a skeleton pod with the minimum information needed
 				skeletonPod := &v1.Pod{
@@ -330,7 +330,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 						NodeName: history.NodeName,
 					},
 				}
-				
+
 				// Process this pod's completion metrics
 				cs.processPodCompletionMetrics(skeletonPod, podUID, history.PodName, history.Namespace, history.NodeName)
 				completedCount++
@@ -340,7 +340,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 					"pod", klog.KObj(pod),
 					"podUID", podUID,
 					"phase", pod.Status.Phase)
-					
+
 				// Process this pod's metrics as if we caught the completion event normally
 				cs.processPodCompletionMetrics(pod, podUID, pod.Name, pod.Namespace, pod.Spec.NodeName)
 				completedCount++
@@ -354,7 +354,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 			}
 		}
 	}
-	
+
 	if completedCount > 0 {
 		klog.V(1).InfoS("Pod heartbeat check completed",
 			"checkedPods", checkedCount,
@@ -369,7 +369,7 @@ func isTerminalState(pod *v1.Pod) bool {
 	if pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed {
 		return true
 	}
-	
+
 	// Check if all containers are terminated
 	if len(pod.Status.ContainerStatuses) > 0 {
 		allTerminated := true
@@ -383,21 +383,21 @@ func isTerminalState(pod *v1.Pod) bool {
 			return true
 		}
 	}
-	
+
 	// Check completion timestamp - if present, the pod has completed regardless of phase
 	if pod.DeletionTimestamp != nil {
 		return true
 	}
-	
+
 	// Additional Kubernetes-specific conditions that indicate pod termination
 	for _, condition := range pod.Status.Conditions {
-		if condition.Type == v1.PodReady && 
-		   condition.Status == v1.ConditionFalse && 
-		   (condition.Reason == "PodCompleted" || condition.Reason == "PodFailed") {
+		if condition.Type == v1.PodReady &&
+			condition.Status == v1.ConditionFalse &&
+			(condition.Reason == "PodCompleted" || condition.Reason == "PodFailed") {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

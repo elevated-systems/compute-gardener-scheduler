@@ -9,12 +9,12 @@ import (
 
 // InMemoryStore implements PodMetricsStorage interface with in-memory storage
 type InMemoryStore struct {
-	data            map[string]*PodMetricsHistory // key: PodUID
-	mutex           sync.RWMutex
-	cleanupPeriod   time.Duration
-	retentionTime   time.Duration  // How long to keep completed pod metrics
-	maxRecordsPerPod int           // Maximum records per pod to prevent unbounded memory growth
-	stopCh          chan struct{}
+	data                 map[string]*PodMetricsHistory // key: PodUID
+	mutex                sync.RWMutex
+	cleanupPeriod        time.Duration
+	retentionTime        time.Duration // How long to keep completed pod metrics
+	maxRecordsPerPod     int           // Maximum records per pod to prevent unbounded memory growth
+	stopCh               chan struct{}
 	downsamplingStrategy DownsamplingStrategy
 }
 
@@ -26,11 +26,11 @@ func NewInMemoryStore(
 	downsamplingStrategy DownsamplingStrategy,
 ) *InMemoryStore {
 	store := &InMemoryStore{
-		data:            make(map[string]*PodMetricsHistory),
-		cleanupPeriod:   cleanupPeriod,
-		retentionTime:   retentionTime,
-		maxRecordsPerPod: maxRecordsPerPod,
-		stopCh:          make(chan struct{}),
+		data:                 make(map[string]*PodMetricsHistory),
+		cleanupPeriod:        cleanupPeriod,
+		retentionTime:        retentionTime,
+		maxRecordsPerPod:     maxRecordsPerPod,
+		stopCh:               make(chan struct{}),
 		downsamplingStrategy: downsamplingStrategy,
 	}
 
@@ -44,7 +44,7 @@ func NewInMemoryStore(
 func (s *InMemoryStore) AddRecord(podUID, podName, namespace, nodeName string, record PodMetricsRecord) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	
+
 	history, exists := s.data[podUID]
 	if !exists {
 		history = &PodMetricsHistory{
@@ -58,16 +58,16 @@ func (s *InMemoryStore) AddRecord(podUID, podName, namespace, nodeName string, r
 		}
 		s.data[podUID] = history
 	}
-	
+
 	// If pod is marked as completed, don't add more records
 	if history.Completed {
 		return
 	}
-	
+
 	// Add the new record
 	history.Records = append(history.Records, record)
 	history.LastSeen = record.Timestamp
-	
+
 	// If we've exceeded max records, use downsampling
 	if len(history.Records) > history.MaxRecords {
 		if s.downsamplingStrategy != nil {
@@ -85,11 +85,11 @@ func (s *InMemoryStore) AddRecord(podUID, podName, namespace, nodeName string, r
 func (s *InMemoryStore) MarkCompleted(podUID string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	
+
 	if history, exists := s.data[podUID]; exists {
 		history.Completed = true
-		klog.V(2).InfoS("Marked pod metrics as completed", 
-			"podUID", podUID, 
+		klog.V(2).InfoS("Marked pod metrics as completed",
+			"podUID", podUID,
 			"podName", history.PodName,
 			"recordCount", len(history.Records))
 	}
@@ -99,7 +99,7 @@ func (s *InMemoryStore) MarkCompleted(podUID string) {
 func (s *InMemoryStore) GetHistory(podUID string) (*PodMetricsHistory, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	
+
 	history, exists := s.data[podUID]
 	return history, exists
 }
@@ -109,14 +109,14 @@ func (s *InMemoryStore) Cleanup() {
 	now := time.Now()
 	removedCount := 0
 	podsToRemove := []string{}
-	
+
 	// Collect pods that need to be removed (using read lock via ForEach)
 	s.ForEach(func(podUID string, history *PodMetricsHistory) {
 		if history.Completed && now.Sub(history.LastSeen) > s.retentionTime {
 			podsToRemove = append(podsToRemove, podUID)
 		}
 	})
-	
+
 	// Acquire write lock for actual removal from the map
 	if len(podsToRemove) > 0 {
 		s.mutex.Lock()
@@ -125,7 +125,7 @@ func (s *InMemoryStore) Cleanup() {
 			removedCount++
 		}
 		s.mutex.Unlock()
-		
+
 		klog.V(2).InfoS("Removed expired pod metrics", "count", removedCount)
 	}
 }
@@ -134,7 +134,7 @@ func (s *InMemoryStore) Cleanup() {
 func (s *InMemoryStore) cleanupWorker() {
 	ticker := time.NewTicker(s.cleanupPeriod)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-s.stopCh:
@@ -161,7 +161,7 @@ func (s *InMemoryStore) Size() int {
 func (s *InMemoryStore) ForEach(fn func(string, *PodMetricsHistory)) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	
+
 	for podUID, history := range s.data {
 		fn(podUID, history)
 	}

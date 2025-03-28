@@ -30,7 +30,7 @@ func (d *LTTBDownsampling) Downsample(records []PodMetricsRecord, targetCount in
 
 	// The result will contain the original first and last points plus targetCount-2 sampled points
 	result := make([]PodMetricsRecord, targetCount)
-	result[0] = records[0]                    // First point
+	result[0] = records[0]                          // First point
 	result[targetCount-1] = records[len(records)-1] // Last point
 
 	// Bucket size based on the original data size
@@ -40,7 +40,7 @@ func (d *LTTBDownsampling) Downsample(records []PodMetricsRecord, targetCount in
 	lastSelectedIndex := 0
 	for i := 1; i < targetCount-1; i++ {
 		// Determine next bucket range
-		nextBucketStart := int(math.Floor(float64(i) * bucketSize)) + 1
+		nextBucketStart := int(math.Floor(float64(i)*bucketSize)) + 1
 		nextBucketEnd := int(math.Min(
 			math.Floor(float64(i+1)*bucketSize)+1,
 			float64(len(records)),
@@ -115,11 +115,11 @@ func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, tar
 
 	// Sample older points at larger intervals
 	result := make([]PodMetricsRecord, 0, targetCount)
-	
+
 	// Always include the first point
 	result = append(result, records[0])
 	remainingPoints--
-	
+
 	// Sample the middle portion evenly
 	if remainingPoints > 0 && recentStart > 1 {
 		samplingInterval := float64(recentStart-1) / float64(remainingPoints)
@@ -130,12 +130,12 @@ func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, tar
 			}
 		}
 	}
-	
+
 	// Add all the recent points
 	for i := recentStart; i < totalLen; i++ {
 		result = append(result, records[i])
 	}
-	
+
 	return result
 }
 
@@ -151,7 +151,7 @@ func (d *MinMaxDownsampling) Downsample(records []PodMetricsRecord, targetCount 
 	// We always want to keep first and last points
 	result := make([]PodMetricsRecord, 0, targetCount)
 	result = append(result, records[0])
-	
+
 	// If targetCount is very small, we might just keep first and last
 	if targetCount <= 2 {
 		if len(records) > 1 {
@@ -159,23 +159,23 @@ func (d *MinMaxDownsampling) Downsample(records []PodMetricsRecord, targetCount 
 		}
 		return result
 	}
-	
+
 	// Split the remaining points into buckets
 	bucketSize := float64(len(records)-2) / float64(targetCount-2)
-	
+
 	// For each bucket, keep the min and max points
 	for i := 0; i < targetCount-2; i++ {
 		bucketStart := int(math.Floor(float64(i)*bucketSize)) + 1
 		bucketEnd := int(math.Min(math.Floor(float64(i+1)*bucketSize), float64(len(records)-1)))
-		
+
 		if bucketStart >= len(records) || bucketStart >= bucketEnd {
 			continue
 		}
-		
+
 		// Find min and max in this bucket
 		minIdx, maxIdx := bucketStart, bucketStart
 		minVal, maxVal := records[bucketStart].CPU, records[bucketStart].CPU
-		
+
 		for j := bucketStart + 1; j <= bucketEnd; j++ {
 			if records[j].CPU < minVal {
 				minVal = records[j].CPU
@@ -186,12 +186,12 @@ func (d *MinMaxDownsampling) Downsample(records []PodMetricsRecord, targetCount 
 				maxIdx = j
 			}
 		}
-		
+
 		// Add min and max points, but avoid duplicates
 		// Sort by index for consistent ordering
 		indices := []int{minIdx, maxIdx}
 		sort.Ints(indices)
-		
+
 		for _, idx := range indices {
 			// Check if we have room for both min and max
 			if len(result) < targetCount-1 {
@@ -199,12 +199,12 @@ func (d *MinMaxDownsampling) Downsample(records []PodMetricsRecord, targetCount 
 			}
 		}
 	}
-	
+
 	// Always add the last point
 	if len(records) > 1 && len(result) < targetCount {
 		result = append(result, records[len(records)-1])
 	}
-	
+
 	return result
 }
 

@@ -63,16 +63,16 @@ func TestNewClient(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		options       []ClientOption
+		name             string
+		options          []ClientOption
 		expectHTTPClient bool
-		expectCache   bool
+		expectCache      bool
 	}{
 		{
-			name:          "default client",
-			options:       []ClientOption{},
+			name:             "default client",
+			options:          []ClientOption{},
 			expectHTTPClient: true,
-			expectCache:   false,
+			expectCache:      false,
 		},
 		{
 			name: "with custom HTTP client",
@@ -80,7 +80,7 @@ func TestNewClient(t *testing.T) {
 				WithHTTPClient(&MockHTTPClient{}),
 			},
 			expectHTTPClient: true,
-			expectCache:   false,
+			expectCache:      false,
 		},
 		{
 			name: "with custom cache",
@@ -88,7 +88,7 @@ func TestNewClient(t *testing.T) {
 				WithCache(&MockCache{}),
 			},
 			expectHTTPClient: true,
-			expectCache:   true,
+			expectCache:      true,
 		},
 		{
 			name: "with both custom HTTP client and cache",
@@ -97,7 +97,7 @@ func TestNewClient(t *testing.T) {
 				WithCache(&MockCache{}),
 			},
 			expectHTTPClient: true,
-			expectCache:   true,
+			expectCache:      true,
 		},
 	}
 
@@ -200,7 +200,7 @@ func TestGetCarbonIntensity_CacheHit(t *testing.T) {
 		},
 	}
 
-	client := NewClient(apiCfg, cacheCfg, 
+	client := NewClient(apiCfg, cacheCfg,
 		WithHTTPClient(mockHTTP),
 		WithCache(mockCache),
 	)
@@ -266,7 +266,7 @@ func TestGetCarbonIntensity_CacheMiss(t *testing.T) {
 		},
 	}
 
-	client := NewClient(apiCfg, cacheCfg, 
+	client := NewClient(apiCfg, cacheCfg,
 		WithHTTPClient(mockHTTP),
 		WithCache(mockCache),
 	)
@@ -299,7 +299,7 @@ func TestGetCarbonIntensity_HTTPError(t *testing.T) {
 
 	cacheCfg := config.APICacheConfig{
 		Timeout:     10 * time.Second,
-		MaxRetries:  1, // Set to 1 to speed up the test
+		MaxRetries:  1,                // Set to 1 to speed up the test
 		RetryDelay:  time.Microsecond, // Very short delay to speed up test
 		RateLimit:   10,
 		CacheTTL:    30 * time.Minute,
@@ -319,7 +319,7 @@ func TestGetCarbonIntensity_HTTPError(t *testing.T) {
 		},
 	}
 
-	client := NewClient(apiCfg, cacheCfg, 
+	client := NewClient(apiCfg, cacheCfg,
 		WithHTTPClient(mockHTTP),
 		WithCache(mockCache),
 	)
@@ -369,7 +369,7 @@ func TestGetCarbonIntensity_InvalidResponse(t *testing.T) {
 		},
 	}
 
-	client := NewClient(apiCfg, cacheCfg, 
+	client := NewClient(apiCfg, cacheCfg,
 		WithHTTPClient(mockHTTP),
 		WithCache(mockCache),
 	)
@@ -444,7 +444,7 @@ func TestGetCarbonIntensity_HTTPStatusCodes(t *testing.T) {
 				},
 			}
 
-			client := NewClient(apiCfg, cacheCfg, 
+			client := NewClient(apiCfg, cacheCfg,
 				WithHTTPClient(mockHTTP),
 				WithCache(mockCache),
 			)
@@ -530,7 +530,7 @@ func TestClose(t *testing.T) {
 	}
 
 	client := NewClient(apiCfg, cacheCfg)
-	
+
 	// No way to easily test the ticker stopped, but we can at least
 	// ensure Close() doesn't panic
 	client.Close()
@@ -570,7 +570,7 @@ func TestGetBackoffDuration(t *testing.T) {
 	// Test max backoff limit
 	highAttempt := 20 // This should hit the max backoff
 	maxBackoff := client.getBackoffDuration(highAttempt)
-	
+
 	// The max backoff is 1 minute according to the code
 	if maxBackoff > time.Minute*2 {
 		t.Errorf("Expected max backoff near 1 minute, got %v", maxBackoff)

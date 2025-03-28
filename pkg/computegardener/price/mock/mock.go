@@ -14,8 +14,8 @@ import (
 
 // MockPricing implements the price.Implementation interface for testing
 type MockPricing struct {
-	rate    float64
-	isPeak  bool
+	rate   float64
+	isPeak bool
 }
 
 // New creates a new mock pricing implementation
@@ -71,8 +71,8 @@ func (m *MockPricing) CheckPriceConstraints(pod *v1.Pod, now time.Time) *framewo
 
 // MockPriceImplementation provides more control for testing with function overrides
 type MockPriceImplementation struct {
-	GetCurrentRateFunc      func(currentTime time.Time) float64
-	IsPeakTimeFunc          func(currentTime time.Time) bool
+	GetCurrentRateFunc        func(currentTime time.Time) float64
+	IsPeakTimeFunc            func(currentTime time.Time) bool
 	CheckPriceConstraintsFunc func(pod *v1.Pod, currentTime time.Time) *framework.Status
 }
 
@@ -102,10 +102,10 @@ func (m *MockPriceImplementation) CheckPriceConstraints(pod *v1.Pod, now time.Ti
 	if m.CheckPriceConstraintsFunc != nil {
 		return m.CheckPriceConstraintsFunc(pod, now)
 	}
-	
+
 	rate := m.GetCurrentRate(now)
 	threshold := 0.15 // Default test threshold
-	
+
 	if rate > threshold {
 		return framework.NewStatus(
 			framework.Unschedulable,
@@ -113,6 +113,6 @@ func (m *MockPriceImplementation) CheckPriceConstraints(pod *v1.Pod, now time.Ti
 				rate, threshold),
 		)
 	}
-	
+
 	return framework.NewStatus(framework.Success, "")
 }

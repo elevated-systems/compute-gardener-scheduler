@@ -51,7 +51,7 @@ type ComputeGardenerScheduler struct {
 	// Components
 	apiClient        *api.Client
 	cache            *schedulercache.Cache
-	priceImpl      price.Implementation
+	priceImpl        price.Implementation
 	carbonImpl       carbon.Implementation
 	clock            clock.Clock
 	hardwareProfiler *metrics.HardwareProfiler
@@ -239,7 +239,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		config:           cfg,
 		apiClient:        apiClient,
 		cache:            dataCache,
-		priceImpl:      priceImpl,
+		priceImpl:        priceImpl,
 		carbonImpl:       carbonImpl,
 		clock:            clock.RealClock{},
 		hardwareProfiler: hardwareProfiler,
@@ -265,7 +265,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	} else {
 		klog.V(2).InfoS("Metrics collection worker disabled - no sampling interval configured")
 	}
-	
+
 	// Start carbon intensity cache refresh worker if carbon is enabled
 	if scheduler.config.Carbon.Enabled && scheduler.carbonImpl != nil {
 		go scheduler.carbonCacheRefreshWorker(ctx)
@@ -799,11 +799,11 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 		klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
 			"pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.Success, "")
-	} 
-	
+	}
+
 	// Update metrics regardless of threshold check result
 	CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
-	
+
 	if currentIntensity > threshold {
 		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
 			currentIntensity, threshold)
@@ -828,7 +828,7 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 		}
 		return nil, framework.NewStatus(framework.Unschedulable, msg)
 	}
-	
+
 	return nil, framework.NewStatus(framework.Success, "")
 }
 
@@ -973,28 +973,28 @@ func hasGPURequest(pod *v1.Pod) bool {
 func (cs *ComputeGardenerScheduler) carbonCacheRefreshWorker(ctx context.Context) {
 	// Calculate refresh interval as 1/3 of the cache TTL to ensure we always have fresh data
 	refreshInterval := cs.config.Cache.CacheTTL / 3
-	
+
 	// Ensure the interval is not too short or too long
 	if refreshInterval < 10*time.Second {
 		refreshInterval = 10 * time.Second // Minimum 10 seconds
 	} else if refreshInterval > 5*time.Minute {
 		refreshInterval = 5 * time.Minute // Maximum 5 minutes
 	}
-	
-	klog.InfoS("Starting carbon intensity cache refresh worker", 
+
+	klog.InfoS("Starting carbon intensity cache refresh worker",
 		"refreshInterval", refreshInterval.String(),
 		"cacheTTL", cs.config.Cache.CacheTTL.String(),
 		"region", cs.config.Carbon.APIConfig.Region)
-	
+
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
-	
+
 	// Get all regions that need to be refreshed
 	regions := []string{cs.config.Carbon.APIConfig.Region}
-	
+
 	// Initial refresh on startup
 	cs.refreshCarbonCache(ctx, regions)
-	
+
 	for {
 		select {
 		case <-cs.stopCh:
@@ -1011,21 +1011,21 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 	for _, region := range regions {
 		// Create a context with timeout for the API request
 		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		
+
 		// Force refresh by calling GetCurrentIntensity which will update the cache
 		intensity, err := cs.carbonImpl.GetCurrentIntensity(requestCtx)
-		
+
 		// Always cancel the context after use to prevent leaks
 		cancel()
-		
+
 		if err != nil {
-			klog.ErrorS(err, "Failed to refresh carbon intensity cache", 
+			klog.ErrorS(err, "Failed to refresh carbon intensity cache",
 				"region", region)
 		} else {
-			klog.V(2).InfoS("Successfully refreshed carbon intensity cache", 
-				"region", region, 
+			klog.V(2).InfoS("Successfully refreshed carbon intensity cache",
+				"region", region,
 				"intensity", intensity)
-			
+
 			// Update metrics
 			CarbonIntensityGauge.WithLabelValues(region).Set(intensity)
 		}

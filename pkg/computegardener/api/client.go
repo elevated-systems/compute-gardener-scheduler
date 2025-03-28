@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/klog/v2"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"k8s.io/klog/v2"
 )
 
 // HTTPClient interface allows mocking http.Client in tests
@@ -86,8 +86,8 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 	// First check the cache if available
 	if c.cache != nil {
 		if data, fresh := c.cache.Get(region); fresh {
-			klog.V(2).InfoS("Using cached carbon intensity data", 
-				"region", region, 
+			klog.V(2).InfoS("Using cached carbon intensity data",
+				"region", region,
 				"intensity", data.CarbonIntensity)
 			return data, nil
 		}
@@ -105,8 +105,8 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 				// Store successful result in cache if available
 				if c.cache != nil {
 					c.cache.Set(region, data)
-					klog.V(2).InfoS("Stored carbon intensity data in cache", 
-						"region", region, 
+					klog.V(2).InfoS("Stored carbon intensity data in cache",
+						"region", region,
 						"intensity", data.CarbonIntensity)
 				}
 				return data, nil
@@ -147,8 +147,8 @@ func (c *Client) doRequest(ctx context.Context, region string) (*ElectricityData
 	}
 
 	// Log the exact URL being used for debugging
-	klog.V(2).InfoS("Making carbon API request", 
-		"url", req.URL.String(), 
+	klog.V(2).InfoS("Making carbon API request",
+		"url", req.URL.String(),
 		"region", region,
 		"hasApiKey", c.apiConfig.APIKey != "")
 

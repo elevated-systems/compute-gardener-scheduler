@@ -131,17 +131,17 @@ func TestGetCurrentRate(t *testing.T) {
 		{
 			name:         "weekday within peak hours",
 			time:         time.Date(2023, 5, 1, 12, 0, 0, 0, time.UTC), // Monday 12:00
-			expectedRate: 0.30, // Peak rate
+			expectedRate: 0.30,                                         // Peak rate
 		},
 		{
 			name:         "weekday outside peak hours",
 			time:         time.Date(2023, 5, 1, 9, 0, 0, 0, time.UTC), // Monday 9:00
-			expectedRate: 0.15, // Off-peak rate
+			expectedRate: 0.15,                                        // Off-peak rate
 		},
 		{
 			name:         "weekend",
 			time:         time.Date(2023, 5, 6, 12, 0, 0, 0, time.UTC), // Saturday 12:00
-			expectedRate: 0.15, // Off-peak rate
+			expectedRate: 0.15,                                         // Off-peak rate
 		},
 	}
 

@@ -5,37 +5,37 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	
+
 	"k8s.io/klog/v2"
 )
 
 // PowerConfig holds power consumption settings for nodes
 type PowerConfig struct {
-	DefaultIdlePower float64              `yaml:"defaultIdlePower"` // Default idle power in watts
-	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`  // Default max power in watts
-	DefaultPUE       float64              `yaml:"defaultPUE"`       // Default Power Usage Effectiveness (typically 1.1-1.6)
-	DefaultGPUPUE    float64              `yaml:"defaultGPUPUE"`    // Default GPU Power Usage Effectiveness (typically 1.15-1.25)
-	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`  // Per-node power settings
+	DefaultIdlePower float64              `yaml:"defaultIdlePower"`           // Default idle power in watts
+	DefaultMaxPower  float64              `yaml:"defaultMaxPower"`            // Default max power in watts
+	DefaultPUE       float64              `yaml:"defaultPUE"`                 // Default Power Usage Effectiveness (typically 1.1-1.6)
+	DefaultGPUPUE    float64              `yaml:"defaultGPUPUE"`              // Default GPU Power Usage Effectiveness (typically 1.15-1.25)
+	NodePowerConfig  map[string]NodePower `yaml:"nodePowerConfig"`            // Per-node power settings
 	HardwareProfiles *HardwareProfiles    `yaml:"hardwareProfiles,omitempty"` // Hardware profile registry
 }
 
 // HardwareProfiles contains mappings from hardware identifiers to power profiles
 type HardwareProfiles struct {
 	// Power profiles for hardware components
-	CPUProfiles  map[string]PowerProfile `yaml:"cpuProfiles"`  // CPU model -> power profile
-	GPUProfiles  map[string]PowerProfile `yaml:"gpuProfiles"`  // GPU model -> power profile
-	MemProfiles  map[string]MemoryPowerProfile `yaml:"memProfiles"`  // Memory type -> power profile
-	
+	CPUProfiles map[string]PowerProfile       `yaml:"cpuProfiles"` // CPU model -> power profile
+	GPUProfiles map[string]PowerProfile       `yaml:"gpuProfiles"` // GPU model -> power profile
+	MemProfiles map[string]MemoryPowerProfile `yaml:"memProfiles"` // Memory type -> power profile
+
 	// Cloud instance mappings to hardware components
 	CloudInstanceMapping map[string]map[string]HardwareComponents `yaml:"cloudInstanceMapping"` // Provider -> instance type -> hardware components
 }
 
 // PowerProfile defines power characteristics for a hardware component
 type PowerProfile struct {
-	IdlePower         float64 `yaml:"idlePower"`                   // Idle power in watts
-	MaxPower          float64 `yaml:"maxPower"`                    // Max power in watts
+	IdlePower         float64 `yaml:"idlePower"`                  // Idle power in watts
+	MaxPower          float64 `yaml:"maxPower"`                   // Max power in watts
 	BaseFrequencyGHz  float64 `yaml:"baseFrequencyGHz,omitempty"` // Base/nominal CPU frequency in GHz
-	PowerScaling      string  `yaml:"powerScaling,omitempty"`      // Power scaling model: "linear", "quadratic", etc.
+	PowerScaling      string  `yaml:"powerScaling,omitempty"`     // Power scaling model: "linear", "quadratic", etc.
 	FrequencyRangeGHz struct {
 		Min float64 `yaml:"min,omitempty"` // Minimum operating frequency in GHz
 		Max float64 `yaml:"max,omitempty"` // Maximum operating frequency (turbo) in GHz
@@ -44,31 +44,31 @@ type PowerProfile struct {
 
 // MemoryPowerProfile defines power characteristics for memory components
 type MemoryPowerProfile struct {
-	IdlePowerPerGB float64 `yaml:"idlePowerPerGB"` // Idle power in watts per GB
-	MaxPowerPerGB  float64 `yaml:"maxPowerPerGB"`  // Max power in watts per GB
+	IdlePowerPerGB float64 `yaml:"idlePowerPerGB"`          // Idle power in watts per GB
+	MaxPowerPerGB  float64 `yaml:"maxPowerPerGB"`           // Max power in watts per GB
 	BaseIdlePower  float64 `yaml:"baseIdlePower,omitempty"` // Base idle power for memory controller
 }
 
 // HardwareComponents defines the hardware composition of a node or instance
 type HardwareComponents struct {
-	CPUModel         string  `yaml:"cpuModel"`                    // CPU model identifier
-	GPUModel         string  `yaml:"gpuModel,omitempty"`          // GPU model identifier, if present
-	MemoryType       string  `yaml:"memoryType,omitempty"`        // Memory type identifier
-	NumCPUs          int     `yaml:"numCPUs,omitempty"`           // Number of CPU cores/threads
-	NumGPUs          int     `yaml:"numGPUs,omitempty"`           // Number of GPUs, if present
-	TotalMemory      int     `yaml:"totalMemory,omitempty"`       // Total memory in MB
-	MemoryChannels   int     `yaml:"memChannels,omitempty"`       // Number of memory channels
-	CurrentFreqGHz   float64 `yaml:"currentFreqGHz,omitempty"`    // Current CPU frequency in GHz
-	CPU_TDP_Watts    float64 `yaml:"cpuTdpWatts,omitempty"`       // TDP rating of CPU in watts
+	CPUModel       string  `yaml:"cpuModel"`                 // CPU model identifier
+	GPUModel       string  `yaml:"gpuModel,omitempty"`       // GPU model identifier, if present
+	MemoryType     string  `yaml:"memoryType,omitempty"`     // Memory type identifier
+	NumCPUs        int     `yaml:"numCPUs,omitempty"`        // Number of CPU cores/threads
+	NumGPUs        int     `yaml:"numGPUs,omitempty"`        // Number of GPUs, if present
+	TotalMemory    int     `yaml:"totalMemory,omitempty"`    // Total memory in MB
+	MemoryChannels int     `yaml:"memChannels,omitempty"`    // Number of memory channels
+	CurrentFreqGHz float64 `yaml:"currentFreqGHz,omitempty"` // Current CPU frequency in GHz
+	CPU_TDP_Watts  float64 `yaml:"cpuTdpWatts,omitempty"`    // TDP rating of CPU in watts
 }
 
 // MetricsConfig holds configuration for metrics collection and storage
 type MetricsConfig struct {
-	SamplingInterval     string           `yaml:"samplingInterval"`     // e.g. "30s" or "1m"
-	MaxSamplesPerPod     int              `yaml:"maxSamplesPerPod"`     // e.g. 1000
-	PodRetention         string           `yaml:"podRetention"`         // e.g. "1h"
-	DownsamplingStrategy string           `yaml:"downsamplingStrategy"` // "lttb", "timeBased", "minMax"
-	Prometheus          *PrometheusConfig `yaml:"prometheus,omitempty"` // Prometheus configuration
+	SamplingInterval     string            `yaml:"samplingInterval"`     // e.g. "30s" or "1m"
+	MaxSamplesPerPod     int               `yaml:"maxSamplesPerPod"`     // e.g. 1000
+	PodRetention         string            `yaml:"podRetention"`         // e.g. "1h"
+	DownsamplingStrategy string            `yaml:"downsamplingStrategy"` // "lttb", "timeBased", "minMax"
+	Prometheus           *PrometheusConfig `yaml:"prometheus,omitempty"` // Prometheus configuration
 }
 
 // PrometheusConfig holds configuration for Prometheus metrics integration
@@ -76,7 +76,7 @@ type PrometheusConfig struct {
 	URL             string `yaml:"url"`             // Prometheus server URL, e.g. "http://prometheus.monitoring:9090"
 	QueryTimeout    string `yaml:"queryTimeout"`    // Prometheus query timeout, e.g. "30s"
 	CompletionDelay string `yaml:"completionDelay"` // Delay after pod completion before collecting final metrics, e.g. "30s"
-	
+
 	// DCGM exporter integration
 	UseDCGM         bool   `yaml:"useDCGM"`         // Whether to use DCGM exporter metrics (default: true)
 	DCGMPowerMetric string `yaml:"dcgmPowerMetric"` // DCGM power metric name (default: DCGM_FI_DEV_POWER_USAGE)
@@ -91,8 +91,8 @@ type NodePower struct {
 	IdleGPUPower float64 `yaml:"idleGPUPower,omitempty"` // Idle GPU power in watts
 	MaxGPUPower  float64 `yaml:"maxGPUPower,omitempty"`  // Max GPU power in watts
 	// Power Usage Effectiveness factors
-	PUE         float64 `yaml:"pue,omitempty"`          // Power Usage Effectiveness (default: 1.1)
-	GPUPUE      float64 `yaml:"gpuPue,omitempty"`       // GPU-specific Power Usage Effectiveness (default: 1.15)
+	PUE    float64 `yaml:"pue,omitempty"`    // Power Usage Effectiveness (default: 1.1)
+	GPUPUE float64 `yaml:"gpuPue,omitempty"` // GPU-specific Power Usage Effectiveness (default: 1.15)
 	// Workload type classification hints
 	GPUWorkloadTypes map[string]float64 `yaml:"gpuWorkloadTypes,omitempty"` // Workload type (e.g. "inference", "training") to power coefficient mappings
 }
@@ -102,7 +102,7 @@ type Config struct {
 	Cache      APICacheConfig   `yaml:"cache"`
 	Scheduling SchedulingConfig `yaml:"scheduling"`
 	Carbon     CarbonConfig     `yaml:"carbon"`
-	Pricing    PriceConfig    `yaml:"pricing"`
+	Pricing    PriceConfig      `yaml:"pricing"`
 	Power      PowerConfig      `yaml:"power"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
 }
@@ -132,11 +132,11 @@ type SchedulingConfig struct {
 
 // Schedule defines a time range with its peak and off-peak rates
 type Schedule struct {
-	Name        string  `yaml:"name"`               // Name for this schedule, e.g., "california-pg&e"
-	DayOfWeek   string  `yaml:"dayOfWeek"`          // Days this schedule applies to, e.g., "1-5" for weekdays
-	StartTime   string  `yaml:"startTime"`          // Start time in 24h format, e.g., "14:00"
-	EndTime     string  `yaml:"endTime"`            // End time in 24h format, e.g., "19:00"
-	Timezone    string  `yaml:"timezone,omitempty"` // IANA timezone, e.g., "America/Los_Angeles" (defaults to UTC)
+	Name        string  `yaml:"name"`                  // Name for this schedule, e.g., "california-pg&e"
+	DayOfWeek   string  `yaml:"dayOfWeek"`             // Days this schedule applies to, e.g., "1-5" for weekdays
+	StartTime   string  `yaml:"startTime"`             // Start time in 24h format, e.g., "14:00"
+	EndTime     string  `yaml:"endTime"`               // End time in 24h format, e.g., "19:00"
+	Timezone    string  `yaml:"timezone,omitempty"`    // IANA timezone, e.g., "America/Los_Angeles" (defaults to UTC)
 	PeakRate    float64 `yaml:"peakRate,omitempty"`    // Rate in $/kWh during this time period (optional, for metrics only)
 	OffPeakRate float64 `yaml:"offPeakRate,omitempty"` // Rate in $/kWh outside this time period (optional, for metrics only)
 }
@@ -152,8 +152,8 @@ type CarbonConfig struct {
 // PriceConfig holds configuration for price-aware scheduling
 type PriceConfig struct {
 	Enabled   bool       `yaml:"enabled"`
-	Provider  string     `yaml:"provider"`                // e.g. "tou" for time-of-use pricing
-	Schedules []Schedule `yaml:"schedules"`               // Time-based pricing periods with their rates
+	Provider  string     `yaml:"provider"`  // e.g. "tou" for time-of-use pricing
+	Schedules []Schedule `yaml:"schedules"` // Time-based pricing periods with their rates
 }
 
 // Validate performs validation of the configuration
@@ -190,10 +190,10 @@ func (c *Config) Validate() error {
 		// Warn but don't error if PUE seems unusually high
 		klog.V(2).InfoS("Unusually high default PUE specified", "pue", c.Power.DefaultPUE)
 	}
-	
+
 	// Validate GPU PUE if provided, or set default
 	if c.Power.DefaultGPUPUE == 0 {
-		// Set default GPU PUE if not specified  
+		// Set default GPU PUE if not specified
 		c.Power.DefaultGPUPUE = 1.15 // Accounts for power conversion losses and auxiliary components
 	} else if c.Power.DefaultGPUPUE < 1.0 {
 		return fmt.Errorf("default GPU PUE must be at least 1.0 (100%% efficiency)")
@@ -208,55 +208,55 @@ func (c *Config) Validate() error {
 		if power.MaxPower <= power.IdlePower {
 			return fmt.Errorf("max power must be greater than idle power for node %s", node)
 		}
-		
+
 		// Validate GPU power settings if specified
 		if power.IdleGPUPower > 0 && power.MaxGPUPower <= power.IdleGPUPower {
 			return fmt.Errorf("max GPU power must be greater than idle GPU power for node %s", node)
 		}
 	}
-	
+
 	// Validate hardware profiles if configured
 	if c.Power.HardwareProfiles != nil {
 		if err := c.validateHardwareProfiles(); err != nil {
 			return fmt.Errorf("invalid hardware profiles: %v", err)
 		}
 	}
-	
+
 	// Validate metrics settings
 	if c.Metrics.SamplingInterval != "" {
 		if _, err := time.ParseDuration(c.Metrics.SamplingInterval); err != nil {
 			return fmt.Errorf("invalid metrics sampling interval: %v", err)
 		}
 	}
-	
+
 	if c.Metrics.PodRetention != "" {
 		if _, err := time.ParseDuration(c.Metrics.PodRetention); err != nil {
 			return fmt.Errorf("invalid completed pod retention duration: %v", err)
 		}
 	}
-	
+
 	// Validate downsampling strategy
-	if c.Metrics.DownsamplingStrategy != "" && 
-	   c.Metrics.DownsamplingStrategy != "lttb" && 
-	   c.Metrics.DownsamplingStrategy != "timeBased" && 
-	   c.Metrics.DownsamplingStrategy != "minMax" {
-		return fmt.Errorf("invalid downsampling strategy: %s (must be one of: lttb, timeBased, minMax)", 
+	if c.Metrics.DownsamplingStrategy != "" &&
+		c.Metrics.DownsamplingStrategy != "lttb" &&
+		c.Metrics.DownsamplingStrategy != "timeBased" &&
+		c.Metrics.DownsamplingStrategy != "minMax" {
+		return fmt.Errorf("invalid downsampling strategy: %s (must be one of: lttb, timeBased, minMax)",
 			c.Metrics.DownsamplingStrategy)
 	}
-	
+
 	// Validate Prometheus config if provided
 	if c.Metrics.Prometheus != nil {
 		if c.Metrics.Prometheus.URL == "" {
 			return fmt.Errorf("Prometheus URL must be provided if Prometheus config is enabled")
 		}
-		
+
 		// Validate query timeout if provided
 		if c.Metrics.Prometheus.QueryTimeout != "" {
 			if _, err := time.ParseDuration(c.Metrics.Prometheus.QueryTimeout); err != nil {
 				return fmt.Errorf("invalid Prometheus query timeout: %v", err)
 			}
 		}
-		
+
 		// Validate completion delay if provided
 		if c.Metrics.Prometheus.CompletionDelay != "" {
 			if _, err := time.ParseDuration(c.Metrics.Prometheus.CompletionDelay); err != nil {
@@ -273,7 +273,7 @@ func (c *Config) validatePricing() error {
 		if err := validateSchedule(schedule); err != nil {
 			return fmt.Errorf("invalid schedule at index %d: %v", i, err)
 		}
-		
+
 		// Only validate rates if they are provided (non-zero)
 		if schedule.PeakRate != 0 || schedule.OffPeakRate != 0 {
 			// If one rate is provided, both should be
@@ -334,12 +334,12 @@ func validateSchedule(schedule Schedule) error {
 // validateHardwareProfiles validates hardware profiles configuration
 func (c *Config) validateHardwareProfiles() error {
 	profiles := c.Power.HardwareProfiles
-	
+
 	// Validate CPU profiles
 	if len(profiles.CPUProfiles) == 0 {
 		return fmt.Errorf("no CPU profiles defined")
 	}
-	
+
 	for model, profile := range profiles.CPUProfiles {
 		if profile.IdlePower <= 0 {
 			return fmt.Errorf("idle power for CPU %s must be positive", model)
@@ -348,7 +348,7 @@ func (c *Config) validateHardwareProfiles() error {
 			return fmt.Errorf("max power must be greater than idle power for CPU %s", model)
 		}
 	}
-	
+
 	// Validate GPU profiles if present
 	for model, profile := range profiles.GPUProfiles {
 		if profile.IdlePower <= 0 {
@@ -358,7 +358,7 @@ func (c *Config) validateHardwareProfiles() error {
 			return fmt.Errorf("max power must be greater than idle power for GPU %s", model)
 		}
 	}
-	
+
 	// Validate memory profiles if present
 	for memType, profile := range profiles.MemProfiles {
 		if profile.IdlePowerPerGB < 0 {
@@ -371,7 +371,7 @@ func (c *Config) validateHardwareProfiles() error {
 			return fmt.Errorf("max power per GB must be greater than idle power per GB for memory %s", memType)
 		}
 	}
-	
+
 	// Validate cloud instance mappings
 	for provider, instances := range profiles.CloudInstanceMapping {
 		for instanceType, components := range instances {
@@ -379,30 +379,30 @@ func (c *Config) validateHardwareProfiles() error {
 			if components.CPUModel == "" {
 				return fmt.Errorf("missing CPU model for %s instance %s", provider, instanceType)
 			}
-			
+
 			// Check CPU model exists in profiles
 			if _, exists := profiles.CPUProfiles[components.CPUModel]; !exists {
-				return fmt.Errorf("CPU model %s for %s instance %s not found in CPU profiles", 
+				return fmt.Errorf("CPU model %s for %s instance %s not found in CPU profiles",
 					components.CPUModel, provider, instanceType)
 			}
-			
+
 			// Check GPU model exists in profiles if specified
 			if components.GPUModel != "" {
 				if _, exists := profiles.GPUProfiles[components.GPUModel]; !exists {
-					return fmt.Errorf("GPU model %s for %s instance %s not found in GPU profiles", 
+					return fmt.Errorf("GPU model %s for %s instance %s not found in GPU profiles",
 						components.GPUModel, provider, instanceType)
 				}
 			}
-			
+
 			// Check memory type exists in profiles if specified
 			if components.MemoryType != "" {
 				if _, exists := profiles.MemProfiles[components.MemoryType]; !exists {
-					return fmt.Errorf("memory type %s for %s instance %s not found in memory profiles", 
+					return fmt.Errorf("memory type %s for %s instance %s not found in memory profiles",
 						components.MemoryType, provider, instanceType)
 				}
 			}
 		}
 	}
-	
+
 	return nil
 }

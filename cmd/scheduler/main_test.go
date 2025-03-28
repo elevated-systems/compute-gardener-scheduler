@@ -21,13 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
 type mockHandle struct {

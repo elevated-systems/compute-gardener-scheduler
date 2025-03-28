@@ -93,7 +93,7 @@ func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metric
 
 	// Construct the query for the node metric
 	query := fmt.Sprintf(`%s{instance=~"%s.*"}`, metricName, nodeName)
-	
+
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
@@ -642,8 +642,8 @@ func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []PodMetricsRecord {
 	for i := range h.Timestamps {
 		records[i] = PodMetricsRecord{
 			Timestamp:     h.Timestamps[i],
-			GPUPowerWatts: h.Power[i],               // GPU power in watts
-			PowerEstimate: h.Power[i],               // GPU power in watts
+			GPUPowerWatts: h.Power[i], // GPU power in watts
+			PowerEstimate: h.Power[i], // GPU power in watts
 			// CPU and Memory will be 0 as this is GPU-specific
 		}
 	}

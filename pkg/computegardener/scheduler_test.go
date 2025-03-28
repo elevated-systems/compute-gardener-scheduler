@@ -146,7 +146,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		priceImpl: pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
+		priceImpl:   pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
 		carbonImpl:  carbonImpl,
 		clock:       clock.NewMockClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -643,7 +643,7 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		priceImpl: pricingmock.New(0.1),
+		priceImpl:   pricingmock.New(0.1),
 		carbonImpl:  carbonmock.NewWithError(),
 		clock:       clock.NewMockClock(baseTime),
 		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -1120,7 +1120,7 @@ func TestHealthCheck(t *testing.T) {
 				config:      cfg,
 				apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 				cache:       cache,
-				priceImpl: pricingmock.New(0.1),
+				priceImpl:   pricingmock.New(0.1),
 				carbonImpl:  carbonImpl,
 				clock:       clock.NewMockClock(baseTime),
 				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
@@ -1525,7 +1525,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient metrics
 
 	return &ComputeGardenerScheduler{
 		config:            cfg,
-		priceImpl:       priceImpl,
+		priceImpl:         priceImpl,
 		carbonImpl:        carbonImpl,
 		cache:             dataCache,
 		apiClient:         &api.Client{},

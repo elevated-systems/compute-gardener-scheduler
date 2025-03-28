@@ -17,10 +17,10 @@ limitations under the License.
 package scheme
 
 import (
+	schedv1alpha1 "github.com/elevated-systems/compute-gardener-scheduler/apis/scheduling/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
-	schedv1alpha1 "github.com/elevated-systems/compute-gardener-scheduler/apis/scheduling/v1alpha1"
 )
 
 func init() {

@@ -13,7 +13,7 @@ import (
 type CoreMetricsClient interface {
 	// GetPodMetrics retrieves metrics for a specific pod
 	GetPodMetrics(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error)
-	
+
 	// ListPodMetrics retrieves metrics for all pods
 	ListPodMetrics(ctx context.Context) ([]metricsv1beta1.PodMetrics, error)
 }
@@ -22,13 +22,13 @@ type CoreMetricsClient interface {
 type GPUMetricsClient interface {
 	// GetPodGPUUtilization gets GPU utilization (0-1) for a specific pod
 	GetPodGPUUtilization(ctx context.Context, namespace, name string) (float64, error)
-	
+
 	// ListPodsGPUUtilization gets GPU utilization for all pods with GPUs
 	ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) // key: namespace/name
-	
+
 	// GetPodGPUPower gets average GPU power use in watts for a specific pod
 	GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error)
-	
+
 	// ListPodsGPUPower gets average GPU power for all pods with GPUs
 	ListPodsGPUPower(ctx context.Context) (map[string]float64, error) // key: namespace/name
 }
@@ -189,8 +189,8 @@ func (c *MockGPUMetricsClient) SetPodGPUPower(namespace, name string, power floa
 
 // CalculatePodMetrics converts Kubernetes metrics to our internal format
 func CalculatePodMetrics(
-	podMetrics *metricsv1beta1.PodMetrics, 
-	pod *corev1.Pod, 
+	podMetrics *metricsv1beta1.PodMetrics,
+	pod *corev1.Pod,
 	gpuPowerWatts float64,
 	carbonIntensity float64,
 	calculatePower func(nodeName string, cpu, memory, gpu float64) float64,
@@ -198,19 +198,19 @@ func CalculatePodMetrics(
 	// Sum CPU and memory usage across all containers
 	var totalCPU float64
 	var totalMemory float64
-	
+
 	for _, container := range podMetrics.Containers {
 		cpuQuantity := container.Usage.Cpu()
 		memQuantity := container.Usage.Memory()
-		
+
 		totalCPU += float64(cpuQuantity.MilliValue()) / 1000
 		totalMemory += float64(memQuantity.Value())
 	}
-	
+
 	// Calculate power estimate using the provided calculator function
 	nodeName := pod.Spec.NodeName
 	estimatedPower := calculatePower(nodeName, totalCPU, totalMemory, gpuPowerWatts)
-	
+
 	// Return a record with all the fields including 0 for ElectricityRate
 	// ElectricityRate will be set in the metrics collector if available
 	return PodMetricsRecord{

@@ -78,14 +78,14 @@ func TestHardwareProfilerWithCloud(t *testing.T) {
 	// Base CPU power (10.0) + Memory power (8GB * 0.125 + 1.0 base) = ~12.0
 	expectedIdlePower := 12.0
 	if nodePower.IdlePower < expectedIdlePower*0.9 || nodePower.IdlePower > expectedIdlePower*1.1 {
-		t.Errorf("Unexpected idle power for AWS node: got %f, expected approximately %f", 
+		t.Errorf("Unexpected idle power for AWS node: got %f, expected approximately %f",
 			nodePower.IdlePower, expectedIdlePower)
 	}
 
 	// Base max power (100.0) + Memory max power (8GB * 0.375 + 1.0 base) = ~104.0
 	expectedMaxPower := 104.0
 	if nodePower.MaxPower < expectedMaxPower*0.9 || nodePower.MaxPower > expectedMaxPower*1.1 {
-		t.Errorf("Unexpected max power for AWS node: got %f, expected approximately %f", 
+		t.Errorf("Unexpected max power for AWS node: got %f, expected approximately %f",
 			nodePower.MaxPower, expectedMaxPower)
 	}
 }

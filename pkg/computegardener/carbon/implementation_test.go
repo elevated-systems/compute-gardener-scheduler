@@ -14,8 +14,8 @@ import (
 
 // MockHTTPClient implements HTTPClient for testing
 type MockHTTPClient struct {
-	shouldFail  bool
-	statusCode  int
+	shouldFail   bool
+	statusCode   int
 	responseBody string
 }
 
@@ -26,7 +26,7 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 			Body:       http.NoBody,
 		}, nil
 	}
-	
+
 	// For a successful test, we would need to implement a proper response body
 	// This is simplified for the test
 	return &http.Response{
@@ -62,16 +62,16 @@ func createTestAPIClient(intensity float64, shouldFail bool) *api.Client {
 		APIKey: "test-key",
 		Region: "test-region",
 	}
-	
+
 	cacheConfig := config.APICacheConfig{
-		CacheTTL:   time.Minute,
+		CacheTTL:    time.Minute,
 		MaxCacheAge: time.Minute * 10,
-		Timeout:    time.Second * 5,
-		MaxRetries: 3,
-		RetryDelay: time.Millisecond * 100,
-		RateLimit:  10,
+		Timeout:     time.Second * 5,
+		MaxRetries:  3,
+		RetryDelay:  time.Millisecond * 100,
+		RateLimit:   10,
 	}
-	
+
 	// Create mock cache with predefined data
 	cache := newMockCache()
 	if !shouldFail {
@@ -80,9 +80,9 @@ func createTestAPIClient(intensity float64, shouldFail bool) *api.Client {
 			Timestamp:       time.Now(),
 		})
 	}
-	
+
 	// Create client with mock cache and client
-	return api.NewClient(apiConfig, cacheConfig, 
+	return api.NewClient(apiConfig, cacheConfig,
 		api.WithCache(cache),
 		api.WithHTTPClient(&MockHTTPClient{shouldFail: shouldFail}),
 	)
@@ -111,25 +111,25 @@ func TestNew(t *testing.T) {
 
 func TestGetCurrentIntensity(t *testing.T) {
 	tests := []struct {
-		name           string
+		name            string
 		carbonIntensity float64
-		apiError       bool
-		wantIntensity  float64
-		wantErr        bool
+		apiError        bool
+		wantIntensity   float64
+		wantErr         bool
 	}{
 		{
-			name:           "successful response",
+			name:            "successful response",
 			carbonIntensity: 100.5,
-			apiError:       false,
-			wantIntensity:  100.5,
-			wantErr:        false,
+			apiError:        false,
+			wantIntensity:   100.5,
+			wantErr:         false,
 		},
 		{
-			name:           "API error",
+			name:            "API error",
 			carbonIntensity: 0,
-			apiError:       true,
-			wantIntensity:  0,
-			wantErr:        true,
+			apiError:        true,
+			wantIntensity:   0,
+			wantErr:         true,
 		},
 	}
 
@@ -162,32 +162,32 @@ func TestGetCurrentIntensity(t *testing.T) {
 
 func TestCheckIntensityConstraints(t *testing.T) {
 	tests := []struct {
-		name           string
+		name            string
 		carbonIntensity float64
-		threshold      float64
-		apiError       bool
-		wantStatus     framework.Code
+		threshold       float64
+		apiError        bool
+		wantStatus      framework.Code
 	}{
 		{
-			name:           "below threshold",
+			name:            "below threshold",
 			carbonIntensity: 100.0,
-			threshold:      150.0,
-			apiError:       false,
-			wantStatus:     framework.Success,
+			threshold:       150.0,
+			apiError:        false,
+			wantStatus:      framework.Success,
 		},
 		{
-			name:           "exceeds threshold",
+			name:            "exceeds threshold",
 			carbonIntensity: 200.0,
-			threshold:      150.0,
-			apiError:       false,
-			wantStatus:     framework.Unschedulable,
+			threshold:       150.0,
+			apiError:        false,
+			wantStatus:      framework.Unschedulable,
 		},
 		{
-			name:           "API error",
+			name:            "API error",
 			carbonIntensity: 0.0,
-			threshold:      100.0,
-			apiError:       true,
-			wantStatus:     framework.Error,
+			threshold:       100.0,
+			apiError:        true,
+			wantStatus:      framework.Error,
 		},
 	}
 

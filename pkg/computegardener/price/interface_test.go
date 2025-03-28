@@ -105,11 +105,11 @@ func getTypeName(i interface{}) string {
 	if i == nil {
 		return "nil"
 	}
-	
+
 	// This is a simple hack to check if it's a tou.Scheduler
 	if fmt.Sprintf("%T", i) == "*tou.Scheduler" {
 		return "*tou.Scheduler"
 	}
-	
+
 	return fmt.Sprintf("%T", i)
 }

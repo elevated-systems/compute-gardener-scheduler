@@ -40,23 +40,23 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 			klog.V(2).InfoS("Delaying pod completion handling to allow metrics collection",
 				"pod", klog.KObj(pod),
 				"delay", delay.String())
-				
+
 			// Start a goroutine to handle this after delay
 			go func() {
 				// Sleep for the specified delay
 				time.Sleep(delay)
-				
+
 				// Continue with metrics processing
 				cs.processPodCompletionMetrics(pod, podUID, podName, namespace, nodeName)
 			}()
-			
+
 			return
 		} else if err != nil {
 			klog.V(2).ErrorS(err, "Invalid completion delay, proceeding immediately",
 				"pod", klog.KObj(pod))
 		}
 	}
-	
+
 	// Process pod completion metrics immediately if no delay configured
 	cs.processPodCompletionMetrics(pod, podUID, podName, namespace, nodeName)
 }
@@ -65,7 +65,7 @@ func (cs *ComputeGardenerScheduler) handlePodCompletion(pod *v1.Pod) {
 func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, podUID, podName, namespace, nodeName string) {
 	// Get pod metrics history first to check if already completed
 	metricsHistory, found := cs.metricsStore.GetHistory(podUID)
-	
+
 	// Check if already processed or no history available
 	if !found {
 		klog.V(2).InfoS("No metrics history found for pod",
@@ -84,14 +84,14 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			"podUID", podUID)
 		return
 	}
-	
+
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
-	
+
 	// Remove pod from our delay tracking map to clean up memory - only if map is initialized and used
 	if cs.delayedPods != nil {
 		delete(cs.delayedPods, podUID)
-		klog.V(2).InfoS("Removed pod from delay tracking map", 
+		klog.V(2).InfoS("Removed pod from delay tracking map",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)
 	}
@@ -107,32 +107,32 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		midIndex := len(metricsHistory.Records) / 2
 		midRecord := metricsHistory.Records[midIndex]
 		lastRecord := metricsHistory.Records[len(metricsHistory.Records)-1]
-		
+
 		klog.V(1).InfoS("Sample metrics records for energy calculation",
 			"pod", klog.KObj(pod),
 			"firstRecord", map[string]interface{}{
-				"timestamp": firstRecord.Timestamp,
-				"cpu": firstRecord.CPU,
-				"memory": firstRecord.Memory,
-				"gpuPower": firstRecord.GPUPowerWatts,
+				"timestamp":     firstRecord.Timestamp,
+				"cpu":           firstRecord.CPU,
+				"memory":        firstRecord.Memory,
+				"gpuPower":      firstRecord.GPUPowerWatts,
 				"powerEstimate": firstRecord.PowerEstimate,
 			},
 			"midRecord", map[string]interface{}{
-				"timestamp": midRecord.Timestamp,
-				"cpu": midRecord.CPU,
-				"memory": midRecord.Memory,
-				"gpuPower": midRecord.GPUPowerWatts,
+				"timestamp":     midRecord.Timestamp,
+				"cpu":           midRecord.CPU,
+				"memory":        midRecord.Memory,
+				"gpuPower":      midRecord.GPUPowerWatts,
 				"powerEstimate": midRecord.PowerEstimate,
 			},
 			"lastRecord", map[string]interface{}{
-				"timestamp": lastRecord.Timestamp,
-				"cpu": lastRecord.CPU,
-				"memory": lastRecord.Memory,
-				"gpuPower": lastRecord.GPUPowerWatts,
+				"timestamp":     lastRecord.Timestamp,
+				"cpu":           lastRecord.CPU,
+				"memory":        lastRecord.Memory,
+				"gpuPower":      lastRecord.GPUPowerWatts,
 				"powerEstimate": lastRecord.PowerEstimate,
 			})
 	}
-	
+
 	// Calculate energy and carbon emissions using our utility functions
 	totalEnergyKWh := metrics.CalculateTotalEnergy(metricsHistory.Records)
 	totalCarbonEmissions := metrics.CalculateTotalCarbonEmissions(metricsHistory.Records)
@@ -168,15 +168,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"pod", klog.KObj(pod),
 		"namespace", namespace,
 		"energyKWh", totalEnergyKWh,
-		"carbonEmissions", totalCarbonEmissions, 
+		"carbonEmissions", totalCarbonEmissions,
 		"metricsCount", len(metricsHistory.Records))
-		
+
 	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
 	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
-	
+
 	// Calculate true carbon and cost savings based on the diff between initial and final intensity/rate
 	// multiplied by actual energy used - requires all three values to be known
-	
+
 	// Carbon savings calculation
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
 		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
@@ -189,12 +189,12 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				// If not in history, try to get current intensity
 				finalIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
 			}
-			
+
 			if finalIntensity > 0 && initialIntensity > finalIntensity {
 				// Calculate true savings: (initial - final) * energy consumed
 				intensityDiff := initialIntensity - finalIntensity
 				carbonSavingsGrams := intensityDiff * totalEnergyKWh * 1000 // convert kWh to Wh and multiply by gCO2/kWh
-				
+
 				if carbonSavingsGrams > 0 {
 					klog.V(2).InfoS("Calculated carbon savings",
 						"pod", klog.KObj(pod),
@@ -202,17 +202,17 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 						"finalIntensity", finalIntensity,
 						"energyKWh", totalEnergyKWh,
 						"savingsGrams", carbonSavingsGrams)
-						
+
 					// Record actual calculated savings
 					EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
-					
+
 					// Record efficiency metrics
 					SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 				}
 			}
 		}
 	}
-	
+
 	// Cost savings calculation
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
 		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
@@ -225,12 +225,12 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				// If not in history, try to get current rate
 				finalRate = cs.priceImpl.GetCurrentRate(time.Now())
 			}
-			
+
 			if finalRate > 0 && initialRate > finalRate {
 				// Calculate cost savings: (initial - final) * energy consumed
 				rateDiff := initialRate - finalRate
 				costSavingsDollars := rateDiff * totalEnergyKWh
-				
+
 				if costSavingsDollars > 0 {
 					klog.V(2).InfoS("Calculated cost savings",
 						"pod", klog.KObj(pod),
@@ -238,10 +238,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 						"finalRate", finalRate,
 						"energyKWh", totalEnergyKWh,
 						"savingsDollars", costSavingsDollars)
-						
+
 					// Record actual calculated savings
 					EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
-					
+
 					// Record efficiency metrics
 					SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
 				}
@@ -305,13 +305,13 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		NodeMemoryUsage.WithLabelValues(nodeName, podName, "final").Set(final.Memory)
 		NodeGPUPower.WithLabelValues(nodeName, podName, "final").Set(final.GPUPowerWatts)
 		NodePowerEstimate.WithLabelValues(nodeName, podName, "final").Set(final.PowerEstimate)
-		
+
 		// Reset current phase metrics to 0 to ensure completed pods don't appear in dashboards
 		NodeCPUUsage.WithLabelValues(nodeName, podName, "current").Set(0)
 		NodeMemoryUsage.WithLabelValues(nodeName, podName, "current").Set(0)
 		NodeGPUPower.WithLabelValues(nodeName, podName, "current").Set(0)
 		NodePowerEstimate.WithLabelValues(nodeName, podName, "current").Set(0)
-		
+
 		klog.V(2).InfoS("Reset current power metrics to zero for completed pod",
 			"pod", klog.KObj(pod),
 			"podUID", podUID)

@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	
+
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 )
 
@@ -71,17 +71,17 @@ func (w *EnergyPolicyWebhook) applyNamespacePolicies(namespace *corev1.Namespace
 				if workloadValue, hasWorkloadOverride := namespace.Annotations[workloadKey+"-"+k]; hasWorkloadOverride {
 					// Apply workload-specific override
 					podAnnotations[podKey] = workloadValue
-					klog.V(4).InfoS("Applied workload-specific policy", 
+					klog.V(4).InfoS("Applied workload-specific policy",
 						"pod", klog.KObj(pod),
-						"policy", podKey, 
+						"policy", podKey,
 						"value", workloadValue,
 						"workloadType", workloadType)
 				} else {
 					// Apply namespace default
 					podAnnotations[podKey] = v
-					klog.V(4).InfoS("Applied namespace policy", 
+					klog.V(4).InfoS("Applied namespace policy",
 						"pod", klog.KObj(pod),
-						"policy", podKey, 
+						"policy", podKey,
 						"value", v)
 				}
 			}
@@ -93,7 +93,7 @@ func (w *EnergyPolicyWebhook) applyNamespacePolicies(namespace *corev1.Namespace
 
 // isEnergyPolicyAnnotation checks if an annotation is a compute-gardener policy
 func isEnergyPolicyAnnotation(key string) bool {
-	return len(key) > len(common.AnnotationNamespacePolicyPrefix) && 
+	return len(key) > len(common.AnnotationNamespacePolicyPrefix) &&
 		key[:len(common.AnnotationNamespacePolicyPrefix)] == common.AnnotationNamespacePolicyPrefix
 }
 

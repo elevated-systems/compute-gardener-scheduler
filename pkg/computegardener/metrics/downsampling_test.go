@@ -1,9 +1,9 @@
 package metrics
 
 import (
+	"math"
 	"testing"
 	"time"
-	"math"
 )
 
 // Helper function to create test metric records
@@ -12,10 +12,10 @@ func createTestMetricRecords(count int, startTime time.Time, interval time.Durat
 	for i := 0; i < count; i++ {
 		// Generate records with time interval and a sine wave pattern for CPU usage
 		records[i] = PodMetricsRecord{
-			Timestamp: startTime.Add(interval * time.Duration(i)),
-			CPU:       math.Sin(float64(i)*0.5) + 2.0, // CPU varies between 1.0 and 3.0
-			Memory:    float64(1024 * 1024 * (50 + i%20)),      // Memory varies between 50-70 MB
-			PowerEstimate: 50 + 20*math.Sin(float64(i)*0.5), // Power varies between 30-70W
+			Timestamp:     startTime.Add(interval * time.Duration(i)),
+			CPU:           math.Sin(float64(i)*0.5) + 2.0,     // CPU varies between 1.0 and 3.0
+			Memory:        float64(1024 * 1024 * (50 + i%20)), // Memory varies between 50-70 MB
+			PowerEstimate: 50 + 20*math.Sin(float64(i)*0.5),   // Power varies between 30-70W
 		}
 	}
 	return records
@@ -235,24 +235,24 @@ func TestTriangleArea(t *testing.T) {
 		expected float64
 	}{
 		{
-			name:     "RightTriangle",
-			x1:       0, y1: 0,
-			x2:       0, y2: 3,
-			x3:       4, y3: 0,
+			name: "RightTriangle",
+			x1:   0, y1: 0,
+			x2: 0, y2: 3,
+			x3: 4, y3: 0,
 			expected: 6, // Area of right triangle with base 4 and height 3
 		},
 		{
-			name:     "EquilateralTriangle",
-			x1:       0, y1: 0,
-			x2:       1, y2: 1.732, // sqrt(3)
-			x3:       2, y3: 0,
+			name: "EquilateralTriangle",
+			x1:   0, y1: 0,
+			x2: 1, y2: 1.732, // sqrt(3)
+			x3: 2, y3: 0,
 			expected: 1.732, // Area of equilateral triangle with side length 2
 		},
 		{
-			name:     "ZeroArea",
-			x1:       1, y1: 1,
-			x2:       1, y2: 1,
-			x3:       1, y3: 1,
+			name: "ZeroArea",
+			x1:   1, y1: 1,
+			x2: 1, y2: 1,
+			x3: 1, y3: 1,
 			expected: 0, // All points are the same
 		},
 	}
@@ -260,7 +260,7 @@ func TestTriangleArea(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			area := triangleArea(tc.x1, tc.y1, tc.x2, tc.y2, tc.x3, tc.y3)
-			
+
 			// Use a small epsilon for floating point comparison
 			epsilon := 0.001
 			if math.Abs(area-tc.expected) > epsilon {

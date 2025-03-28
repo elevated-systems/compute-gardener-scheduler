@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog/v2"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
+	"k8s.io/klog/v2"
 )
 
 // Cache provides thread-safe caching of electricity data with TTL
@@ -39,7 +39,7 @@ func New(ttl time.Duration, maxAge time.Duration) *Cache {
 	if maxAge <= 0 {
 		maxAge = time.Hour // Default to 1 hour if not set
 	}
-	
+
 	c := &Cache{
 		data: make(map[string]*cacheEntry),
 		// For cache freshness purposes at get time.
