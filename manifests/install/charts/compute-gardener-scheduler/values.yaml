@@ -11,7 +11,7 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.6-b5233a9
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.7-6b66cdc
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
@@ -156,7 +156,7 @@ nodeExporter:
   # Enable the hardware metrics exporter DaemonSet for accurate CPU model detection and power measurements
   # Note: For GPU metrics, see metrics.gpuMetrics section
   enabled: true
-  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.6-b5233a9
+  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.7-6b66cdc
   imagePullPolicy: IfNotPresent
   resources:
     requests:
