@@ -3,36 +3,27 @@ kind: CronJob
 metadata:
   name: compute-gardener-batch-job
 spec:
-  # Run at 2 AM every day - typically during off-peak hours
-  schedule: "0 2 * * *"
-  concurrencyPolicy: Forbid
+  # Run every 30 minutes
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Allow
+  successfulJobsHistoryLimit: 3
   jobTemplate:
     spec:
       template:
         metadata:
           annotations:
             # Higher thresholds for batch jobs since they're more flexible
-            compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "400.0"
-            compute-gardener-scheduler.kubernetes.io/price-threshold: "0.30"
+            compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "150.0"
         spec:
           schedulerName: compute-gardener-scheduler
           containers:
-          - name: batch-processor
-            image: batch-processor:1.0
-            command:
-            - /process-data.sh
+          - name: hpl-benchmark
+            image: edwardchalstrey/hpl_benchmark
             resources:
               requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
                 memory: "2Gi"
                 cpu: "1000m"
-              limits:
-                memory: "4Gi"
-                cpu: "2000m"
-            volumeMounts:
-            - name: data
-              mountPath: /data
-          volumes:
-          - name: data
-            persistentVolumeClaim:
-              claimName: batch-data-pvc
-          restartPolicy: OnFailure
+          restartPolicy: Never
