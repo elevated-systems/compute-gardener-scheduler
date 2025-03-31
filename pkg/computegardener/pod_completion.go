@@ -174,10 +174,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
 	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
 
-	// Calculate true carbon and cost savings based on the diff between initial and final intensity/rate
+	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
 	// multiplied by actual energy used - requires all three values to be known
 
-	// Carbon savings calculation
+	// Carbon difference calculation
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
 		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
 		if err == nil {
@@ -190,30 +190,30 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				finalIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
 			}
 
-			if finalIntensity > 0 && initialIntensity > finalIntensity {
-				// Calculate true savings: (initial - final) * energy consumed
+			if finalIntensity > 0 {
+				// Calculate true difference: (initial - final) * energy consumed
 				intensityDiff := initialIntensity - finalIntensity
 				carbonSavingsGrams := intensityDiff * totalEnergyKWh * 1000 // convert kWh to Wh and multiply by gCO2/kWh
 
-				if carbonSavingsGrams > 0 {
-					klog.V(2).InfoS("Calculated carbon savings",
-						"pod", klog.KObj(pod),
-						"initialIntensity", initialIntensity,
-						"finalIntensity", finalIntensity,
-						"energyKWh", totalEnergyKWh,
-						"savingsGrams", carbonSavingsGrams)
+				// Log regardless of whether savings are positive or negative
+				klog.V(2).InfoS("Calculated carbon savings/costs",
+					"pod", klog.KObj(pod),
+					"initialIntensity", initialIntensity,
+					"finalIntensity", finalIntensity,
+					"energyKWh", totalEnergyKWh,
+					"savingsGrams", carbonSavingsGrams,
+					"isPositive", intensityDiff > 0)
 
-					// Record actual calculated savings
-					EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
+				// Record actual calculated savings or costs (even if negative)
+				EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
 
-					// Record efficiency metrics
-					SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
-				}
+				// Record efficiency metrics
+				SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 			}
 		}
 	}
 
-	// Cost savings calculation
+	// Cost difference calculation
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
 		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 		if err == nil {
@@ -226,25 +226,25 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				finalRate = cs.priceImpl.GetCurrentRate(time.Now())
 			}
 
-			if finalRate > 0 && initialRate > finalRate {
-				// Calculate cost savings: (initial - final) * energy consumed
+			if finalRate > 0 {
+				// Calculate cost difference: (initial - final) * energy consumed
 				rateDiff := initialRate - finalRate
 				costSavingsDollars := rateDiff * totalEnergyKWh
 
-				if costSavingsDollars > 0 {
-					klog.V(2).InfoS("Calculated cost savings",
-						"pod", klog.KObj(pod),
-						"initialRate", initialRate,
-						"finalRate", finalRate,
-						"energyKWh", totalEnergyKWh,
-						"savingsDollars", costSavingsDollars)
+				// Log regardless of whether savings are positive or negative
+				klog.V(2).InfoS("Calculated cost savings/costs",
+					"pod", klog.KObj(pod),
+					"initialRate", initialRate,
+					"finalRate", finalRate,
+					"energyKWh", totalEnergyKWh,
+					"savingsDollars", costSavingsDollars,
+					"isPositive", rateDiff > 0)
 
-					// Record actual calculated savings
-					EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
+				// Record actual calculated savings or costs (even if negative)
+				EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
 
-					// Record efficiency metrics
-					SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
-				}
+				// Record efficiency metrics
+				SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
 			}
 		}
 	}
