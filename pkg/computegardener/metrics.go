@@ -111,12 +111,11 @@ var (
 	)
 
 	// JobEnergyUsage tracks estimated energy usage for jobs
-	JobEnergyUsage = metrics.NewHistogramVec(
-		&metrics.HistogramOpts{
+	JobEnergyUsage = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "job_energy_usage_kwh",
 			Help:           "Estimated energy usage in kWh for completed jobs",
-			Buckets:        metrics.ExponentialBuckets(0.001, 2, 15),
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"pod", "namespace"},
@@ -178,12 +177,11 @@ var (
 	)
 
 	// JobCarbonEmissions tracks estimated carbon emissions for jobs
-	JobCarbonEmissions = metrics.NewHistogramVec(
-		&metrics.HistogramOpts{
+	JobCarbonEmissions = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "job_carbon_emissions_grams",
 			Help:           "Estimated carbon emissions in gCO2eq for completed jobs",
-			Buckets:        metrics.ExponentialBuckets(0.001, 2, 15),
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"pod", "namespace"},

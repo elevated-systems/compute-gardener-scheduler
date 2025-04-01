@@ -171,8 +171,8 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"carbonEmissions", totalCarbonEmissions,
 		"metricsCount", len(metricsHistory.Records))
 
-	JobEnergyUsage.WithLabelValues(podName, namespace).Observe(totalEnergyKWh)
-	JobCarbonEmissions.WithLabelValues(podName, namespace).Observe(totalCarbonEmissions)
+	JobEnergyUsage.WithLabelValues(podName, namespace).Set(totalEnergyKWh)
+	JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
 
 	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
 	// multiplied by actual energy used - requires all three values to be known

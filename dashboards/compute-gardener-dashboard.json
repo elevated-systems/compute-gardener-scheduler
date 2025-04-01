@@ -1199,7 +1199,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_namespace, exported_pod) (increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[5m]) > 0)",
+          "expr": "sum by (node, exported_namespace, exported_pod) (scheduler_compute_gardener_job_energy_usage_kwh > 0)",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
           "range": true,
           "refId": "A"
@@ -1210,7 +1210,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_namespace, exported_pod) (increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[5m]) > 0)",
+          "expr": "sum by (node, exported_namespace, exported_pod) (scheduler_compute_gardener_job_carbon_emissions_grams > 0)",
           "hide": false,
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
