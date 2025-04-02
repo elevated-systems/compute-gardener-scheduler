@@ -507,8 +507,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_carbon_intensity{region=~\"$region\"}",
-          "legendFormat": "Carbon Intensity (gCO2eq/kWh) - {{region}}",
+          "expr": "scheduler_compute_gardener_job_energy_usage_kwh",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
           "range": true,
           "refId": "A"
         },
@@ -518,15 +518,51 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(kube_pod_status_scheduled{condition=\"false\"})",
+          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams",
           "hide": false,
-          "legendFormat": "Unscheduled Pods",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Carbon Intensity and Unscheduled Pod Queue",
-      "type": "timeseries"
+      "title": "Completed Jobs Energy Usage and Emissions",
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "Value #A",
+                "Value #B"
+              ]
+            }
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "operator": "gt",
+                  "value": 0
+                },
+                "fieldName": "Value"
+              }
+            ],
+            "type": "include"
+          }
+        },
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ]
+          }
+        }
+      ],
+      "type": "barchart"
     },
     {
       "datasource": {
@@ -1112,7 +1148,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": {
@@ -1178,6 +1213,7 @@
       },
       "id": 16,
       "options": {
+        "orientation": "vertical",
         "legend": {
           "calcs": [
             "sum"
@@ -1199,7 +1235,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_namespace, exported_pod) (scheduler_compute_gardener_job_energy_usage_kwh > 0)",
+          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0 and idelta(scheduler_compute_gardener_job_energy_usage_kwh[1m]) > 0",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
           "range": true,
           "refId": "A"
@@ -1210,7 +1246,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_namespace, exported_pod) (scheduler_compute_gardener_job_carbon_emissions_grams > 0)",
+          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams > 0 and idelta(scheduler_compute_gardener_job_carbon_emissions_grams[1m]) > 0",
           "hide": false,
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
@@ -1218,7 +1254,7 @@
         }
       ],
       "title": "Completed Jobs Energy Usage and Emissions",
-      "type": "timeseries"
+      "type": "barchart"
     },
     {
       "datasource": {

@@ -64,7 +64,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
 			carbonIntensity = intensity
 			// Also update the carbon intensity gauge here so we're not dependent on pods to trigger
-			CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
+			metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
 			klog.V(2).InfoS("Updated carbon intensity gauge from metrics collector",
 				"region", cs.config.Carbon.APIConfig.Region,
 				"intensity", intensity)
@@ -87,7 +87,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 
 		// Update electricity rate gauge
-		ElectricityRateGauge.WithLabelValues("tou", period).Set(currentRate)
+		metrics.ElectricityRateGauge.WithLabelValues("tou", period).Set(currentRate)
 		klog.V(2).InfoS("Updated electricity rate gauge from metrics collector",
 			"rate", currentRate,
 			"period", period,
@@ -223,10 +223,10 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		)
 
 		// Update current metrics in Prometheus
-		NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.CPU)
-		NodeMemoryUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.Memory)
-		NodeGPUPower.WithLabelValues(nodeName, pod.Name, "current").Set(record.GPUPowerWatts)
-		NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "current").Set(record.PowerEstimate)
+		metrics.NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.CPU)
+		metrics.NodeMemoryUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.Memory)
+		metrics.NodeGPUPower.WithLabelValues(nodeName, pod.Name, "current").Set(record.GPUPowerWatts)
+		metrics.NodePowerEstimate.WithLabelValues(nodeName, pod.Name, "current").Set(record.PowerEstimate)
 
 		processedCount++
 	}
@@ -238,12 +238,12 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 
 	// Update metrics store stats
 	cacheSize := cs.metricsStore.Size()
-	MetricsCacheSize.Set(float64(cacheSize))
+	metrics.MetricsCacheSize.Set(float64(cacheSize))
 
 	// Update samples stored metric for active pods
 	for _, podMetrics := range podMetricsList {
 		if hist, found := cs.metricsStore.GetHistory(string(podMetrics.UID)); found {
-			MetricsSamplesStored.WithLabelValues(podMetrics.Name, podMetrics.Namespace).Set(float64(len(hist.Records)))
+			metrics.MetricsSamplesStored.WithLabelValues(podMetrics.Name, podMetrics.Namespace).Set(float64(len(hist.Records)))
 		}
 	}
 
@@ -714,7 +714,7 @@ func (cs *ComputeGardenerScheduler) updateEnergyBudgetTracking(ctx context.Conte
 		usagePercent := (currentEnergyKWh / budget) * 100
 
 		// Record metrics
-		EnergyBudgetTracking.WithLabelValues(pod.Name, pod.Namespace).Set(usagePercent)
+		metrics.EnergyBudgetTracking.WithLabelValues(pod.Name, pod.Namespace).Set(usagePercent)
 
 		// Determine owner reference type for metrics
 		ownerKind := "Pod"
@@ -744,7 +744,7 @@ func (cs *ComputeGardenerScheduler) updateEnergyBudgetTracking(ctx context.Conte
 				cs.handleEnergyBudgetAction(&pod, action, currentEnergyKWh, budget)
 
 				// Update counter
-				EnergyBudgetExceeded.WithLabelValues(pod.Namespace, ownerKind, action).Inc()
+				metrics.EnergyBudgetExceeded.WithLabelValues(pod.Namespace, ownerKind, action).Inc()
 				totalExceeded++
 			}
 		}

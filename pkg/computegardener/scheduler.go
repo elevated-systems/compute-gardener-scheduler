@@ -443,18 +443,18 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 
 	startTime := cs.clock.Now()
 	defer func() {
-		PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
+		metrics.PodSchedulingLatency.WithLabelValues("prefilter").Observe(cs.clock.Since(startTime).Seconds())
 	}()
 
 	// Check if pod has been waiting too long
 	if cs.hasExceededMaxDelay(pod) {
-		SchedulingAttempts.WithLabelValues("max_delay_exceeded").Inc()
+		metrics.SchedulingAttempts.WithLabelValues("max_delay_exceeded").Inc()
 		return nil, framework.NewStatus(framework.Success, "maximum scheduling delay exceeded")
 	}
 
 	// Check if pod has annotation to opt-out
 	if cs.isOptedOut(pod) {
-		SchedulingAttempts.WithLabelValues("skipped").Inc()
+		metrics.SchedulingAttempts.WithLabelValues("skipped").Inc()
 		return nil, framework.NewStatus(framework.Success, "")
 	}
 
@@ -480,13 +480,13 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 			if !cs.priceImpl.IsPeakTime(cs.clock.Now()) {
 				period = "off-peak"
 			}
-			ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
+			metrics.ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
 			// Record metrics for price-based delay - only count each pod once
 			podUID := string(pod.UID)
 			if !cs.delayedPods[podUID] {
 				// Increment the delay counter only for new pods
-				PriceBasedDelays.WithLabelValues(period).Inc()
+				metrics.PriceBasedDelays.WithLabelValues(period).Inc()
 
 				// Mark this pod as counted so we don't count it again
 				cs.delayedPods[podUID] = true
@@ -554,7 +554,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 
 	var returnStatus *framework.Status
 	defer func() {
-		PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
+		metrics.PodSchedulingLatency.WithLabelValues("filter").Observe(cs.clock.Since(startTime).Seconds())
 
 		// Log the filter result with timing information
 		if returnStatus != nil && !returnStatus.IsSuccess() {
@@ -610,11 +610,11 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		powerProfile, err := cs.hardwareProfiler.GetNodePowerProfile(node)
 		if err == nil && powerProfile != nil {
 			// Record PUE metric for the node
-			NodePUE.WithLabelValues(node.Name).Set(powerProfile.PUE)
+			metrics.NodePUE.WithLabelValues(node.Name).Set(powerProfile.PUE)
 
 			// Calculate and record node efficiency
 			nodeEfficiency := metrics.CalculateNodeEfficiency(node, powerProfile)
-			NodeEfficiency.WithLabelValues(node.Name).Set(nodeEfficiency)
+			metrics.NodeEfficiency.WithLabelValues(node.Name).Set(nodeEfficiency)
 
 			// If pod has energy efficiency annotations, check if this node meets requirements
 			if val, ok := pod.Annotations[common.AnnotationMaxPowerWatts]; ok {
@@ -663,7 +663,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							"workloadType", workloadType)
 
 						// Record the filtering in metrics
-						PowerFilteredNodes.WithLabelValues("max_power").Inc()
+						metrics.PowerFilteredNodes.WithLabelValues("max_power").Inc()
 
 						return framework.NewStatus(framework.Unschedulable,
 							fmt.Sprintf("node power profile (%.1f W) exceeds pod max power requirement (%.1f W)",
@@ -692,7 +692,7 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 							"minEfficiency", minEfficiency)
 
 						// Record the filtering in metrics
-						PowerFilteredNodes.WithLabelValues("efficiency").Inc()
+						metrics.PowerFilteredNodes.WithLabelValues("efficiency").Inc()
 
 						return framework.NewStatus(framework.Unschedulable,
 							"node efficiency below pod's minimum requirement")
@@ -802,7 +802,7 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 	}
 
 	// Update metrics regardless of threshold check result
-	CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
 
 	if currentIntensity > threshold {
 		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
@@ -816,7 +816,7 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 		// Only count carbon delay once per pod
 		podUID := string(pod.UID)
 		if !cs.delayedPods[podUID] {
-			CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+			metrics.CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 			cs.delayedPods[podUID] = true
 			klog.V(2).InfoS("Recorded new carbon-based delay",
 				"pod", klog.KObj(pod),
@@ -1027,7 +1027,7 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 				"intensity", intensity)
 
 			// Update metrics
-			CarbonIntensityGauge.WithLabelValues(region).Set(intensity)
+			metrics.CarbonIntensityGauge.WithLabelValues(region).Set(intensity)
 		}
 	}
 }

@@ -171,8 +171,8 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"carbonEmissions", totalCarbonEmissions,
 		"metricsCount", len(metricsHistory.Records))
 
-	JobEnergyUsage.WithLabelValues(podName, namespace).Set(totalEnergyKWh)
-	JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
+	metrics.JobEnergyUsage.WithLabelValues(podName, namespace).Set(totalEnergyKWh)
+	metrics.JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
 
 	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
 	// multiplied by actual energy used - requires all three values to be known
@@ -205,10 +205,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", intensityDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
+				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
 
 				// Record efficiency metrics
-				SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
+				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 			}
 		}
 	}
@@ -241,10 +241,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", rateDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
+				metrics.EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
 
 				// Record efficiency metrics
-				SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
+				metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
 			}
 		}
 	}
@@ -263,7 +263,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			usagePercent := (totalEnergyKWh / budgetKWh) * 100
 
 			// Record energy budget usage metric
-			EnergyBudgetTracking.WithLabelValues(podName, namespace).Set(usagePercent)
+			metrics.EnergyBudgetTracking.WithLabelValues(podName, namespace).Set(usagePercent)
 
 			// Log whether the pod exceeded its energy budget
 			if totalEnergyKWh > budgetKWh {
@@ -285,7 +285,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				}
 
 				// Increment the counter for exceeded budgets
-				EnergyBudgetExceeded.WithLabelValues(namespace, ownerKind, action).Inc()
+				metrics.EnergyBudgetExceeded.WithLabelValues(namespace, ownerKind, action).Inc()
 			} else {
 				klog.V(2).InfoS("Pod completed within energy budget",
 					"pod", klog.KObj(pod),
@@ -301,16 +301,16 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Set final metrics for the pod
 	if len(metricsHistory.Records) > 0 {
 		final := metricsHistory.Records[len(metricsHistory.Records)-1]
-		NodeCPUUsage.WithLabelValues(nodeName, podName, "final").Set(final.CPU)
-		NodeMemoryUsage.WithLabelValues(nodeName, podName, "final").Set(final.Memory)
-		NodeGPUPower.WithLabelValues(nodeName, podName, "final").Set(final.GPUPowerWatts)
-		NodePowerEstimate.WithLabelValues(nodeName, podName, "final").Set(final.PowerEstimate)
+		metrics.NodeCPUUsage.WithLabelValues(nodeName, podName, "final").Set(final.CPU)
+		metrics.NodeMemoryUsage.WithLabelValues(nodeName, podName, "final").Set(final.Memory)
+		metrics.NodeGPUPower.WithLabelValues(nodeName, podName, "final").Set(final.GPUPowerWatts)
+		metrics.NodePowerEstimate.WithLabelValues(nodeName, podName, "final").Set(final.PowerEstimate)
 
 		// Reset current phase metrics to 0 to ensure completed pods don't appear in dashboards
-		NodeCPUUsage.WithLabelValues(nodeName, podName, "current").Set(0)
-		NodeMemoryUsage.WithLabelValues(nodeName, podName, "current").Set(0)
-		NodeGPUPower.WithLabelValues(nodeName, podName, "current").Set(0)
-		NodePowerEstimate.WithLabelValues(nodeName, podName, "current").Set(0)
+		metrics.NodeCPUUsage.WithLabelValues(nodeName, podName, "current").Set(0)
+		metrics.NodeMemoryUsage.WithLabelValues(nodeName, podName, "current").Set(0)
+		metrics.NodeGPUPower.WithLabelValues(nodeName, podName, "current").Set(0)
+		metrics.NodePowerEstimate.WithLabelValues(nodeName, podName, "current").Set(0)
 
 		klog.V(2).InfoS("Reset current power metrics to zero for completed pod",
 			"pod", klog.KObj(pod),

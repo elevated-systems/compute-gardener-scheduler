@@ -1,4 +1,4 @@
-package computegardener
+package metrics
 
 import (
 	"k8s.io/component-base/metrics"

@@ -3,7 +3,6 @@ package metrics
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsv1beta1client "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
@@ -185,41 +184,4 @@ func (c *MockGPUMetricsClient) SetPodGPUUtilization(namespace, name string, util
 func (c *MockGPUMetricsClient) SetPodGPUPower(namespace, name string, power float64) {
 	key := namespace + "/" + name
 	c.power[key] = power
-}
-
-// CalculatePodMetrics converts Kubernetes metrics to our internal format
-func CalculatePodMetrics(
-	podMetrics *metricsv1beta1.PodMetrics,
-	pod *corev1.Pod,
-	gpuPowerWatts float64,
-	carbonIntensity float64,
-	calculatePower func(nodeName string, cpu, memory, gpu float64) float64,
-) PodMetricsRecord {
-	// Sum CPU and memory usage across all containers
-	var totalCPU float64
-	var totalMemory float64
-
-	for _, container := range podMetrics.Containers {
-		cpuQuantity := container.Usage.Cpu()
-		memQuantity := container.Usage.Memory()
-
-		totalCPU += float64(cpuQuantity.MilliValue()) / 1000
-		totalMemory += float64(memQuantity.Value())
-	}
-
-	// Calculate power estimate using the provided calculator function
-	nodeName := pod.Spec.NodeName
-	estimatedPower := calculatePower(nodeName, totalCPU, totalMemory, gpuPowerWatts)
-
-	// Return a record with all the fields including 0 for ElectricityRate
-	// ElectricityRate will be set in the metrics collector if available
-	return PodMetricsRecord{
-		Timestamp:       podMetrics.Timestamp.Time,
-		CPU:             totalCPU,
-		Memory:          totalMemory,
-		GPUPowerWatts:   gpuPowerWatts,
-		PowerEstimate:   estimatedPower,
-		CarbonIntensity: carbonIntensity,
-		ElectricityRate: 0, // Will be set later if available
-	}
 }
