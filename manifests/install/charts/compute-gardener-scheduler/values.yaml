@@ -1,7 +1,7 @@
 # Default values for compute-gardener-scheduler
 # This is a YAML-formatted file
 
-# Note: Use Helm's --namespace and --create-namespace flags 
+# Note: Use Helm's --namespace and --create-namespace flags
 # to specify the installation namespace (suggested namespace: "compute-gardener")
 
 # General scheduler configuration
@@ -11,7 +11,7 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.7-6b66cdc
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.0-17f75b6
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
@@ -30,7 +30,7 @@ scheduler:
   affinity: {}
   tolerations: []
   priorityClassName: ""
-  
+
   # Probe configuration
   probes:
     livenessProbe:
@@ -53,19 +53,19 @@ priceAware:
   schedules:
     # Default TOU schedule for all nodes
     # Currently, all nodes follow this schedule unless node annotation support is implemented
-    - name: "california-pge"            # Unique name for this schedule
-      dayOfWeek: "1-5"                  # Monday-Friday (1-5)
-      startTime: "16:00"                # Start of peak period (4pm)
-      endTime: "21:00"                  # End of peak period (9pm)
-      timezone: "America/Los_Angeles"   # IANA timezone identifier
+    - name: "california-pge" # Unique name for this schedule
+      dayOfWeek: "1-5" # Monday-Friday (1-5)
+      startTime: "16:00" # Start of peak period (4pm)
+      endTime: "21:00" # End of peak period (9pm)
+      timezone: "America/Los_Angeles" # IANA timezone identifier
       # Rates are optional and only used for metrics/reporting
-      peakRate: 0.30                    # Peak rate in $/kWh
-      offPeakRate: 0.10                 # Off-peak rate in $/kWh
-    
+      peakRate: 0.30 # Peak rate in $/kWh
+      offPeakRate: 0.10 # Off-peak rate in $/kWh
+
     # Additional schedules will be supported in the future:
     # In the current implementation, only the first schedule is used for all nodes.
     # Future versions will support node-specific schedule assignment via annotations.
-    # 
+    #
     # Examples of additional schedule formats for future use:
     #
     # - name: "california-pge-weekend"
@@ -77,7 +77,7 @@ priceAware:
     #   offPeakRate: 0.10
     #
     # - name: "new-york-coned"
-    #   dayOfWeek: "1-5"                # Monday-Friday 
+    #   dayOfWeek: "1-5"                # Monday-Friday
     #   startTime: "14:00"              # 2pm
     #   endTime: "20:00"                # 8pm
     #   timezone: "America/New_York"
@@ -101,7 +101,7 @@ metrics:
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
   # Set to true for GKE to use PodMonitoring instead of ServiceMonitor
   gke: false
-  
+
   # Prometheus configuration for metrics collection
   prometheus:
     # Prometheus server URL - REQUIRED for GPU power metrics
@@ -118,7 +118,7 @@ metrics:
     # DCGM power metric name (default: DCGM_FI_DEV_POWER_USAGE)
     # This assumes DCGM exporter is configured with standard metric names
     dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE"
-  
+
   # GPU metrics configuration
   gpuMetrics:
     # Enable GPU metrics collection
@@ -141,7 +141,7 @@ metrics:
 samplePod:
   # When enabled, creates a sample pod that demonstrates scheduler functionality
   # The pod also helps validate metrics collection with a longer-running workload
-  # If you see "Zero or negative energy value" warnings in logs, the pod may not 
+  # If you see "Zero or negative energy value" warnings in logs, the pod may not
   # have run long enough to collect meaningful metrics
   enabled: true
   image: "busybox:latest"
@@ -151,12 +151,12 @@ hardwareProfiles:
   enabled: true
   mountPath: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles"
 
-# Node exporter configuration for CPU hardware metrics 
+# Node exporter configuration for CPU hardware metrics
 nodeExporter:
   # Enable the hardware metrics exporter DaemonSet for accurate CPU model detection and power measurements
   # Note: For GPU metrics, see metrics.gpuMetrics section
   enabled: true
-  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.1.7-6b66cdc
+  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.2.0-17f75b6
   imagePullPolicy: IfNotPresent
   resources:
     requests:

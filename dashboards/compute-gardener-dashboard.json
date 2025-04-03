@@ -466,38 +466,6 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*carbon_emissions.*"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "kg"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*energy_usage.*"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "kwh"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "auto"
-              }
-            ]
           }
         ]
       },
@@ -530,8 +498,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0",
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
+          "expr": "scheduler_compute_gardener_carbon_intensity{region=~\"$region\"}",
+          "legendFormat": "Carbon Intensity (gCO2/kWh) - {{region}}",
           "range": true,
           "refId": "A"
         },
@@ -541,34 +509,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0",
+          "expr": "sum(kube_pod_status_scheduled{condition=\"false\"})",
           "hide": false,
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
+          "legendFormat": "Unscheduled Pods",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Completed Jobs Energy Usage and Emissions",
-      "transformations": [
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "field": "Time",
-                "order": "desc"
-              }
-            ]
-          }
-        },
-        {
-          "id": "limit",
-          "options": {
-            "limitField": 1
-          }
-        }
-      ],
+      "title": "Carbon Intensity and Unscheduled Pod Queue",
       "type": "timeseries"
     },
     {
@@ -1143,6 +1091,190 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Carbon intensity over time with scheduling delays marked",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 150
+              },
+              {
+                "color": "red",
+                "value": 250
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Unscheduled Pods.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*carbon_emissions.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kg"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*energy_usage.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kWh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "id": 99,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0",
+          "hide": false,
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Completed Jobs Energy Usage and Emissions",
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Time",
+                "order": "desc"
+              }
+            ]
+          }
+        },
+        {
+          "id": "limit",
+          "options": {
+            "limitField": 1
+          }
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "Namespace total energy usage and carbon emissions",
       "fieldConfig": {
         "defaults": {
@@ -1188,7 +1320,7 @@
               }
             ]
           },
-          "unit": "kwh"
+          "unit": "kWh"
         },
         "overrides": [
           {
@@ -1215,7 +1347,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "kwh"
+                "value": "kWh"
               },
               {
                 "id": "custom.axisPlacement",
@@ -1228,7 +1360,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 35
       },
       "id": 16,
@@ -1316,9 +1448,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 35
+        "w": 24,
+        "x": 0,
+        "y": 43
       },
       "id": 18,
       "options": {
@@ -1359,7 +1491,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 51
       },
       "id": 30,
       "panels": [],
@@ -1425,7 +1557,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 52
       },
       "id": 50,
       "options": {
@@ -1530,7 +1662,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 60
       },
       "id": 20,
       "options": {
@@ -1624,7 +1756,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 60
       },
       "id": 22,
       "options": {
@@ -1695,7 +1827,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 68
       },
       "id": 32,
       "options": {
@@ -1789,7 +1921,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 68
       },
       "id": 34,
       "options": {
@@ -1830,7 +1962,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 68
+        "y": 76
       },
       "id": 52,
       "panels": [],
@@ -1892,7 +2024,7 @@
               }
             ]
           },
-          "unit": "kwh"
+          "unit": "kWh"
         },
         "overrides": []
       },
@@ -1900,7 +2032,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 69
+        "y": 77
       },
       "id": 53,
       "options": {
@@ -2010,7 +2142,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 69
+        "y": 77
       },
       "id": 54,
       "options": {
@@ -2062,7 +2194,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 85
       },
       "id": 36,
       "panels": [],
@@ -2128,7 +2260,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 78
+        "y": 86
       },
       "id": 8,
       "options": {
@@ -2220,8 +2352,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 78
+        "x": 12,
+        "y": 86
       },
       "id": 38,
       "options": {
@@ -2337,8 +2469,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 78
+        "x": 0,
+        "y": 94
       },
       "id": 40,
       "options": {
@@ -2399,7 +2531,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 86
+        "y": 94
       },
       "id": 42,
       "options": {
