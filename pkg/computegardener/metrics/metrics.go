@@ -132,15 +132,15 @@ var (
 		[]string{"metric", "pod"}, // metric: "carbon_intensity_delta", "electricity_rate_delta"
 	)
 
-	// EstimatedSavings tracks carbon and cost savings
-	EstimatedSavings = metrics.NewCounterVec(
-		&metrics.CounterOpts{
+	// EstimatedSavings tracks carbon and cost savings for completed pods (can be negative)
+	EstimatedSavings = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "estimated_savings",
-			Help:           "Estimated savings from compute-gardener scheduling",
+			Help:           "Estimated savings from compute-gardener scheduling for the last completed pod (grams_co2 or dollars)",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"type", "unit"}, // type: "carbon", "cost", unit: "grams_co2", "kwh", "dollars"
+		[]string{"type", "unit"}, // type: "carbon", "cost", unit: "grams_co2", "dollars"
 	)
 
 	// ElectricityRateGauge measures the current electricity rate

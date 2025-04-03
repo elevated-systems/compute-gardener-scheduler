@@ -193,7 +193,8 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			if finalIntensity > 0 {
 				// Calculate true difference: (initial - final) * energy consumed
 				intensityDiff := initialIntensity - finalIntensity
-				carbonSavingsGrams := intensityDiff * totalEnergyKWh * 1000 // convert kWh to Wh and multiply by gCO2/kWh
+				// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
+				carbonSavingsGrams := intensityDiff * totalEnergyKWh
 
 				// Log regardless of whether savings are positive or negative
 				klog.V(2).InfoS("Calculated carbon savings/costs",
@@ -205,7 +206,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", intensityDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2").Add(carbonSavingsGrams)
+				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2").Set(carbonSavingsGrams)
 
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
@@ -241,7 +242,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", rateDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("cost", "dollars").Add(costSavingsDollars)
+				metrics.EstimatedSavings.WithLabelValues("cost", "dollars").Set(costSavingsDollars)
 
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)

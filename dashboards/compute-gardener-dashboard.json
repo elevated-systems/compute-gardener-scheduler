@@ -76,7 +76,7 @@
               }
             ]
           },
-          "unit": "gCO2eq/kWh"
+          "unit": "gCO2/kWh"
         },
         "overrides": []
       },
@@ -249,7 +249,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Estimated savings from carbon-aware and price-aware scheduling",
+      "description": "Estimated hourly savings from carbon-aware and price-aware scheduling",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -285,13 +285,6 @@
               {
                 "id": "unit",
                 "value": "kg"
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#73BF69",
-                  "mode": "fixed"
-                }
               },
               {
                 "id": "custom.axisPlacement",
@@ -361,8 +354,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(scheduler_compute_gardener_estimated_savings{type=\"carbon\", unit=\"grams_co2\"}[1h])) / 1000 or vector(0)",
-          "legendFormat": "Carbon savings (kg CO2)",
+          "expr": "sum by (exported_namespace, exported_pod) (scheduler_compute_gardener_estimated_savings{type=\"carbon\", unit=\"grams_co2\"} / 1000)",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Carbon savings (kg CO2)",
           "range": true,
           "refId": "A"
         },
@@ -372,13 +365,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(scheduler_compute_gardener_estimated_savings{type=\"cost\", unit=\"dollars\"}[1h])) or vector(0)",
-          "legendFormat": "Cost savings ($)",
+          "expr": "sum by (exported_namespace, exported_pod) (scheduler_compute_gardener_estimated_savings{type=\"cost\", unit=\"dollars\"})",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Cost savings ($)",
           "range": true,
           "refId": "C"
         }
       ],
-      "title": "Estimated Savings (Hourly)",
+      "title": "Estimated Savings by Pod (Total)",
       "type": "timeseries"
     },
     {
@@ -473,6 +466,38 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*carbon_emissions.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kg"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*energy_usage.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "auto"
+              }
+            ]
           }
         ]
       },
@@ -486,9 +511,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "mean",
-            "min",
-            "max"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -507,7 +530,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_energy_usage_kwh",
+          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
           "range": true,
           "refId": "A"
@@ -518,7 +541,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams",
+          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0",
           "hide": false,
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
@@ -528,41 +551,25 @@
       "title": "Completed Jobs Energy Usage and Emissions",
       "transformations": [
         {
-          "id": "filterFieldsByName",
+          "id": "sortBy",
           "options": {
-            "include": {
-              "names": [
-                "Value #A",
-                "Value #B"
-              ]
-            }
-          }
-        },
-        {
-          "id": "filterByValue",
-          "options": {
-            "filters": [
+            "fields": {},
+            "sort": [
               {
-                "config": {
-                  "operator": "gt",
-                  "value": 0
-                },
-                "fieldName": "Value"
+                "field": "Time",
+                "order": "desc"
               }
-            ],
-            "type": "include"
+            ]
           }
         },
         {
-          "id": "reduce",
+          "id": "limit",
           "options": {
-            "reducers": [
-              "lastNotNull"
-            ]
+            "limitField": 1
           }
         }
       ],
-      "type": "barchart"
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1136,7 +1143,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Energy usage and carbon emissions for completed jobs",
+      "description": "Namespace total energy usage and carbon emissions",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1181,7 +1188,7 @@
               }
             ]
           },
-          "unit": "kwatth"
+          "unit": "kwh"
         },
         "overrides": [
           {
@@ -1192,14 +1199,27 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "g"
+                "value": "kg"
               },
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-red",
-                  "mode": "fixed"
-                }
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*energy_usage.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "auto"
               }
             ]
           }
@@ -1213,10 +1233,9 @@
       },
       "id": 16,
       "options": {
-        "orientation": "vertical",
         "legend": {
           "calcs": [
-            "sum"
+            "lastNotNull"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -1235,8 +1254,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0 and idelta(scheduler_compute_gardener_job_energy_usage_kwh[1m]) > 0",
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
+          "expr": "sum by (exported_namespace) (scheduler_compute_gardener_job_energy_usage_kwh > 0)",
+          "legendFormat": "{{exported_namespace}} - energy_usage",
           "range": true,
           "refId": "A"
         },
@@ -1246,15 +1265,15 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams > 0 and idelta(scheduler_compute_gardener_job_carbon_emissions_grams[1m]) > 0",
+          "expr": "sum by (exported_namespace) (scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0)",
           "hide": false,
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
+          "legendFormat": "{{exported_namespace}} - carbon_emissions",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Completed Jobs Energy Usage and Emissions",
-      "type": "barchart"
+      "title": "Namespace Energy Usage and Emissions",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1873,7 +1892,7 @@
               }
             ]
           },
-          "unit": "kwatth"
+          "unit": "kwh"
         },
         "overrides": []
       },
@@ -2297,7 +2316,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "gCO2eq/kWh"
+                "value": "gCO2/kWh"
               }
             ]
           },
