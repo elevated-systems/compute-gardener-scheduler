@@ -138,6 +138,15 @@ data:
         frequencyRangeGHz:
           min: 0.8
           max: 5.0
+      "12th Gen Intel(R) Core(TM) i5-12600K":
+        idlePower: 9.5
+        maxPower: 125.0
+        numCores: 10
+        baseFrequencyGHz: 3.7
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.8
+          max: 4.9
       
       # AMD CPUs - Server/Cloud
       "AMD EPYC 7B12":
