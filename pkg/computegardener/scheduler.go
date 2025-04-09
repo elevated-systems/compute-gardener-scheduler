@@ -196,12 +196,12 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		// Initialize GPU metrics client - use Prometheus if configured, otherwise use null client
 		if cfg.Metrics.Prometheus != nil && cfg.Metrics.Prometheus.URL != "" {
-			klog.InfoS("Initializing Prometheus GPU metrics client",
+			klog.InfoS("Initializing Prometheus metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
 
-			promClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
+			promClient, err := metrics.NewPrometheusMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
-				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
+				klog.ErrorS(err, "Failed to initialize Prometheus metrics client, falling back to null implementation")
 				gpuMetricsClient = metrics.NewNullGPUMetricsClient()
 			} else {
 				// Configure DCGM metrics if settings are provided

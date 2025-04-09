@@ -241,6 +241,17 @@ var (
 		},
 		[]string{"namespace", "owner_kind", "action"},
 	)
+
+	// NodeTotalPowerEstimate estimates the total power consumption of an entire node
+	NodeTotalPowerEstimate = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "node_total_power_estimate_watts",
+			Help:           "Estimated total power consumption in watts for an entire node (CPU + Mem + All GPUs)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"node"}, // Labeled only by node
+	)
 )
 
 func init() {
@@ -266,4 +277,5 @@ func init() {
 	legacyregistry.MustRegister(NodeEfficiency)
 	legacyregistry.MustRegister(EnergyBudgetTracking)
 	legacyregistry.MustRegister(EnergyBudgetExceeded)
+	legacyregistry.MustRegister(NodeTotalPowerEstimate)
 }
