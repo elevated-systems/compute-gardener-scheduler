@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
@@ -104,14 +105,47 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	klog.V(3).InfoS("Retrieved pod metrics from metrics server",
 		"podCount", len(podMetricsList))
 
-	// Get GPU power measurements for all pods if GPU metrics client is configured
-	gpuPowers := make(map[string]float64)
+	// GPU Power Metrics Handling
+	nodePowers := make(map[string]map[string]float64) // NodeName -> UUID -> Power
 	if cs.gpuMetricsClient != nil {
-		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
-			klog.V(2).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
-			gpuPowers = powers
-		} else {
-			klog.ErrorS(err, "Failed to list GPU power measurements")
+		// 1. Fetch raw power data keyed by instance IP
+		instancePowers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx)
+		if err != nil {
+			klog.ErrorS(err, "Failed to list GPU power measurements from Prometheus")
+		} else if len(instancePowers) > 0 {
+			klog.V(2).InfoS("Retrieved raw GPU power measurements by instance IP", "instanceCount", len(instancePowers))
+
+			// 2. Build IP -> NodeName map for DCGM exporter pods
+			ipToNodeName := make(map[string]string)
+			// List DCGM exporter pods across all namespaces using a label selector
+			dcgmSelector := labels.SelectorFromSet(labels.Set{"app": "compute-gardener-dcgm-exporter"}) // Adjust label if needed
+			dcgmPods, err := cs.handle.ClientSet().CoreV1().Pods("").List(ctx, metav1.ListOptions{LabelSelector: dcgmSelector.String()})
+			if err != nil {
+				klog.ErrorS(err, "Failed to list DCGM exporter pods for IP mapping")
+			} else {
+				for _, pod := range dcgmPods.Items {
+					if pod.Status.PodIP != "" && pod.Spec.NodeName != "" {
+						ipToNodeName[pod.Status.PodIP] = pod.Spec.NodeName
+					}
+				}
+				klog.V(2).InfoS("Built IP to NodeName map from DCGM pods", "mapEntries", len(ipToNodeName), "podsFound", len(dcgmPods.Items))
+			}
+
+			// 3. Transform into NodeName -> UUID -> Power map
+			for instanceIP, uuidPowerMap := range instancePowers {
+				nodeName, found := ipToNodeName[instanceIP]
+				if !found {
+					klog.Warningf("Could not map instance IP %s to a node name, skipping its GPU metrics", instanceIP)
+					continue
+				}
+				if _, exists := nodePowers[nodeName]; !exists {
+					nodePowers[nodeName] = make(map[string]float64)
+				}
+				for uuid, power := range uuidPowerMap {
+					nodePowers[nodeName][uuid] = power
+				}
+			}
+			klog.V(2).InfoS("Transformed GPU power map", "nodeCount", len(nodePowers))
 		}
 	}
 
@@ -119,9 +153,15 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	skippedDifferentScheduler := 0
 	skippedNoNode := 0
 	skippedNotRunning := 0
+	gpuPodsProcessed := 0
+	gpuPodsWithMissingUUIDs := 0
 
 	// Track active pods and their status for heartbeat monitoring
 	activePods := make(map[string]*v1.Pod)
+	// Track aggregate resource usage per node for total power estimation
+	nodeAggregatedCPU := make(map[string]float64)
+	nodeAggregatedMemory := make(map[string]float64)
+	nodesWithPods := make(map[string]bool) // Keep track of nodes that had pods processed
 
 	for _, podMetrics := range podMetricsList {
 		// Get pod details
@@ -174,27 +214,71 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			continue
 		}
 
-		// Get GPU power for this pod
+		// Get GPU power for this specific pod based on assigned devices
 		gpuPower := 0.0
-		key := podMetrics.Namespace + "/" + podMetrics.Name
+		isGPUPod := common.IsGPUPod(pod)
+		if isGPUPod {
+			// Track GPU pod for metrics
+			gpuPodsProcessed++
 
-		// First try direct mapping by pod name/namespace
-		if power, exists := gpuPowers[key]; exists {
-			gpuPower = power
-			klog.V(2).InfoS("Found direct GPU power measurement for pod", "pod", key, "power", gpuPower)
-		} else {
-			// Check if this is a GPU pod
-			isGPUPod := common.IsGPUPod(pod)
+			// Get assigned GPU UUIDs (this now handles "all" with a special value)
+			assignedUUIDs := getAssignedGPUUUIDs(pod)
+			nodePowerMap, nodeExists := nodePowers[nodeName]
 
-			// For GPU pods, find GPU power measurements from DCGM
-			if isGPUPod && len(gpuPowers) > 0 {
-				// Use the first GPU power value we find
-				for gpuKey, power := range gpuPowers {
-					gpuPower = power
-					klog.V(2).InfoS("Attributed GPU power to pod",
-						"pod", klog.KObj(pod), "gpuKey", gpuKey, "power", power)
-					break
+			if !nodeExists {
+				klog.V(2).InfoS("No GPU power data found for node",
+					"node", nodeName,
+					"pod", klog.KObj(pod))
+			} else if assignedUUIDs == nil {
+				// No GPU assignment info available
+				gpuPodsWithMissingUUIDs++
+				klog.V(2).InfoS("GPU pod has no UUID assignment information",
+					"pod", klog.KObj(pod),
+					"node", nodeName)
+			} else if len(assignedUUIDs) == 1 && assignedUUIDs[0] == "all" {
+				// Pod is using all GPUs on the node
+				podGPUPowerSum := 0.0
+				for _, power := range nodePowerMap {
+					podGPUPowerSum += power
 				}
+				gpuPower = podGPUPowerSum
+				klog.V(2).InfoS("Pod using all node GPUs",
+					"pod", klog.KObj(pod),
+					"node", nodeName,
+					"totalPower", gpuPower,
+					"gpuCount", len(nodePowerMap))
+			} else if len(assignedUUIDs) > 0 {
+				// Pod using specific GPUs
+				podGPUPowerSum := 0.0
+				gpusFound := 0
+				for _, uuid := range assignedUUIDs {
+					if powerVal, uuidExists := nodePowerMap[uuid]; uuidExists {
+						podGPUPowerSum += powerVal
+						gpusFound++
+					} else {
+						klog.V(2).InfoS("Missing power data for GPU",
+							"uuid", uuid,
+							"pod", klog.KObj(pod))
+					}
+				}
+
+				if gpusFound > 0 {
+					gpuPower = podGPUPowerSum
+					klog.V(2).InfoS("GPU power calculated",
+						"pod", klog.KObj(pod),
+						"node", nodeName,
+						"uuids", assignedUUIDs,
+						"power", gpuPower,
+						"foundGPUs", gpusFound)
+				} else {
+					klog.V(2).InfoS("No power data for any assigned GPUs",
+						"pod", klog.KObj(pod),
+						"uuids", assignedUUIDs)
+				}
+			} else {
+				// Empty list (e.g., "none")
+				klog.V(3).InfoS("Pod has empty GPU assignment",
+					"pod", klog.KObj(pod))
 			}
 		}
 
@@ -204,7 +288,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			pod,
 			gpuPower,
 			carbonIntensity,
-			cs.calculatePodPower,
+			cs.calculatePower,
 		)
 
 		// Add electricity rate if pricing implementation is available
@@ -221,6 +305,11 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			nodeName,
 			record,
 		)
+
+		// Accumulate node-level CPU and Memory
+		nodeAggregatedCPU[nodeName] += record.CPU
+		nodeAggregatedMemory[nodeName] += record.Memory
+		nodesWithPods[nodeName] = true
 
 		// Update current metrics in Prometheus
 		metrics.NodeCPUUsage.WithLabelValues(nodeName, pod.Name, "current").Set(record.CPU)
@@ -247,6 +336,38 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		}
 	}
 
+	// Calculate and update total node power estimates
+	allNodes := make(map[string]bool)
+	for node := range nodesWithPods {
+		allNodes[node] = true
+	}
+	for node := range nodePowers { // Include nodes that only have GPU metrics
+		allNodes[node] = true
+	}
+
+	for nodeName := range allNodes {
+		totalNodeCPU := nodeAggregatedCPU[nodeName]       // Will be 0 if no pods were processed on this node
+		totalNodeMemory := nodeAggregatedMemory[nodeName] // Will be 0 if no pods were processed on this node
+		totalNodeGPUPower := 0.0
+		if gpuMap, ok := nodePowers[nodeName]; ok {
+			for _, power := range gpuMap {
+				totalNodeGPUPower += power
+			}
+		}
+
+		// Use calculatePower with aggregated values to estimate total node power
+		// Note: calculatePower uses node profiles (idle/max power) which represent the whole node.
+		// Passing aggregated CPU/Mem/GPU usage should give a reasonable estimate of current total node power.
+		totalNodeEstimate := cs.calculatePower(nodeName, totalNodeCPU, totalNodeMemory, totalNodeGPUPower)
+		metrics.NodeTotalPowerEstimate.WithLabelValues(nodeName).Set(totalNodeEstimate)
+		klog.V(3).InfoS("Updated total node power estimate metric",
+			"node", nodeName,
+			"totalCPU", totalNodeCPU,
+			"totalMemory", totalNodeMemory,
+			"totalGPUPower", totalNodeGPUPower,
+			"totalEstimate", totalNodeEstimate)
+	}
+
 	// Log metrics collection stats with less frequency (only every 5 minutes or when we've processed pods)
 	if processedCount > 0 || time.Now().Minute()%5 == 0 {
 		klog.V(2).InfoS("Metrics collection completed",
@@ -255,6 +376,8 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			"skippedDifferentScheduler", skippedDifferentScheduler,
 			"skippedNoNode", skippedNoNode,
 			"skippedNotRunning", skippedNotRunning,
+			"gpuPodsProcessed", gpuPodsProcessed,
+			"gpuPodsWithMissingUUIDs", gpuPodsWithMissingUUIDs,
 			"cacheSize", cacheSize)
 	}
 }
@@ -401,8 +524,9 @@ func isTerminalState(pod *v1.Pod) bool {
 	return false
 }
 
-// calculatePodPower estimates power consumption for a pod based on resource usage
-func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memory, gpuPower float64) float64 {
+// calculatePower estimates power consumption based on resource usage and node profile.
+// It can be used for individual pods or aggregated node usage.
+func (cs *ComputeGardenerScheduler) calculatePower(nodeName string, cpu, memory, gpuPower float64) float64 {
 	// Get node power configuration
 	var idlePower, maxPower float64
 	var nodePower *config.NodePower
@@ -600,10 +724,10 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 		return 0, fmt.Errorf("prometheus client not available")
 	}
 
-	// Get the Prometheus client from the GPU metrics client (which is a PrometheusGPUMetricsClient)
-	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusGPUMetricsClient)
+	// Get the Prometheus client
+	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusMetricsClient)
 	if !ok {
-		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
+		return 0, fmt.Errorf("GPU metrics client is not of type *metrics.PrometheusMetricsClient")
 	}
 
 	// Query for CPU frequency using the node exporter metric
@@ -768,4 +892,58 @@ func (cs *ComputeGardenerScheduler) updateEnergyBudgetTracking(ctx context.Conte
 			"podsTracked", totalTracked,
 			"podsExceeded", totalExceeded)
 	}
+}
+
+// getAssignedGPUUUIDs extracts the list of assigned GPU UUIDs from the pod's environment variables.
+// It handles various formats of NVIDIA_VISIBLE_DEVICES including:
+// - UUIDs (GPU-e0b9c0ec-3a68-cd5f-c41f-5c9466dcd83e)
+// - Indices (0,1,2)
+// - Special values (all, none, "")
+func getAssignedGPUUUIDs(pod *v1.Pod) []string {
+	for _, container := range pod.Spec.Containers {
+		for _, envVar := range container.Env {
+			if envVar.Name == "NVIDIA_VISIBLE_DEVICES" {
+				if envVar.Value == "none" || envVar.Value == "" {
+					// Handle "none" or empty string value
+					klog.V(3).Infof("Pod %s/%s has NVIDIA_VISIBLE_DEVICES=%s, no GPUs assigned", pod.Namespace, pod.Name, envVar.Value)
+					return []string{} // Return empty slice for "none" to indicate no GPUs
+				} else if envVar.Value == "all" {
+					// When "all" is specified, we'll need to get all UUIDs from the node
+					// This will be handled by the caller who has access to node GPU info
+					klog.V(3).Infof("Pod %s/%s has NVIDIA_VISIBLE_DEVICES=all, will need to get all node GPUs", pod.Namespace, pod.Name)
+					return []string{"all"} // Special marker to indicate all GPUs on the node
+				} else {
+					// Check if the value contains indices (0,1,2) rather than UUIDs
+					values := strings.Split(envVar.Value, ",")
+
+					// Check if all values are numeric indices
+					allNumeric := true
+					for _, val := range values {
+						val = strings.TrimSpace(val)
+						if _, err := strconv.Atoi(val); err != nil {
+							allNumeric = false
+							break
+						}
+					}
+
+					if allNumeric {
+						// The values are indices (0,1,2) rather than UUIDs
+						klog.V(2).InfoS("Pod has GPU indices instead of UUIDs",
+							"pod", klog.KObj(pod),
+							"indices", envVar.Value,
+							"count", len(values))
+
+						// For now, return a special marker that will be recognized and handled by the caller
+						// TODO: implement index-to-UUID mapping using DCGM or node mapping
+						return []string{"indices:" + envVar.Value}
+					} else {
+						// Normal case - split comma-separated list of UUIDs
+						return values
+					}
+				}
+			}
+		}
+	}
+	klog.V(3).Infof("NVIDIA_VISIBLE_DEVICES environment variable not found for pod %s/%s", pod.Namespace, pod.Name)
+	return nil // Return nil if the environment variable is not found
 }
