@@ -1,0 +1,58 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: deferrablejobs.compute-gardener.com
+spec:
+  group: compute-gardener.com
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                priority:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  description: "Priority of the deferrable job, higher number means higher priority"
+                timeout:
+                  type: integer
+                  minimum: 60
+                  description: "Timeout in seconds for the job execution"
+                schedule:
+                  type: string
+                  description: "Cron expression for scheduling the job"
+                pricingConstraints:
+                  type: object
+                  properties:
+                    maxPrice:
+                      type: number
+                      description: "Maximum price constraint for running the job"
+                    preferredRegions:
+                      type: array
+                      items:
+                        type: string
+                      description: "Preferred regions based on pricing"
+                carbonConstraints:
+                  type: object
+                  properties:
+                    maxCarbonEmission:
+                      type: number
+                      description: "Maximum carbon emission constraint for running the job"
+                    preferredProviders:
+                      type: array
+                      items:
+                        type: string
+                      description: "Preferred providers based on carbon emissions"
+  scope: Namespaced
+  names:
+    plural: deferrablejobs
+    singular: deferrablejob
+    kind: DeferrableJob
+    shortNames:
+      - dj
