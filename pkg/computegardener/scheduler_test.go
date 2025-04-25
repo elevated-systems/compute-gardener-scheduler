@@ -842,18 +842,18 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 	node1 := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-1",
-			Annotations: map[string]string{
-				common.AnnotationCPUModel: "Intel",
-				common.AnnotationGPUModel: "NVIDIA A100",
+			Labels: map[string]string{
+				common.NFDLabelCPUModel:      "Intel",
+				common.NvidiaLabelGPUProduct: "NVIDIA A100",
 			},
 		},
 	}
 	node2 := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-2",
-			Annotations: map[string]string{
-				common.AnnotationCPUModel: "AMD",
-				common.AnnotationGPUModel: "NVIDIA V100",
+			Labels: map[string]string{
+				common.NFDLabelCPUModel:      "AMD",
+				common.NvidiaLabelGPUProduct: "NVIDIA V100",
 			},
 		},
 	}
@@ -1167,7 +1167,7 @@ func TestFilterWithUnknownHardwareProfile(t *testing.T) {
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "unknown-node",
-			Labels: map[string]string{common.AnnotationCPUModel: "unknown-cpu"},
+			Labels: map[string]string{common.NFDLabelCPUModel: "unknown-cpu"},
 		},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
@@ -1241,7 +1241,7 @@ func TestFilterWithMismatchedHardwareInfo(t *testing.T) {
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "mismatched-node",
-			Labels: map[string]string{common.AnnotationCPUModel: "testCPU"}, // Valid CPU
+			Labels: map[string]string{common.NFDLabelCPUModel: "testCPU"}, // Valid CPU
 		},
 		Status: v1.NodeStatus{
 			Capacity: v1.ResourceList{
