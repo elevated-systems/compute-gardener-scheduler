@@ -357,8 +357,8 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 	return model, vendor, family, nil
 }
 
-// updateNodeCPUModelLabel adds CPU model information to the node as NFD compatible labels
-func updateNodeCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error {
+// updateCPUModelLabel adds CPU model information to the node as NFD compatible labels
+func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error {
 	// Get CPU model info
 	cpuModel, cpuVendor, cpuFamily, err := getCPUModelInfo()
 	if err != nil {
@@ -471,7 +471,7 @@ func main() {
 	}
 
 	// Annotate the node with CPU model info
-	if err := updateNodeCPUModelLabel(clientset, nodeName); err != nil {
+	if err := updateCPUModelLabel(clientset, nodeName); err != nil {
 		klog.ErrorS(err, "Failed to annotate node with CPU model information")
 		// Continue running even if annotation fails
 	}
