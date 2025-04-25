@@ -2,7 +2,7 @@ package common
 
 // Constants for annotation keys used throughout the compute-gardener-scheduler project
 const (
-	// Base annotation prefix for all compute-gardener annotations
+	// Base prefix for all compute-gardener annotations
 	AnnotationBase = "compute-gardener-scheduler.kubernetes.io"
 
 	// ----------------------------------------
@@ -57,17 +57,27 @@ const (
 	// Node annotations
 	// ----------------------------------------
 
-	// Hardware annotations - CPU
-	AnnotationCPUModel                   = AnnotationBase + "/cpu-model"
-	AnnotationCPUBaseFrequency           = AnnotationBase + "/cpu-base-frequency"            // Base/nominal CPU frequency in GHz
-	AnnotationCPUMinFrequency            = AnnotationBase + "/cpu-min-frequency"             // Minimum CPU frequency in GHz
-	AnnotationCPUMaxFrequency            = AnnotationBase + "/cpu-max-frequency"             // Maximum CPU frequency in GHz
-	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
+	// Node Feature Discovery (NFD) labels for hardware information
+	// Base prefix for all NFD labels
+	NFDLabelBase = "feature.node.kubernetes.io"
 
-	// Hardware annotations - GPU
-	AnnotationGPUModel      = AnnotationBase + "/gpu-model"
-	AnnotationGPUCount      = AnnotationBase + "/gpu-count"
-	AnnotationGPUTotalPower = AnnotationBase + "/gpu-total-power"
+	// CPU labels - from standard NFD discovery
+	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name"
+	NFDLabelCPUBaseFrequency = NFDLabelBase + "/cpu-hardware_limits.base_frequency_khz" // Note: in kHz, need to convert
+	NFDLabelCPUMinFrequency  = NFDLabelBase + "/cpu-hardware_limits.min_frequency_khz"  // Note: in kHz, need to convert
+	NFDLabelCPUMaxFrequency  = NFDLabelBase + "/cpu-hardware_limits.max_frequency_khz"  // Note: in kHz, need to convert
+
+	// Generic NFD labels for PCIe devices (may be used for non-NVIDIA GPUs)
+	NFDLabelPCIVendorPrefix = NFDLabelBase + "/pci-" // Vendor-specific prefixes follow
+
+	NvidiaLabelBase = "nvidia.com/gpu"
+
+	// GPU labels - from standard NFD discovery or NVIDIA GPU operator
+	NvidiaLabelGPUCount   = NvidiaLabelBase + ".count"
+	NvidiaLabelGPUProduct = NFDLabelBase + ".product" // For NVIDIA GPU model
+
+	// CPU frequency dynamic check enabled
+	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
 )
 
 // Energy budget actions

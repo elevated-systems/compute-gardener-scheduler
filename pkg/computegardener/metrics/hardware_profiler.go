@@ -197,11 +197,10 @@ func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string,
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
 // Uses annotations if available, or basic architecture information if annotations not present
 func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
-	// Extract CPU info from node annotations - this is the most accurate method
-	// The cpu-info-exporter DaemonSet is responsible for populating these annotations
-	if model, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+	// Extract CPU info from NFD labels. The NFD DaemonSet is responsible for populating them.
+	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok {
 		cpuModel = model
-		klog.V(2).InfoS("Using CPU model from annotation", "node", node.Name, "model", cpuModel)
+		klog.V(2).InfoS("Using CPU model from NFD label", "node", node.Name, "model", cpuModel)
 	} else {
 		// Provide a generic fallback based on architecture and core count
 		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
@@ -227,13 +226,11 @@ func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpu
 	}
 
 	// For GPUs, check if node has NVIDIA GPUs allocated
-	// First check node annotations for accurate GPU information
-	if model, ok := node.Annotations[common.AnnotationGPUModel]; ok {
-		// If annotation explicitly says "none", treat as no GPU
-		if model != "none" {
-			gpuModel = model
-		}
-	} else if gpuCount, ok := node.Status.Capacity["nvidia.com/gpu"]; ok && gpuCount.Value() > 0 {
+	// First check NFD labels for accurate GPU information
+	if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
+		// We have an NVIDIA GPU model from NFD labels
+		gpuModel = model
+	} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
 		// If GPU exists but no annotation, determine from node characteristics
 		// In production, consider adding a daemon that reports actual GPU model
 		if strings.Contains(node.Name, "gpu") ||
@@ -496,8 +493,8 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 	}
 
 	// Check for GPU changes
-	oldGPU, oldHasGPU := oldNode.Status.Capacity["nvidia.com/gpu"]
-	newGPU, newHasGPU := newNode.Status.Capacity["nvidia.com/gpu"]
+	oldGPU, oldHasGPU := oldNode.Status.Capacity[common.NvidiaLabelBase]
+	newGPU, newHasGPU := newNode.Status.Capacity[common.NvidiaLabelBase]
 
 	if oldHasGPU != newHasGPU {
 		return true
@@ -507,26 +504,26 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 		return true
 	}
 
-	// Check for CPU model annotations changed
-	oldCPUModel, oldHasCPUModel := oldNode.Annotations[common.AnnotationCPUModel]
-	newCPUModel, newHasCPUModel := newNode.Annotations[common.AnnotationCPUModel]
+	// Check for CPU model labels changed
+	oldCPUModel, oldHasCPUModel := oldNode.Labels[common.NFDLabelCPUModel]
+	newCPUModel, newHasCPUModel := newNode.Labels[common.NFDLabelCPUModel]
 
 	if oldHasCPUModel != newHasCPUModel {
 		if newHasCPUModel {
-			klog.V(2).InfoS("CPU model annotation added to node",
+			klog.V(2).InfoS("CPU model label added to node",
 				"node", newNode.Name,
 				"model", newCPUModel,
-				"annotationKey", common.AnnotationCPUModel)
+				"labelKey", common.NFDLabelCPUModel)
 		}
 		return true
 	}
 
 	if oldHasCPUModel && newHasCPUModel && oldCPUModel != newCPUModel {
-		klog.V(2).InfoS("CPU model annotation changed on node",
+		klog.V(2).InfoS("CPU model label changed on node",
 			"node", newNode.Name,
 			"oldModel", oldCPUModel,
 			"newModel", newCPUModel,
-			"annotationKey", common.AnnotationCPUModel)
+			"labelKey", common.NFDLabelCPUModel)
 		return true
 	}
 
@@ -562,7 +559,7 @@ func CalculateNodeEfficiency(node *v1.Node, powerProfile *config.NodePower) floa
 	efficiency := float64(cpuCapacity) / effectivePower
 
 	// Consider GPU efficiency if present
-	if gpuCount, ok := node.Status.Capacity["nvidia.com/gpu"]; ok && gpuCount.Value() > 0 {
+	if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
 		// If GPUs are present, factor into the efficiency calculation
 		// This is a simple model - in real world, would be more complex
 		gpuEfficiency := 0.0
