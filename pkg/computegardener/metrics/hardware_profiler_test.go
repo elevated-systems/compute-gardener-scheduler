@@ -6,6 +6,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
@@ -114,9 +115,9 @@ func TestHardwareProfilerWithOnPrem(t *testing.T) {
 	onPremNode := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "on-prem-node",
-			Annotations: map[string]string{
-				"compute-gardener-scheduler.kubernetes.io/cpu-model": "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
-				"compute-gardener-scheduler.kubernetes.io/gpu-model": "NVIDIA GeForce GTX 1660",
+			Labels: map[string]string{
+				common.NFDLabelCPUModel:      "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
+				common.NvidiaLabelGPUProduct: "NVIDIA GeForce GTX 1660",
 			},
 		},
 	}

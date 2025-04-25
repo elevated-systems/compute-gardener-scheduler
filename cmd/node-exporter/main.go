@@ -357,8 +357,8 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 	return model, vendor, family, nil
 }
 
-// annotateCPUModel adds CPU model information to the node as annotations
-func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
+// updateCPUModelLabel adds CPU model information to the node as NFD compatible labels
+func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error {
 	// Get CPU model info
 	cpuModel, cpuVendor, cpuFamily, err := getCPUModelInfo()
 	if err != nil {
@@ -378,30 +378,30 @@ func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
 		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
 	}
 
-	// Check if annotations already exist and match
-	if val, exists := node.Annotations[common.AnnotationCPUModel]; exists && val == cpuModel {
-		klog.V(2).InfoS("Node already has correct CPU model annotation",
+	// Check if label already exists and matches
+	if val, exists := node.Labels[common.NFDLabelCPUModel]; exists && val == cpuModel {
+		klog.V(2).InfoS("Node already has correct CPU model label",
 			"node", nodeName,
 			"model", cpuModel)
 		return nil
 	}
 
-	// Create a copy of the node with updated annotations
+	// Create a copy of the node with updated labels
 	nodeCopy := node.DeepCopy()
-	if nodeCopy.Annotations == nil {
-		nodeCopy.Annotations = make(map[string]string)
+	if nodeCopy.Labels == nil {
+		nodeCopy.Labels = make(map[string]string)
 	}
 
-	// Add annotations
-	nodeCopy.Annotations[common.AnnotationCPUModel] = cpuModel
+	// Add NFD-compatible labels
+	nodeCopy.Labels[common.NFDLabelCPUModel] = cpuModel
 
 	// Update the node
 	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to update node annotations: %v", err)
+		return fmt.Errorf("failed to update node labels: %v", err)
 	}
 
-	klog.InfoS("Successfully annotated node with CPU model information",
+	klog.InfoS("Successfully updated node with CPU model label",
 		"node", nodeName,
 		"model", cpuModel)
 
@@ -410,16 +410,14 @@ func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
 
 func main() {
 	var (
-		metricsAddr  string
-		kubeconfig   string
-		nodeName     string
-		annotateOnly bool
+		metricsAddr string
+		kubeconfig  string
+		nodeName    string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9100", "The address the metric endpoint binds to")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (not needed in cluster)")
 	flag.StringVar(&nodeName, "node-name", "", "Name of the node this agent is running on (defaults to environment variable NODE_NAME)")
-	flag.BoolVar(&annotateOnly, "annotate-only", false, "Only annotate CPU info and exit")
 	klog.InitFlags(nil)
 	flag.Parse()
 
@@ -444,8 +442,7 @@ func main() {
 	// Log startup
 	klog.InfoS("Starting CPU information exporter",
 		"node", nodeName,
-		"metricsAddr", metricsAddr,
-		"annotateOnly", annotateOnly)
+		"metricsAddr", metricsAddr)
 
 	// Create Kubernetes client
 	var config *rest.Config
@@ -474,15 +471,9 @@ func main() {
 	}
 
 	// Annotate the node with CPU model info
-	if err := annotateCPUModel(clientset, nodeName); err != nil {
+	if err := updateCPUModelLabel(clientset, nodeName); err != nil {
 		klog.ErrorS(err, "Failed to annotate node with CPU model information")
 		// Continue running even if annotation fails
-	}
-
-	// If annotate-only mode, exit after annotation
-	if annotateOnly {
-		klog.InfoS("Annotation completed, exiting (annotate-only mode)")
-		os.Exit(0)
 	}
 
 	// Start collecting metrics

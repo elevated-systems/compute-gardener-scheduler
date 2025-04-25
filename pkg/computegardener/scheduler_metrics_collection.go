@@ -423,7 +423,7 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 
 		// Log CPU model annotation for diagnostics
 		cpuModel := "missing"
-		if val, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+		if val, ok := node.Labels[common.NFDLabelCPUModel]; ok {
 			cpuModel = val
 		}
 
@@ -627,9 +627,9 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 		return "", 0.0, "quadratic"
 	}
 
-	// Try to get CPU model from node annotations
+	// Try to get CPU model from node label
 	cpuModel := ""
-	if model, ok := node.Annotations[common.AnnotationCPUModel]; ok {
+	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok {
 		cpuModel = model
 		klog.V(2).InfoS("Found CPU model from node annotation", "node", nodeName, "model", cpuModel)
 	} else {
@@ -641,7 +641,7 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 	powerScaling := "quadratic" // Default power scaling model
 
 	// Get base frequency from annotation if available
-	if freqStr, ok := node.Annotations[common.AnnotationCPUBaseFrequency]; ok {
+	if freqStr, ok := node.Labels[common.NFDLabelCPUBaseFrequency]; ok {
 		if freq, err := strconv.ParseFloat(freqStr, 64); err == nil {
 			baseFreq = freq
 			klog.V(2).InfoS("Found base frequency from annotation", "node", nodeName, "freq", baseFreq)
