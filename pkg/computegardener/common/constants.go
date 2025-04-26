@@ -61,11 +61,11 @@ const (
 	// Base prefix for all NFD labels
 	NFDLabelBase = "feature.node.kubernetes.io"
 
-	// CPU labels - from standard NFD discovery
-	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name"
-	NFDLabelCPUBaseFrequency = NFDLabelBase + "/cpu-hardware_limits.base_frequency_khz" // Note: in kHz, need to convert
-	NFDLabelCPUMinFrequency  = NFDLabelBase + "/cpu-hardware_limits.min_frequency_khz"  // Note: in kHz, need to convert
-	NFDLabelCPUMaxFrequency  = NFDLabelBase + "/cpu-hardware_limits.max_frequency_khz"  // Note: in kHz, need to convert
+	// CPU labels - from NFD discovery or our node exporter
+	NFDLabelCPUModelFamily   = NFDLabelBase + "/cpu-model.family"
+	NFDLabelCPUModelID       = NFDLabelBase + "/cpu-model.id"
+	NFDLabelCPUModelVendorID = NFDLabelBase + "/cpu-model.vendor_id"
+	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name" // Used by our exporter when family/id/vendor_id are not present
 
 	// Generic NFD labels for PCIe devices (may be used for non-NVIDIA GPUs)
 	NFDLabelPCIVendorPrefix = NFDLabelBase + "/pci-" // Vendor-specific prefixes follow

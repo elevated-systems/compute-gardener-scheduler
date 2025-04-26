@@ -470,9 +470,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Annotate the node with CPU model info
+	// Update the node with CPU model info (using NFD-compatible labels)
 	if err := updateCPUModelLabel(clientset, nodeName); err != nil {
-		klog.ErrorS(err, "Failed to annotate node with CPU model information")
+		klog.ErrorS(err, "Failed to update node with CPU model information")
 		// Continue running even if annotation fails
 	}
 

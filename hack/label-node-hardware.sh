@@ -1,10 +1,11 @@
 #!/bin/bash
-# This script detects hardware information from nodes and adds annotations
-# These annotations help the compute-gardener-scheduler optimize power profiling
+# This script detects hardware information from nodes and adds NFD-compatible labels
+# These labels help the compute-gardener-scheduler optimize power profiling and
+# are compatible with the Node Feature Discovery format
 
 set -e
 
-ANNOTATION_PREFIX="compute-gardener-scheduler.kubernetes.io"
+LABEL_PREFIX="feature.node.kubernetes.io"
 
 # Function to get nodes
 get_nodes() {
@@ -50,26 +51,26 @@ get_gpu_model() {
 }
 
 
-# Function to annotate a node with hardware information
-annotate_node() {
+# Function to label a node with hardware information
+label_node() {
   local node=$1
   local cpu_model=$2
   local gpu_model=$3
   
-  # Annotate with CPU model
+  # Label with CPU model
   if [ ! -z "$cpu_model" ]; then
-    kubectl annotate node $node "${ANNOTATION_PREFIX}/cpu-model=$cpu_model" --overwrite
-    echo "Annotated node $node with CPU model: $cpu_model"
+    kubectl label node $node "${LABEL_PREFIX}/cpu-model.name=$cpu_model" --overwrite
+    echo "Labeled node $node with CPU model: $cpu_model"
   fi
   
-  # Always annotate GPU model - either actual model or "none"
+  # Always label GPU model - either actual model or "none"
   if [ ! -z "$gpu_model" ]; then
-    kubectl annotate node $node "${ANNOTATION_PREFIX}/gpu-model=$gpu_model" --overwrite
-    
-    if [ "$gpu_model" == "none" ]; then
-      echo "Annotated node $node with GPU model: none (no GPU detected)"
+    if [ "$gpu_model" != "none" ]; then
+      kubectl label node $node "${LABEL_PREFIX}/gpu.product=$gpu_model" --overwrite
+      echo "Labeled node $node with GPU model: $gpu_model"
     else
-      echo "Annotated node $node with GPU model: $gpu_model"
+      # If there's no GPU, we don't need to add a "none" label
+      echo "No GPU detected on node $node"
     fi
   fi
 }
@@ -85,8 +86,8 @@ process_all_nodes() {
     # Get GPU model if exists
     gpu_model=$(get_gpu_model $node) || true
     
-    # Annotate node with hardware info
-    annotate_node $node "$cpu_model" "$gpu_model"
+    # Label node with hardware info
+    label_node $node "$cpu_model" "$gpu_model"
     
     echo "Completed processing node: $node"
     echo "-----------------------------------"
@@ -95,9 +96,9 @@ process_all_nodes() {
 
 # Main function
 main() {
-  echo "Starting hardware detection and annotation for all nodes..."
-  echo "This will add '${ANNOTATION_PREFIX}/cpu-model' and/or '${ANNOTATION_PREFIX}/gpu-model' annotations"
-  echo "These annotations enable more efficient power profiling in the compute-gardener-scheduler"
+  echo "Starting hardware detection and labeling for all nodes..."
+  echo "This will add '${LABEL_PREFIX}/cpu-model.name' and/or '${LABEL_PREFIX}/gpu.product' labels"
+  echo "These labels enable more efficient power profiling in the compute-gardener-scheduler"
   
   # Check user confirmation
   read -p "Do you want to continue? (y/n) " -n 1 -r
@@ -108,8 +109,8 @@ main() {
   fi
   
   process_all_nodes
-  echo "Hardware annotation process completed successfully!"
-  echo "The compute-gardener-scheduler will automatically use these annotations for power profiling."
+  echo "Hardware labeling process completed successfully!"
+  echo "The compute-gardener-scheduler will automatically use these NFD-compatible labels for power profiling."
 }
 
 # Run with the first argument or default behavior
@@ -129,8 +130,8 @@ elif [ ! -z "$1" ]; then
   # Get GPU model if exists
   gpu_model=$(get_gpu_model $node) || true
   
-  # Annotate node
-  annotate_node $node "$cpu_model" "$gpu_model"
+  # Label node
+  label_node $node "$cpu_model" "$gpu_model"
   
   echo "Completed processing node: $node"
 else

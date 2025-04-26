@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script removes hardware labels from nodes that were added by label-node-hardware.sh
+# This script removes hardware labels from nodes that were added by annotate-node-hardware.sh
 # This is useful for testing the runtime hardware detection capabilities of compute-gardener-scheduler
 
 set -e

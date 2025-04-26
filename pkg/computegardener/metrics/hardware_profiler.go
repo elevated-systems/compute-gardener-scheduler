@@ -194,17 +194,125 @@ func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string,
 	return hp.detectNodeHardwareInfoFromSystem(node)
 }
 
+// CPUModelMappings maps CPU family + model ID to a specific CPU model string
+// These are based on common Intel and AMD CPU identification numbers
+// See: https://en.wikichip.org/wiki/intel/cpuid
+var CPUModelMappings = map[string]map[string]string{
+	"Intel": {
+		// Intel Xeon Cascade Lake
+		"6-85": "Intel(R) Xeon(R) Platinum 8275CL",
+		// Intel Xeon Skylake
+		"6-85-2": "Intel(R) Xeon(R) Platinum 8175M",
+		"6-85-3": "Intel(R) Xeon(R) Platinum 8124M",
+		"6-85-4": "Intel(R) Xeon(R) Gold 6148",
+		// Intel Xeon Broadwell
+		"6-79":   "Intel(R) Xeon(R) E5-2686 v4",
+		"6-79-1": "Intel(R) Xeon(R) E5-2690 v4",
+		"6-79-2": "Intel(R) Xeon(R) E5-2673 v4",
+		// Intel Xeon Haswell
+		"6-63": "Intel(R) Xeon(R) E5-2676 v3",
+		// Intel Skylake Client (may be running with k8s)
+		"6-94": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
+		// Intel Coffee Lake
+		"6-158":   "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
+		"6-158-1": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+		// Intel Alder Lake
+		"6-151": "12th Gen Intel(R) Core(TM) i5-12600K",
+
+		// Skylake Client and Kaby Lake
+		"6-142":   "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
+		"6-142-1": "Intel(R) Core(TM) i5-6500T CPU @ 2.50GHz",
+
+		// Fallbacks when we can't determine the exact model
+		"6": "Intel(R) Xeon(R) CPU @ 2.20GHz", // Generic Intel Xeon fallback
+	},
+
+	"AMD": {
+		// EPYC Rome
+		"23-49":   "AMD EPYC 7B12",
+		"23-49-1": "AMD EPYC 7R32",
+		"23-49-2": "AMD EPYC 7571",
+
+		// EPYC Milan
+		"25-1":   "AMD EPYC 7R13",
+		"25-1-1": "AMD EPYC 7763",
+
+		// Ryzen 3rd Gen (Zen 2)
+		"23-113": "AMD Ryzen 5 3600 6-Core Processor",
+
+		// Ryzen 5th Gen (Zen 3)
+		"25-33": "AMD Ryzen 7 5800X 8-Core Processor",
+
+		// Fallbacks
+		"23": "AMD EPYC 7B12", // Generic EPYC fallback
+		"25": "AMD EPYC 7R13", // Generic EPYC fallback
+	},
+}
+
+// identifyCPUModelFromNFDLabels tries to identify the CPU model from NFD labels
+// Uses family, model, and vendor information to look up the specific CPU model
+func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string {
+	// First check if we already have the complete CPU model name
+	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok && model != "" {
+		return model
+	}
+
+	// If not, try to extract the NFD CPU model information - family, model ID, and vendor
+	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
+	modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
+	vendorID, hasVendorID := node.Labels[common.NFDLabelCPUModelVendorID]
+
+	if !hasFamily || !hasModelID || !hasVendorID {
+		klog.V(2).InfoS("Missing NFD CPU information",
+			"node", node.Name,
+			"hasFamily", hasFamily,
+			"hasModelID", hasModelID,
+			"hasVendorID", hasVendorID)
+		return ""
+	}
+
+	// Format the key for our mapping
+	// First try with both family and model ID
+	key := fmt.Sprintf("%s-%s", family, modelID)
+
+	// Log the values we found for debugging
+	klog.V(2).InfoS("Found NFD CPU information",
+		"node", node.Name,
+		"vendorID", vendorID,
+		"family", family,
+		"modelID", modelID,
+		"lookupKey", key)
+
+	// Look up in our mapping table
+	if vendorMapping, ok := CPUModelMappings[vendorID]; ok {
+		// Try exact match first
+		if cpuModel, ok := vendorMapping[key]; ok {
+			return cpuModel
+		}
+
+		// Try family-only fallback (less specific)
+		if cpuModel, ok := vendorMapping[family]; ok {
+			return cpuModel
+		}
+	}
+
+	// If we can't determine from NFD labels, construct a generic model name
+	cpuCores := node.Status.Capacity.Cpu().Value()
+	return fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
+		vendorID, family, modelID, cpuCores)
+}
+
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
-// Uses annotations if available, or basic architecture information if annotations not present
+// Uses NFD labels if available, or basic architecture information if NFD not present
 func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
-	// Extract CPU info from NFD labels. The NFD DaemonSet is responsible for populating them.
-	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok {
-		cpuModel = model
-		klog.V(2).InfoS("Using CPU model from NFD label", "node", node.Name, "model", cpuModel)
+	// Try to use NFD CPU labels to identify the CPU model
+	cpuModel = hp.identifyCPUModelFromNFDLabels(node)
+	if cpuModel != "" {
+		klog.V(2).InfoS("Identified CPU model from NFD labels", "node", node.Name, "model", cpuModel)
 	} else {
 		// Provide a generic fallback based on architecture and core count
 		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
-		arch, _ := node.Labels["kubernetes.io/arch"]
+		arch := node.Labels["kubernetes.io/arch"]
 		cpuCores := node.Status.Capacity.Cpu().Value()
 
 		// Use very generic model names that indicate architecture but not specific model
@@ -504,26 +612,37 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 		return true
 	}
 
-	// Check for CPU model labels changed
-	oldCPUModel, oldHasCPUModel := oldNode.Labels[common.NFDLabelCPUModel]
-	newCPUModel, newHasCPUModel := newNode.Labels[common.NFDLabelCPUModel]
-
-	if oldHasCPUModel != newHasCPUModel {
-		if newHasCPUModel {
-			klog.V(2).InfoS("CPU model label added to node",
-				"node", newNode.Name,
-				"model", newCPUModel,
-				"labelKey", common.NFDLabelCPUModel)
-		}
+	// Check for changes in CPU model information from NFD labels
+	// Check family
+	oldCPUFamily, oldHasCPUFamily := oldNode.Labels[common.NFDLabelCPUModelFamily]
+	newCPUFamily, newHasCPUFamily := newNode.Labels[common.NFDLabelCPUModelFamily]
+	if oldHasCPUFamily != newHasCPUFamily || (oldHasCPUFamily && newHasCPUFamily && oldCPUFamily != newCPUFamily) {
+		klog.V(2).InfoS("CPU family label changed on node",
+			"node", newNode.Name,
+			"oldFamily", oldCPUFamily,
+			"newFamily", newCPUFamily)
 		return true
 	}
 
-	if oldHasCPUModel && newHasCPUModel && oldCPUModel != newCPUModel {
-		klog.V(2).InfoS("CPU model label changed on node",
+	// Check model ID
+	oldCPUModelID, oldHasCPUModelID := oldNode.Labels[common.NFDLabelCPUModelID]
+	newCPUModelID, newHasCPUModelID := newNode.Labels[common.NFDLabelCPUModelID]
+	if oldHasCPUModelID != newHasCPUModelID || (oldHasCPUModelID && newHasCPUModelID && oldCPUModelID != newCPUModelID) {
+		klog.V(2).InfoS("CPU model ID label changed on node",
 			"node", newNode.Name,
-			"oldModel", oldCPUModel,
-			"newModel", newCPUModel,
-			"labelKey", common.NFDLabelCPUModel)
+			"oldModelID", oldCPUModelID,
+			"newModelID", newCPUModelID)
+		return true
+	}
+
+	// Check vendor ID
+	oldCPUVendorID, oldHasCPUVendorID := oldNode.Labels[common.NFDLabelCPUModelVendorID]
+	newCPUVendorID, newHasCPUVendorID := newNode.Labels[common.NFDLabelCPUModelVendorID]
+	if oldHasCPUVendorID != newHasCPUVendorID || (oldHasCPUVendorID && newHasCPUVendorID && oldCPUVendorID != newCPUVendorID) {
+		klog.V(2).InfoS("CPU vendor ID label changed on node",
+			"node", newNode.Name,
+			"oldVendorID", oldCPUVendorID,
+			"newVendorID", newCPUVendorID)
 		return true
 	}
 
