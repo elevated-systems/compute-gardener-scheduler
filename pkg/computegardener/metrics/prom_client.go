@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -11,9 +12,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// PrometheusGPUMetricsClient implements GPUMetricsClient using Prometheus
-// TODO: Rename to PrometheusMetricsClient since it's now used for both GPU and CPU metrics
-type PrometheusGPUMetricsClient struct {
+// PrometheusMetricsClient implements GPUMetricsClient using Prometheus
+// It can query various metrics including GPU and node-level metrics like CPU frequency.
+type PrometheusMetricsClient struct {
 	client        v1.API
 	queryTimeout  time.Duration
 	metricsPrefix string // The prefix for metrics (e.g., compute_gardener_gpu)
@@ -24,36 +25,36 @@ type PrometheusGPUMetricsClient struct {
 }
 
 // SetUseDCGM configures whether to use DCGM metrics
-func (c *PrometheusGPUMetricsClient) SetUseDCGM(use bool) {
+func (c *PrometheusMetricsClient) SetUseDCGM(use bool) {
 	c.useDCGM = use
 	klog.V(2).InfoS("DCGM metrics usage configured", "useDCGM", use)
 }
 
 // SetDCGMPowerMetric sets the DCGM power metric name
-func (c *PrometheusGPUMetricsClient) SetDCGMPowerMetric(metric string) {
+func (c *PrometheusMetricsClient) SetDCGMPowerMetric(metric string) {
 	c.dcgmPowerMetric = metric
 	klog.V(2).InfoS("DCGM power metric configured", "metric", metric)
 }
 
 // SetDCGMUtilMetric sets the DCGM utilization metric name
-func (c *PrometheusGPUMetricsClient) SetDCGMUtilMetric(metric string) {
+func (c *PrometheusMetricsClient) SetDCGMUtilMetric(metric string) {
 	c.dcgmUtilMetric = metric
 	klog.V(2).InfoS("DCGM utilization metric configured", "metric", metric)
 }
 
 // GetDCGMPowerMetric returns the current DCGM power metric name
-func (c *PrometheusGPUMetricsClient) GetDCGMPowerMetric() string {
+func (c *PrometheusMetricsClient) GetDCGMPowerMetric() string {
 	return c.dcgmPowerMetric
 }
 
 // GetDCGMUtilMetric returns the current DCGM utilization metric name
-func (c *PrometheusGPUMetricsClient) GetDCGMUtilMetric() string {
+func (c *PrometheusMetricsClient) GetDCGMUtilMetric() string {
 	return c.dcgmUtilMetric
 }
 
-// NewPrometheusGPUMetricsClient creates a new Prometheus-based GPU metrics client
-// By default, it uses DCGM metrics if available
-func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
+// NewPrometheusMetricsClient creates a new Prometheus-based metrics client
+// By default, it uses DCGM metrics if available for GPU info
+func NewPrometheusMetricsClient(prometheusURL string) (*PrometheusMetricsClient, error) {
 	// Initialize Prometheus client
 	cfg := api.Config{
 		Address: prometheusURL,
@@ -65,7 +66,7 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 	}
 
 	// Create with DCGM metrics enabled by default
-	metricsClient := &PrometheusGPUMetricsClient{
+	metricsClient := &PrometheusMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
 		metricsPrefix: "compute_gardener_gpu", // Still useful as fallback
@@ -86,7 +87,7 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 }
 
 // QueryNodeMetric queries a single metric value for a node
-func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metricName, nodeName string) (float64, error) {
+func (c *PrometheusMetricsClient) QueryNodeMetric(ctx context.Context, metricName, nodeName string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -125,9 +126,9 @@ func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metric
 	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
-// NewLegacyPrometheusGPUMetricsClient creates a Prometheus client that uses the legacy
+// NewLegacyPrometheusMetricsClient creates a Prometheus client that uses the legacy
 // custom metrics format instead of DCGM metrics
-func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
+func NewLegacyPrometheusMetricsClient(prometheusURL string) (*PrometheusMetricsClient, error) {
 	// Initialize Prometheus client
 	cfg := api.Config{
 		Address: prometheusURL,
@@ -138,10 +139,10 @@ func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMe
 		return nil, fmt.Errorf("error creating Prometheus client: %v", err)
 	}
 
-	klog.InfoS("Created legacy Prometheus GPU metrics client (without DCGM)",
+	klog.InfoS("Created legacy Prometheus metrics client (without DCGM)",
 		"prometheusURL", prometheusURL)
 
-	return &PrometheusGPUMetricsClient{
+	return &PrometheusMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
 		metricsPrefix: "compute_gardener_gpu",
@@ -150,7 +151,7 @@ func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMe
 }
 
 // GetPodGPUUtilization gets GPU utilization for a specific pod
-func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, namespace, name string) (float64, error) {
+func (c *PrometheusMetricsClient) GetPodGPUUtilization(ctx context.Context, namespace, name string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -200,7 +201,7 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, n
 }
 
 // ListPodsGPUUtilization gets GPU utilization for all pods with GPUs
-func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) {
+func (c *PrometheusMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -249,6 +250,10 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context)
 					continue
 				}
 
+				// Log UUID for debugging heterogeneous GPU environments
+				klog.V(3).InfoS("Found GPU UUID in utilization metrics",
+					"uuid", string(uuid))
+
 				// Use UUID as the key - this will be matched with pods using the GPU
 				key := fmt.Sprintf("gpu/%s", uuid)
 
@@ -283,7 +288,7 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context)
 }
 
 // GetPodGPUPower gets GPU power for a specific pod
-func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
+func (c *PrometheusMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -332,21 +337,25 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespa
 	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
-// ListPodsGPUPower gets GPU power for all pods with GPUs
-func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
+// ListPodsGPUPower gets GPU power per GPU device, keyed by the instance IP of the exporter pod.
+// The caller is responsible for mapping the instance IP back to a Kubernetes NodeName.
+func (c *PrometheusMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]map[string]float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
 
-	// Query that gets average GPU power for each pod
+	// Query that gets average GPU power per UUID, grouped by instance (pod IP)
 	var query string
+	instanceLabel := "instance"
 	if c.useDCGM {
-		// DCGM metrics query
-		query = fmt.Sprintf(`avg by (UUID) (%s)`, c.dcgmPowerMetric)
-		klog.V(2).InfoS("Using DCGM power metric by GPU UUID", "metric", c.dcgmPowerMetric)
+		// DCGM metrics query - group by UUID and the instance label
+		query = fmt.Sprintf(`avg by (UUID, %s) (%s)`, instanceLabel, c.dcgmPowerMetric)
+		klog.V(2).InfoS("Using DCGM power metric by GPU UUID and instance", "metric", c.dcgmPowerMetric, "instanceLabel", instanceLabel)
 	} else {
-		// Custom metrics query
-		query = fmt.Sprintf(`avg by (pod, namespace) (%s_power_watts)`, c.metricsPrefix)
+		// Custom metrics query - Assuming custom metrics also have an instance label
+		// If not, this part needs adjustment based on actual custom metric labels
+		query = fmt.Sprintf(`avg by (pod, namespace, %s) (%s_power_watts)`, instanceLabel, c.metricsPrefix)
+		klog.Warningf("Using custom GPU power metrics grouped by instance. Ensure '%s' label exists on these metrics.", instanceLabel)
 	}
 
 	// Execute the query
@@ -362,60 +371,88 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[
 			"query", query)
 	}
 
-	// Process results
-	powers := make(map[string]float64)
+	// Process results into nested map: InstanceIP -> UUID -> Power
+	instancePowers := make(map[string]map[string]float64)
 
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
 
 		// Process each result
-
-		// Process each result
 		for _, sample := range vector {
 			if c.useDCGM {
-				// For DCGM metrics, extract GPU UUID from the metric labels
-				uuid, ok := sample.Metric["UUID"]
+				// For DCGM metrics, extract UUID and instance IP
+				uuid, okUUID := sample.Metric["UUID"]
+				instanceVal, okInstance := sample.Metric[model.LabelName(instanceLabel)]
 
-				if !ok {
-					klog.V(2).InfoS("Missing UUID label in DCGM GPU power metric",
-						"metric", sample.Metric.String())
+				if !okUUID || !okInstance {
+					klog.Warningf("Missing required labels (UUID and %s) in DCGM GPU power metric: %s", instanceLabel, sample.Metric.String())
 					continue
 				}
 
-				// Use UUID as the key - this will be matched with pods using the GPU
-				key := fmt.Sprintf("gpu/%s", uuid)
+				// Instance often includes port, strip it
+				instanceIP, _, err := net.SplitHostPort(string(instanceVal))
+				if err != nil {
+					// Assume it might be just IP if SplitHostPort fails
+					instanceIP = string(instanceVal)
+					klog.V(3).Infof("Could not split host:port for instance label '%s', assuming it's just IP: %v", instanceVal, err)
+				}
 
-				// Store the power value in watts
-				powers[key] = float64(sample.Value)
+				// Ensure nested map exists
+				if _, exists := instancePowers[instanceIP]; !exists {
+					instancePowers[instanceIP] = make(map[string]float64)
+				}
 
-				klog.V(2).InfoS("Recorded GPU power",
-					"UUID", uuid,
+				// Store the power value
+				instancePowers[instanceIP][string(uuid)] = float64(sample.Value)
+
+				klog.V(3).InfoS("Recorded GPU power by instance IP",
+					"instanceIP", instanceIP,
+					"UUID", string(uuid),
 					"power", float64(sample.Value))
-			} else {
-				// For custom metrics, extract pod and namespace
-				pod, ok1 := sample.Metric["pod"]
-				namespace, ok2 := sample.Metric["namespace"]
 
-				if !ok1 || !ok2 {
-					klog.V(2).InfoS("Missing pod or namespace label in GPU power metric",
-						"metric", sample.Metric.String())
+			} else {
+				// For custom metrics, extract pod, namespace, and instance IP
+				pod, okPod := sample.Metric["pod"]
+				namespace, okNs := sample.Metric["namespace"]
+				instanceVal, okInstance := sample.Metric[model.LabelName(instanceLabel)]
+
+				if !okPod || !okNs || !okInstance {
+					klog.Warningf("Missing required labels (pod, namespace, %s) in custom GPU power metric: %s", instanceLabel, sample.Metric.String())
 					continue
 				}
 
-				// Construct the key in the format namespace/pod
-				key := fmt.Sprintf("%s/%s", namespace, pod)
+				// Instance often includes port, strip it
+				instanceIP, _, err := net.SplitHostPort(string(instanceVal))
+				if err != nil {
+					instanceIP = string(instanceVal) // Assume it's just IP
+					klog.V(3).Infof("Could not split host:port for instance label '%s', assuming it's just IP: %v", instanceVal, err)
+				}
 
-				// Store the power value in watts
-				powers[key] = float64(sample.Value)
+				// Custom metrics are often pod-centric, how to map to UUID?
+				// This path might be fundamentally flawed if custom metrics don't report per UUID.
+				// Store it under the instance IP using a placeholder UUID.
+				placeholderUUID := fmt.Sprintf("pod-%s-%s", namespace, pod)
+
+				if _, exists := instancePowers[instanceIP]; !exists {
+					instancePowers[instanceIP] = make(map[string]float64)
+				}
+				instancePowers[instanceIP][placeholderUUID] = float64(sample.Value)
+
+				klog.V(3).InfoS("Recorded custom GPU power by instance IP (using placeholder UUID)",
+					"instanceIP", instanceIP,
+					"pod", string(pod),
+					"namespace", string(namespace),
+					"placeholderUUID", placeholderUUID,
+					"power", float64(sample.Value))
 			}
 		}
 	}
 
-	return powers, nil
+	return instancePowers, nil
 }
 
 // GetPodHistoricalGPUMetrics gets historical GPU metrics for pod over time window
-func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Context, namespace, name string, startTime, endTime time.Time) (*PodGPUMetricsHistory, error) {
+func (c *PrometheusMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Context, namespace, name string, startTime, endTime time.Time) (*PodGPUMetricsHistory, error) {
 	// Create a context with timeout (longer timeout for range queries)
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout*2)
 	defer cancel()

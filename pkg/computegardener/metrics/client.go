@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsv1beta1client "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 )
@@ -28,8 +30,8 @@ type GPUMetricsClient interface {
 	// GetPodGPUPower gets average GPU power use in watts for a specific pod
 	GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error)
 
-	// ListPodsGPUPower gets average GPU power for all pods with GPUs
-	ListPodsGPUPower(ctx context.Context) (map[string]float64, error) // key: namespace/name
+	// ListPodsGPUPower gets average GPU power per GPU device on each node
+	ListPodsGPUPower(ctx context.Context) (map[string]map[string]float64, error) // key: NodeName -> UUID -> Power
 }
 
 // K8sMetricsClient implements CoreMetricsClient using the Kubernetes metrics API
@@ -77,8 +79,8 @@ func (c *NullGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, na
 }
 
 // ListPodsGPUPower returns an empty map
-func (c *NullGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
-	return make(map[string]float64), nil
+func (c *NullGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]map[string]float64, error) {
+	return make(map[string]map[string]float64), nil
 }
 
 // NewNullGPUMetricsClient creates a placeholder GPU metrics client
@@ -122,17 +124,25 @@ func (c *MockCoreMetricsClient) AddPodMetrics(pod *metricsv1beta1.PodMetrics) {
 	c.pods[key] = pod
 }
 
+// MockPodAssignment stores mock assignment info for GetPodGPUPower
+type MockPodAssignment struct {
+	NodeName string
+	UUIDs    []string
+}
+
 // MockGPUMetricsClient implements GPUMetricsClient for testing
 type MockGPUMetricsClient struct {
-	utilization map[string]float64 // key: namespace/name
-	power       map[string]float64 // key: namespace/name
+	utilization    map[string]float64            // key: namespace/name
+	power          map[string]map[string]float64 // key: nodeName -> uuid -> power
+	podAssignments map[string]MockPodAssignment  // key: namespace/name -> assignment info
 }
 
 // NewMockGPUMetricsClient creates a new mock GPU metrics client
 func NewMockGPUMetricsClient() *MockGPUMetricsClient {
 	return &MockGPUMetricsClient{
-		utilization: make(map[string]float64),
-		power:       make(map[string]float64),
+		utilization:    make(map[string]float64),
+		power:          make(map[string]map[string]float64),
+		podAssignments: make(map[string]MockPodAssignment),
 	}
 }
 
@@ -155,21 +165,51 @@ func (c *MockGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[
 	return result, nil
 }
 
-// GetPodGPUPower gets GPU power for a specific pod
+// GetPodGPUPower gets GPU power for a specific pod based on mock assignments
 func (c *MockGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
 	key := namespace + "/" + name
-	if power, exists := c.power[key]; exists {
-		return power, nil
+	assignment, exists := c.podAssignments[key]
+	if !exists {
+		klog.V(2).Infof("MockGPUMetricsClient: No assignment found for pod %s", key)
+		return 0, fmt.Errorf("mock assignment not found for pod %s/%s", namespace, name)
 	}
-	return 0, nil
+
+	nodePowerMap, nodeExists := c.power[assignment.NodeName]
+	if !nodeExists {
+		klog.V(2).Infof("MockGPUMetricsClient: No power data found for node %s", assignment.NodeName)
+		return 0, fmt.Errorf("mock power data not found for node %s", assignment.NodeName)
+	}
+
+	totalPower := 0.0
+	foundGPUs := 0
+	for _, uuid := range assignment.UUIDs {
+		if powerVal, uuidExists := nodePowerMap[uuid]; uuidExists {
+			totalPower += powerVal
+			foundGPUs++
+		} else {
+			klog.Warningf("MockGPUMetricsClient: Power data for assigned UUID %s on node %s not found", uuid, assignment.NodeName)
+		}
+	}
+
+	if foundGPUs == 0 && len(assignment.UUIDs) > 0 {
+		klog.Warningf("MockGPUMetricsClient: Pod %s assigned GPUs %v on node %s, but no power data found for these UUIDs", key, assignment.UUIDs, assignment.NodeName)
+		// Return error or 0? Let's return 0 for now.
+		return 0, fmt.Errorf("mock power data not found for assigned UUIDs %v on node %s", assignment.UUIDs, assignment.NodeName)
+	}
+
+	klog.V(2).Infof("MockGPUMetricsClient: Calculated power %f for pod %s (Node: %s, UUIDs: %v)", totalPower, key, assignment.NodeName, assignment.UUIDs)
+	return totalPower, nil
 }
 
-// ListPodsGPUPower gets GPU power for all pods
-func (c *MockGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
-	// Return a copy to prevent modification
-	result := make(map[string]float64, len(c.power))
-	for k, v := range c.power {
-		result[k] = v
+// ListPodsGPUPower gets GPU power per node and UUID
+func (c *MockGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]map[string]float64, error) {
+	// Return a deep copy to prevent modification
+	result := make(map[string]map[string]float64, len(c.power))
+	for node, nodeData := range c.power {
+		result[node] = make(map[string]float64, len(nodeData))
+		for uuid, powerVal := range nodeData {
+			result[node][uuid] = powerVal
+		}
 	}
 	return result, nil
 }
@@ -180,8 +220,19 @@ func (c *MockGPUMetricsClient) SetPodGPUUtilization(namespace, name string, util
 	c.utilization[key] = utilization
 }
 
-// SetPodGPUPower sets the GPU power for a pod in the mock
-func (c *MockGPUMetricsClient) SetPodGPUPower(namespace, name string, power float64) {
+// SetNodeGPUPower sets the GPU power for a specific GPU on a node in the mock
+func (c *MockGPUMetricsClient) SetNodeGPUPower(nodeName, uuid string, power float64) {
+	if _, ok := c.power[nodeName]; !ok {
+		c.power[nodeName] = make(map[string]float64)
+	}
+	c.power[nodeName][uuid] = power
+}
+
+// AssignPodToGPU sets the mock assignment of a pod to specific GPUs on a node
+func (c *MockGPUMetricsClient) AssignPodToGPU(namespace, name, nodeName string, uuids []string) {
 	key := namespace + "/" + name
-	c.power[key] = power
+	c.podAssignments[key] = MockPodAssignment{
+		NodeName: nodeName,
+		UUIDs:    uuids,
+	}
 }
