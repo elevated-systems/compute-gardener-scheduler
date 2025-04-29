@@ -264,15 +264,23 @@ var CPUModelMappings = map[string]map[string]string{
 	},
 }
 
+// getCPUModelKey creates a lookup key for our CPU mapping table based on NFD labels
+func (hp *HardwareProfiler) getCPUModelKey(node *v1.Node) string {
+	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
+	modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
+
+	if !hasFamily || !hasModelID {
+		return ""
+	}
+
+	// The base key uses the NFD CPU model family and ID
+	return fmt.Sprintf("%s-%s", family, modelID)
+}
+
 // identifyCPUModelFromNFDLabels tries to identify the CPU model from NFD labels
 // Uses family, model, vendor and power state information to look up the specific CPU model
 func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string {
-	// First check if we already have the complete CPU model name
-	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok && model != "" {
-		return model
-	}
-
-	// If not, try to extract the NFD CPU model information - family, model ID, and vendor
+	// Extract the NFD CPU model information - family, model ID, and vendor
 	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
 	modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
 	vendorID, hasVendorID := node.Labels[common.NFDLabelCPUModelVendorID]
@@ -286,44 +294,53 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 		return ""
 	}
 
-	// Format the base key for our mapping using family and model ID
-	baseKey := fmt.Sprintf("%s-%s", family, modelID)
-
-	// Check for power state information, particularly the scaling governor
-	// which has the most significant impact on power consumption
+	// Check for power state information
 	governor, hasGovernor := node.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	turbo, hasTurbo := node.Labels[common.NFDLabelCPUPStateTurbo]
 
-	// Create a composite key that includes power state information when available
-	key := baseKey
-	if hasGovernor {
-		// Append the governor to the key to differentiate power states
-		key = fmt.Sprintf("%s-%s", baseKey, governor)
-		klog.V(2).InfoS("Found CPU power state information",
-			"node", node.Name,
-			"governor", governor)
-	}
-
-	// Log the values we found for debugging
+	// Log the NFD information we found
 	klog.V(2).InfoS("Found NFD CPU information",
 		"node", node.Name,
 		"vendorID", vendorID,
 		"family", family,
 		"modelID", modelID,
-		"lookupKey", key,
-		"hasGovernor", hasGovernor)
+		"hasGovernor", hasGovernor,
+		"governor", governor,
+		"hasTurbo", hasTurbo,
+		"turbo", turbo)
 
-	// Look up in our mapping table
+	// Get the mapping key for CPU identification
+	baseKey := hp.getCPUModelKey(node)
+	if baseKey == "" {
+		return ""
+	}
+
+	// Look for known CPU models in our lookup tables
 	if vendorMapping, ok := CPUModelMappings[vendorID]; ok {
-		// First try with the full key including power state information
-		if hasGovernor {
-			if cpuModel, ok := vendorMapping[key]; ok {
-				return cpuModel
+		// Check for special known power-variant cases
+		if hasGovernor && governor == "powersave" {
+			// Known special cases where powersave indicates a distinct hardware model
+			// These are CPU models where we know the T/U/L/Y variants map to specific suffixes
+
+			// Intel's -1 suffix often indicates power-optimized CPUs (T series)
+			if vendorID == "Intel" {
+				// Most Intel models with -1 in our mapping are T-series
+				powerVariantKey := fmt.Sprintf("%s-%d", baseKey, 1)
+				if cpuModel, ok := vendorMapping[powerVariantKey]; ok {
+					klog.V(2).InfoS("Mapped to power-optimized CPU variant",
+						"node", node.Name,
+						"baseKey", baseKey,
+						"powerVariant", powerVariantKey,
+						"governor", governor)
+					return cpuModel
+				}
 			}
 		}
 
-		// Try with base key (family-model without power state)
+		// Try direct model lookup without power modifications
 		if cpuModel, ok := vendorMapping[baseKey]; ok {
-			// If we found a match but have power state info, create a power-state-specific model name
+			// If we found the model but it's running in a specific power state,
+			// add that information to the model name for better differentiation
 			if hasGovernor {
 				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
 			}
@@ -332,7 +349,6 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 
 		// Try family-only fallback (least specific)
 		if cpuModel, ok := vendorMapping[family]; ok {
-			// If we have power state info, include it in the model name
 			if hasGovernor {
 				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
 			}
@@ -342,15 +358,15 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 
 	// If we can't determine from NFD labels, construct a generic model name
 	cpuCores := node.Status.Capacity.Cpu().Value()
+	baseName := fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
+		vendorID, family, modelID, cpuCores)
 
-	// Include power state information in the generic model name if available
+	// Include power state information for better differentiation
 	if hasGovernor {
-		return fmt.Sprintf("%s CPU Family %s Model %s (%d cores, %s governor)",
-			vendorID, family, modelID, cpuCores, governor)
+		return fmt.Sprintf("%s, %s governor", baseName, governor)
 	}
 
-	return fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
-		vendorID, family, modelID, cpuCores)
+	return baseName
 }
 
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
