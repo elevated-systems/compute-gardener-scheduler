@@ -225,7 +225,56 @@ data:
         frequencyRangeGHz:
           min: 2.8
           max: 4.7
-    
+          
+      # ARM CPUs - Consumer/Edge (Homelab)
+      "Raspberry Pi 4 Model B (BCM2711)":
+        idlePower: 2.0
+        maxPower: 6.0
+        numCores: 4
+        baseFrequencyGHz: 1.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.6
+          max: 1.8
+      "ARM Cortex-A72":
+        idlePower: 1.8
+        maxPower: 5.5
+        numCores: 4
+        baseFrequencyGHz: 1.5
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 0.6
+          max: 1.7
+          
+      # ARM CPUs - Server/Cloud
+      "ARM Neoverse N1":
+        idlePower: 8.0
+        maxPower: 80.0
+        numCores: 64
+        baseFrequencyGHz: 2.6
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.0
+          max: 3.0
+      "ARM Neoverse V1":
+        idlePower: 10.0
+        maxPower: 95.0
+        numCores: 64
+        baseFrequencyGHz: 2.8
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.0
+          max: 3.5
+      "Ampere Altra Q80-30":
+        idlePower: 12.0
+        maxPower: 150.0
+        numCores: 80
+        baseFrequencyGHz: 3.0
+        powerScaling: "quadratic"
+        frequencyRangeGHz:
+          min: 1.0
+          max: 3.3
+
     # GPU power profiles - identifier -> power characteristics
     gpuProfiles:
       # NVIDIA GPUs - Data Center
@@ -258,7 +307,7 @@ data:
       "NVIDIA GeForce RTX 3060":
         idlePower: 12.0
         maxPower: 170.0
-    
+
     # Memory power profiles - memory type -> power characteristics
     memProfiles:
       # Server Memory

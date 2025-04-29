@@ -205,13 +205,14 @@ var CPUModelMappings = map[string]map[string]string{
 		"6-85-2": "Intel(R) Xeon(R) Platinum 8175M",
 		"6-85-3": "Intel(R) Xeon(R) Platinum 8124M",
 		"6-85-4": "Intel(R) Xeon(R) Gold 6148",
+		"6-85-5": "Intel(R) Xeon(R) Platinum 8168",
 		// Intel Xeon Broadwell
 		"6-79":   "Intel(R) Xeon(R) E5-2686 v4",
 		"6-79-1": "Intel(R) Xeon(R) E5-2690 v4",
 		"6-79-2": "Intel(R) Xeon(R) E5-2673 v4",
 		// Intel Xeon Haswell
 		"6-63": "Intel(R) Xeon(R) E5-2676 v3",
-		// Intel Skylake Client (may be running with k8s)
+		// Intel Skylake Client
 		"6-94": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
 		// Intel Coffee Lake
 		"6-158":   "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
@@ -247,10 +248,24 @@ var CPUModelMappings = map[string]map[string]string{
 		"23": "AMD EPYC 7B12", // Generic EPYC fallback
 		"25": "AMD EPYC 7R13", // Generic EPYC fallback
 	},
+
+	"ARM": {
+		// Raspberry Pi 4B
+		"15-53379": "Raspberry Pi 4 Model B (BCM2711)",
+
+		// ARM Server CPUs - Neoverse
+		"8-1":  "ARM Neoverse N1",     // AWS Graviton2, Oracle OCI Ampere A1
+		"8-2":  "ARM Neoverse V1",     // AWS Graviton3, Azure ArmM-series
+		"8-10": "Ampere Altra Q80-30", // Oracle OCI, Equinix Metal
+
+		// Generic ARM fallbacks
+		"15": "ARM Cortex-A72",  // Generic ARM Cortex-A72 fallback (Raspberry Pi 4 family)
+		"8":  "ARM Neoverse N1", // Generic server-class ARM fallback
+	},
 }
 
 // identifyCPUModelFromNFDLabels tries to identify the CPU model from NFD labels
-// Uses family, model, and vendor information to look up the specific CPU model
+// Uses family, model, vendor and power state information to look up the specific CPU model
 func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string {
 	// First check if we already have the complete CPU model name
 	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok && model != "" {
@@ -271,9 +286,22 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 		return ""
 	}
 
-	// Format the key for our mapping
-	// First try with both family and model ID
-	key := fmt.Sprintf("%s-%s", family, modelID)
+	// Format the base key for our mapping using family and model ID
+	baseKey := fmt.Sprintf("%s-%s", family, modelID)
+
+	// Check for power state information, particularly the scaling governor
+	// which has the most significant impact on power consumption
+	governor, hasGovernor := node.Labels[common.NFDLabelCPUPStateScalingGovernor]
+
+	// Create a composite key that includes power state information when available
+	key := baseKey
+	if hasGovernor {
+		// Append the governor to the key to differentiate power states
+		key = fmt.Sprintf("%s-%s", baseKey, governor)
+		klog.V(2).InfoS("Found CPU power state information",
+			"node", node.Name,
+			"governor", governor)
+	}
 
 	// Log the values we found for debugging
 	klog.V(2).InfoS("Found NFD CPU information",
@@ -281,23 +309,46 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 		"vendorID", vendorID,
 		"family", family,
 		"modelID", modelID,
-		"lookupKey", key)
+		"lookupKey", key,
+		"hasGovernor", hasGovernor)
 
 	// Look up in our mapping table
 	if vendorMapping, ok := CPUModelMappings[vendorID]; ok {
-		// Try exact match first
-		if cpuModel, ok := vendorMapping[key]; ok {
+		// First try with the full key including power state information
+		if hasGovernor {
+			if cpuModel, ok := vendorMapping[key]; ok {
+				return cpuModel
+			}
+		}
+
+		// Try with base key (family-model without power state)
+		if cpuModel, ok := vendorMapping[baseKey]; ok {
+			// If we found a match but have power state info, create a power-state-specific model name
+			if hasGovernor {
+				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
+			}
 			return cpuModel
 		}
 
-		// Try family-only fallback (less specific)
+		// Try family-only fallback (least specific)
 		if cpuModel, ok := vendorMapping[family]; ok {
+			// If we have power state info, include it in the model name
+			if hasGovernor {
+				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
+			}
 			return cpuModel
 		}
 	}
 
 	// If we can't determine from NFD labels, construct a generic model name
 	cpuCores := node.Status.Capacity.Cpu().Value()
+
+	// Include power state information in the generic model name if available
+	if hasGovernor {
+		return fmt.Sprintf("%s CPU Family %s Model %s (%d cores, %s governor)",
+			vendorID, family, modelID, cpuCores, governor)
+	}
+
 	return fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
 		vendorID, family, modelID, cpuCores)
 }
@@ -643,6 +694,40 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 			"node", newNode.Name,
 			"oldVendorID", oldCPUVendorID,
 			"newVendorID", newCPUVendorID)
+		return true
+	}
+
+	// Check CPU power state changes - these can significantly affect power consumption
+	// Check CPU scaling governor (most impactful - powersave vs performance)
+	oldGovernor, oldHasGovernor := oldNode.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	newGovernor, newHasGovernor := newNode.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	if oldHasGovernor != newHasGovernor || (oldHasGovernor && newHasGovernor && oldGovernor != newGovernor) {
+		klog.V(2).InfoS("CPU scaling governor changed on node",
+			"node", newNode.Name,
+			"oldGovernor", oldGovernor,
+			"newGovernor", newGovernor)
+		return true
+	}
+
+	// Check CPU p-state status
+	oldStatus, oldHasStatus := oldNode.Labels[common.NFDLabelCPUPStateStatus]
+	newStatus, newHasStatus := newNode.Labels[common.NFDLabelCPUPStateStatus]
+	if oldHasStatus != newHasStatus || (oldHasStatus && newHasStatus && oldStatus != newStatus) {
+		klog.V(2).InfoS("CPU p-state status changed on node",
+			"node", newNode.Name,
+			"oldStatus", oldStatus,
+			"newStatus", newStatus)
+		return true
+	}
+
+	// Check CPU turbo status
+	oldTurbo, oldHasTurbo := oldNode.Labels[common.NFDLabelCPUPStateTurbo]
+	newTurbo, newHasTurbo := newNode.Labels[common.NFDLabelCPUPStateTurbo]
+	if oldHasTurbo != newHasTurbo || (oldHasTurbo && newHasTurbo && oldTurbo != newTurbo) {
+		klog.V(2).InfoS("CPU turbo status changed on node",
+			"node", newNode.Name,
+			"oldTurbo", oldTurbo,
+			"newTurbo", newTurbo)
 		return true
 	}
 

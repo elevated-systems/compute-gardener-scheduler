@@ -67,6 +67,11 @@ const (
 	NFDLabelCPUModelVendorID = NFDLabelBase + "/cpu-model.vendor_id"
 	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name" // Used by our exporter when family/id/vendor_id are not present
 
+	// CPU power state labels - from NFD discovery
+	NFDLabelCPUPStateScalingGovernor = NFDLabelBase + "/cpu-pstate.scaling_governor" // e.g., "powersave", "performance"
+	NFDLabelCPUPStateStatus          = NFDLabelBase + "/cpu-pstate.status"           // e.g., "active"
+	NFDLabelCPUPStateTurbo           = NFDLabelBase + "/cpu-pstate.turbo"            // e.g., "true", "false"
+
 	// Generic NFD labels for PCIe devices (may be used for non-NVIDIA GPUs)
 	NFDLabelPCIVendorPrefix = NFDLabelBase + "/pci-" // Vendor-specific prefixes follow
 
