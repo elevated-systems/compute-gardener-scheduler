@@ -600,8 +600,8 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 		return 0, fmt.Errorf("prometheus client not available")
 	}
 
-	// Get the Prometheus client from the GPU metrics client (which is a PrometheusGPUMetricsClient)
-	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusGPUMetricsClient)
+	// Get the Prometheus client from the GPU metrics client (which is a PrometheusMetricsClient)
+	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusMetricsClient)
 	if !ok {
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}
@@ -649,7 +649,7 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 
 			// Try to map to a known CPU model
 			if cs.config.Power.HardwareProfiles != nil {
-				if vendorMapping, ok := metrics.CPUModelMappings[vendorID]; ok {
+				if vendorMapping, ok := cs.config.Power.HardwareProfiles.CPUModelMappings[vendorID]; ok {
 					if mappedModel, ok := vendorMapping[lookupKey]; ok {
 						cpuModel = mappedModel
 						klog.V(2).InfoS("Mapped CPU model from NFD components",

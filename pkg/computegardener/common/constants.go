@@ -57,6 +57,17 @@ const (
 	// Node annotations
 	// ----------------------------------------
 
+	// Hardware annotations - CPU
+	AnnotationCPUModel         = AnnotationBase + "/cpu-model"
+	AnnotationCPUBaseFrequency = AnnotationBase + "/cpu-base-frequency" // Base/nominal CPU frequency in GHz
+	AnnotationCPUMinFrequency  = AnnotationBase + "/cpu-min-frequency"  // Minimum CPU frequency in GHz
+	AnnotationCPUMaxFrequency  = AnnotationBase + "/cpu-max-frequency"  // Maximum CPU frequency in GHz
+
+	// Hardware annotations - GPU
+	AnnotationGPUModel      = AnnotationBase + "/gpu-model"
+	AnnotationGPUCount      = AnnotationBase + "/gpu-count"
+	AnnotationGPUTotalPower = AnnotationBase + "/gpu-total-power"
+
 	// Node Feature Discovery (NFD) labels for hardware information
 	// Base prefix for all NFD labels
 	NFDLabelBase = "feature.node.kubernetes.io"

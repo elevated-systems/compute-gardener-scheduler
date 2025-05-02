@@ -843,8 +843,11 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-1",
 			Labels: map[string]string{
-				common.NFDLabelCPUModel:      "Intel",
-				common.NvidiaLabelGPUProduct: "NVIDIA A100",
+				// Use the NFD-style labels that our updated code expects
+				common.NFDLabelCPUModelFamily:   "6",
+				common.NFDLabelCPUModelID:       "94",
+				common.NFDLabelCPUModelVendorID: "Intel",
+				common.NvidiaLabelGPUProduct:    "NVIDIA A100",
 			},
 		},
 	}
@@ -897,6 +900,12 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 				GPUProfiles: map[string]config.PowerProfile{
 					"NVIDIA A100": {IdlePower: 50, MaxPower: 200},
 				},
+				// Add CPU model mappings needed for the test
+				CPUModelMappings: map[string]map[string]string{
+					"Intel": {
+						"6-94": "Intel", // Map family-model to the CPU profile name
+					},
+				},
 			},
 			expectFiltered: false,
 		},
@@ -916,6 +925,12 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 				},
 				GPUProfiles: map[string]config.PowerProfile{
 					"NVIDIA A100": {IdlePower: 50, MaxPower: 200},
+				},
+				// Add CPU model mappings needed for the test
+				CPUModelMappings: map[string]map[string]string{
+					"Intel": {
+						"6-94": "Intel", // Map family-model to the CPU profile name
+					},
 				},
 			},
 			expectFiltered: true,

@@ -194,76 +194,6 @@ func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string,
 	return hp.detectNodeHardwareInfoFromSystem(node)
 }
 
-// CPUModelMappings maps CPU family + model ID to a specific CPU model string
-// These are based on common Intel and AMD CPU identification numbers
-// See: https://en.wikichip.org/wiki/intel/cpuid
-var CPUModelMappings = map[string]map[string]string{
-	"Intel": {
-		// Intel Xeon Cascade Lake
-		"6-85": "Intel(R) Xeon(R) Platinum 8275CL",
-		// Intel Xeon Skylake
-		"6-85-2": "Intel(R) Xeon(R) Platinum 8175M",
-		"6-85-3": "Intel(R) Xeon(R) Platinum 8124M",
-		"6-85-4": "Intel(R) Xeon(R) Gold 6148",
-		"6-85-5": "Intel(R) Xeon(R) Platinum 8168",
-		// Intel Xeon Broadwell
-		"6-79":   "Intel(R) Xeon(R) E5-2686 v4",
-		"6-79-1": "Intel(R) Xeon(R) E5-2690 v4",
-		"6-79-2": "Intel(R) Xeon(R) E5-2673 v4",
-		// Intel Xeon Haswell
-		"6-63": "Intel(R) Xeon(R) E5-2676 v3",
-		// Intel Skylake Client
-		"6-94": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
-		// Intel Coffee Lake
-		"6-158":   "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz",
-		"6-158-1": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
-		// Intel Alder Lake
-		"6-151": "12th Gen Intel(R) Core(TM) i5-12600K",
-
-		// Skylake Client and Kaby Lake
-		"6-142":   "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
-		"6-142-1": "Intel(R) Core(TM) i5-6500T CPU @ 2.50GHz",
-
-		// Fallbacks when we can't determine the exact model
-		"6": "Intel(R) Xeon(R) CPU @ 2.20GHz", // Generic Intel Xeon fallback
-	},
-
-	"AMD": {
-		// EPYC Rome
-		"23-49":   "AMD EPYC 7B12",
-		"23-49-1": "AMD EPYC 7R32",
-		"23-49-2": "AMD EPYC 7571",
-
-		// EPYC Milan
-		"25-1":   "AMD EPYC 7R13",
-		"25-1-1": "AMD EPYC 7763",
-
-		// Ryzen 3rd Gen (Zen 2)
-		"23-113": "AMD Ryzen 5 3600 6-Core Processor",
-
-		// Ryzen 5th Gen (Zen 3)
-		"25-33": "AMD Ryzen 7 5800X 8-Core Processor",
-
-		// Fallbacks
-		"23": "AMD EPYC 7B12", // Generic EPYC fallback
-		"25": "AMD EPYC 7R13", // Generic EPYC fallback
-	},
-
-	"ARM": {
-		// Raspberry Pi 4B
-		"15-53379": "Raspberry Pi 4 Model B (BCM2711)",
-
-		// ARM Server CPUs - Neoverse
-		"8-1":  "ARM Neoverse N1",     // AWS Graviton2, Oracle OCI Ampere A1
-		"8-2":  "ARM Neoverse V1",     // AWS Graviton3, Azure ArmM-series
-		"8-10": "Ampere Altra Q80-30", // Oracle OCI, Equinix Metal
-
-		// Generic ARM fallbacks
-		"15": "ARM Cortex-A72",  // Generic ARM Cortex-A72 fallback (Raspberry Pi 4 family)
-		"8":  "ARM Neoverse N1", // Generic server-class ARM fallback
-	},
-}
-
 // getCPUModelKey creates a lookup key for our CPU mapping table based on NFD labels
 func (hp *HardwareProfiler) getCPUModelKey(node *v1.Node) string {
 	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
@@ -315,58 +245,25 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 		return ""
 	}
 
-	// Look for known CPU models in our lookup tables
-	if vendorMapping, ok := CPUModelMappings[vendorID]; ok {
-		// Check for special known power-variant cases
-		if hasGovernor && governor == "powersave" {
-			// Known special cases where powersave indicates a distinct hardware model
-			// These are CPU models where we know the T/U/L/Y variants map to specific suffixes
-
-			// Intel's -1 suffix often indicates power-optimized CPUs (T series)
-			if vendorID == "Intel" {
-				// Most Intel models with -1 in our mapping are T-series
-				powerVariantKey := fmt.Sprintf("%s-%d", baseKey, 1)
-				if cpuModel, ok := vendorMapping[powerVariantKey]; ok {
-					klog.V(2).InfoS("Mapped to power-optimized CPU variant",
-						"node", node.Name,
-						"baseKey", baseKey,
-						"powerVariant", powerVariantKey,
-						"governor", governor)
-					return cpuModel
-				}
+	// Look for known CPU models in our config-based mappings
+	if hp.config != nil && hp.config.CPUModelMappings != nil {
+		if vendorMapping, ok := hp.config.CPUModelMappings[vendorID]; ok {
+			// Try direct model lookup
+			if cpuModel, ok := vendorMapping[baseKey]; ok {
+				return cpuModel
 			}
-		}
 
-		// Try direct model lookup without power modifications
-		if cpuModel, ok := vendorMapping[baseKey]; ok {
-			// If we found the model but it's running in a specific power state,
-			// add that information to the model name for better differentiation
-			if hasGovernor {
-				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
+			// Try family-only fallback (least specific)
+			if cpuModel, ok := vendorMapping[family]; ok {
+				return cpuModel
 			}
-			return cpuModel
-		}
-
-		// Try family-only fallback (least specific)
-		if cpuModel, ok := vendorMapping[family]; ok {
-			if hasGovernor {
-				return fmt.Sprintf("%s (%s governor)", cpuModel, governor)
-			}
-			return cpuModel
 		}
 	}
 
 	// If we can't determine from NFD labels, construct a generic model name
 	cpuCores := node.Status.Capacity.Cpu().Value()
-	baseName := fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
+	return fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
 		vendorID, family, modelID, cpuCores)
-
-	// Include power state information for better differentiation
-	if hasGovernor {
-		return fmt.Sprintf("%s, %s governor", baseName, governor)
-	}
-
-	return baseName
 }
 
 // detectNodeHardwareInfoFromSystem determines hardware components from the node

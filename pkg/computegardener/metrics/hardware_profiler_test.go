@@ -106,6 +106,12 @@ func TestHardwareProfilerWithOnPrem(t *testing.T) {
 				MaxPower:  125.0,
 			},
 		},
+		// Add the CPU model mappings that we need for the test
+		CPUModelMappings: map[string]map[string]string{
+			"Intel": {
+				"6-142": "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
+			},
+		},
 	}
 
 	// Create a hardware profiler with the test configuration

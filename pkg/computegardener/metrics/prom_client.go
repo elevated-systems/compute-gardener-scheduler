@@ -11,9 +11,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// PrometheusGPUMetricsClient implements GPUMetricsClient using Prometheus
-// TODO: Rename to PrometheusMetricsClient since it's now used for both GPU and CPU metrics
-type PrometheusGPUMetricsClient struct {
+// PrometheusMetricsClient implements metrics queries using Prometheus
+// Used for both GPU and CPU metrics
+type PrometheusMetricsClient struct {
 	client        v1.API
 	queryTimeout  time.Duration
 	metricsPrefix string // The prefix for metrics (e.g., compute_gardener_gpu)
@@ -24,36 +24,36 @@ type PrometheusGPUMetricsClient struct {
 }
 
 // SetUseDCGM configures whether to use DCGM metrics
-func (c *PrometheusGPUMetricsClient) SetUseDCGM(use bool) {
+func (c *PrometheusMetricsClient) SetUseDCGM(use bool) {
 	c.useDCGM = use
 	klog.V(2).InfoS("DCGM metrics usage configured", "useDCGM", use)
 }
 
 // SetDCGMPowerMetric sets the DCGM power metric name
-func (c *PrometheusGPUMetricsClient) SetDCGMPowerMetric(metric string) {
+func (c *PrometheusMetricsClient) SetDCGMPowerMetric(metric string) {
 	c.dcgmPowerMetric = metric
 	klog.V(2).InfoS("DCGM power metric configured", "metric", metric)
 }
 
 // SetDCGMUtilMetric sets the DCGM utilization metric name
-func (c *PrometheusGPUMetricsClient) SetDCGMUtilMetric(metric string) {
+func (c *PrometheusMetricsClient) SetDCGMUtilMetric(metric string) {
 	c.dcgmUtilMetric = metric
 	klog.V(2).InfoS("DCGM utilization metric configured", "metric", metric)
 }
 
 // GetDCGMPowerMetric returns the current DCGM power metric name
-func (c *PrometheusGPUMetricsClient) GetDCGMPowerMetric() string {
+func (c *PrometheusMetricsClient) GetDCGMPowerMetric() string {
 	return c.dcgmPowerMetric
 }
 
 // GetDCGMUtilMetric returns the current DCGM utilization metric name
-func (c *PrometheusGPUMetricsClient) GetDCGMUtilMetric() string {
+func (c *PrometheusMetricsClient) GetDCGMUtilMetric() string {
 	return c.dcgmUtilMetric
 }
 
-// NewPrometheusGPUMetricsClient creates a new Prometheus-based GPU metrics client
+// NewPrometheusMetricsClient creates a new Prometheus-based GPU metrics client
 // By default, it uses DCGM metrics if available
-func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
+func NewPrometheusMetricsClient(prometheusURL string) (*PrometheusMetricsClient, error) {
 	// Initialize Prometheus client
 	cfg := api.Config{
 		Address: prometheusURL,
@@ -65,7 +65,7 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 	}
 
 	// Create with DCGM metrics enabled by default
-	metricsClient := &PrometheusGPUMetricsClient{
+	metricsClient := &PrometheusMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
 		metricsPrefix: "compute_gardener_gpu", // Still useful as fallback
@@ -86,7 +86,7 @@ func NewPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsC
 }
 
 // QueryNodeMetric queries a single metric value for a node
-func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metricName, nodeName string) (float64, error) {
+func (c *PrometheusMetricsClient) QueryNodeMetric(ctx context.Context, metricName, nodeName string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -125,9 +125,9 @@ func (c *PrometheusGPUMetricsClient) QueryNodeMetric(ctx context.Context, metric
 	return 0, fmt.Errorf("unexpected result type from Prometheus: %s", result.Type().String())
 }
 
-// NewLegacyPrometheusGPUMetricsClient creates a Prometheus client that uses the legacy
+// NewLegacyPrometheusMetricsClient creates a Prometheus client that uses the legacy
 // custom metrics format instead of DCGM metrics
-func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMetricsClient, error) {
+func NewLegacyPrometheusMetricsClient(prometheusURL string) (*PrometheusMetricsClient, error) {
 	// Initialize Prometheus client
 	cfg := api.Config{
 		Address: prometheusURL,
@@ -141,7 +141,7 @@ func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMe
 	klog.InfoS("Created legacy Prometheus GPU metrics client (without DCGM)",
 		"prometheusURL", prometheusURL)
 
-	return &PrometheusGPUMetricsClient{
+	return &PrometheusMetricsClient{
 		client:        v1.NewAPI(client),
 		queryTimeout:  30 * time.Second,
 		metricsPrefix: "compute_gardener_gpu",
@@ -150,7 +150,7 @@ func NewLegacyPrometheusGPUMetricsClient(prometheusURL string) (*PrometheusGPUMe
 }
 
 // GetPodGPUUtilization gets GPU utilization for a specific pod
-func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, namespace, name string) (float64, error) {
+func (c *PrometheusMetricsClient) GetPodGPUUtilization(ctx context.Context, namespace, name string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -200,7 +200,7 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUUtilization(ctx context.Context, n
 }
 
 // ListPodsGPUUtilization gets GPU utilization for all pods with GPUs
-func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) {
+func (c *PrometheusMetricsClient) ListPodsGPUUtilization(ctx context.Context) (map[string]float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -283,7 +283,7 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUUtilization(ctx context.Context)
 }
 
 // GetPodGPUPower gets GPU power for a specific pod
-func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
+func (c *PrometheusMetricsClient) GetPodGPUPower(ctx context.Context, namespace, name string) (float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -333,7 +333,7 @@ func (c *PrometheusGPUMetricsClient) GetPodGPUPower(ctx context.Context, namespa
 }
 
 // ListPodsGPUPower gets GPU power for all pods with GPUs
-func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
+func (c *PrometheusMetricsClient) ListPodsGPUPower(ctx context.Context) (map[string]float64, error) {
 	// Create a context with timeout
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
 	defer cancel()
@@ -415,7 +415,7 @@ func (c *PrometheusGPUMetricsClient) ListPodsGPUPower(ctx context.Context) (map[
 }
 
 // GetPodHistoricalGPUMetrics gets historical GPU metrics for pod over time window
-func (c *PrometheusGPUMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Context, namespace, name string, startTime, endTime time.Time) (*PodGPUMetricsHistory, error) {
+func (c *PrometheusMetricsClient) GetPodHistoricalGPUMetrics(ctx context.Context, namespace, name string, startTime, endTime time.Time) (*PodGPUMetricsHistory, error) {
 	// Create a context with timeout (longer timeout for range queries)
 	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout*2)
 	defer cancel()

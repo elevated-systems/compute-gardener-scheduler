@@ -199,7 +199,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			klog.InfoS("Initializing Prometheus GPU metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
 
-			promClient, err := metrics.NewPrometheusGPUMetricsClient(cfg.Metrics.Prometheus.URL)
+			promClient, err := metrics.NewPrometheusMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
 				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
 				gpuMetricsClient = metrics.NewNullGPUMetricsClient()

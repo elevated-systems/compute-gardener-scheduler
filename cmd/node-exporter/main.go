@@ -357,20 +357,13 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 	return model, vendor, family, nil
 }
 
-// updateCPUModelLabel adds CPU information to the node using NFD-compatible labels
-func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error {
+// annotateCPUModel annotates the node with CPU model information for backward compatibility
+func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
 	// Get CPU model info
-	cpuModel, cpuVendor, cpuFamily, err := getCPUModelInfo()
+	cpuModel, _, _, err := getCPUModelInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get CPU model info: %v", err)
 	}
-
-	// Log what we found
-	klog.InfoS("Detected CPU information",
-		"node", nodeName,
-		"model", cpuModel,
-		"vendor", cpuVendor,
-		"family", cpuFamily)
 
 	// Get node
 	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
@@ -378,123 +371,34 @@ func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error
 		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
 	}
 
-	// Create a copy of the node with updated labels
-	nodeCopy := node.DeepCopy()
-	if nodeCopy.Labels == nil {
-		nodeCopy.Labels = make(map[string]string)
-	}
-
-	// Only set these if they don't exist already (NFD will have set them if it's running)
-	labelsChanged := false
-
-	// Set CPU family if needed
-	if cpuFamily != "" && nodeCopy.Labels[common.NFDLabelCPUModelFamily] == "" {
-		nodeCopy.Labels[common.NFDLabelCPUModelFamily] = cpuFamily
-		labelsChanged = true
-	}
-
-	// Set vendor ID if needed
-	if cpuVendor != "" && nodeCopy.Labels[common.NFDLabelCPUModelVendorID] == "" {
-		// We know the vendor ID is simple enough to be a valid label
-		nodeCopy.Labels[common.NFDLabelCPUModelVendorID] = cpuVendor
-		labelsChanged = true
-	}
-
-	// Detect CPU model ID if possible and if not already set by NFD
-	if nodeCopy.Labels[common.NFDLabelCPUModelID] == "" {
-		if modelID, err := detectCPUModelID(); err == nil && modelID != "" {
-			nodeCopy.Labels[common.NFDLabelCPUModelID] = modelID
-			labelsChanged = true
-		}
-	}
-
-	// Also check for power state information - compatible with NFD p-state detection
-	cpufreqDir := "/sys/devices/system/cpu/cpufreq"
-	if _, err := os.Stat(cpufreqDir); err == nil {
-		// Get scaling governor
-		governor, err := getScalingGovernor(cpufreqDir)
-		if err == nil && governor != "" && nodeCopy.Labels[common.NFDLabelCPUPStateScalingGovernor] == "" {
-			nodeCopy.Labels[common.NFDLabelCPUPStateScalingGovernor] = governor
-			labelsChanged = true
-		}
-	}
-
-	// Only update if we changed something
-	if labelsChanged {
-		// Update the node
-		_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to update node labels: %v", err)
-		}
-
-		klog.InfoS("Successfully updated node with CPU labels",
+	// Check if annotations already exist and match
+	if val, exists := node.Annotations[common.AnnotationCPUModel]; exists && val == cpuModel {
+		klog.V(2).InfoS("Node already has correct CPU model annotation",
 			"node", nodeName,
-			"family", cpuFamily,
-			"vendor", cpuVendor)
-	} else {
-		klog.V(2).InfoS("No CPU labels needed updating",
-			"node", nodeName)
+			"model", cpuModel)
+		return nil
 	}
+
+	// Create a copy of the node with updated annotations
+	nodeCopy := node.DeepCopy()
+	if nodeCopy.Annotations == nil {
+		nodeCopy.Annotations = make(map[string]string)
+	}
+
+	// Add annotations
+	nodeCopy.Annotations[common.AnnotationCPUModel] = cpuModel
+
+	// Update the node
+	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update node annotations: %v", err)
+	}
+
+	klog.InfoS("Successfully updated node with CPU model annotation",
+		"node", nodeName,
+		"model", cpuModel)
 
 	return nil
-}
-
-// detectCPUModelID extracts the CPU model ID from /proc/cpuinfo
-func detectCPUModelID() (string, error) {
-	file, err := os.Open("/proc/cpuinfo")
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "model") && !strings.Contains(line, "model name") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("could not find CPU model ID")
-}
-
-// getScalingGovernor detects the scaling governor for CPUs
-func getScalingGovernor(cpufreqDir string) (string, error) {
-	policies, err := os.ReadDir(cpufreqDir)
-	if err != nil {
-		return "", err
-	}
-
-	// Detect scaling governor (same logic as NFD)
-	scaling := ""
-	for _, policy := range policies {
-		// Ensure this policy applies to at least one CPU
-		cpusPath := filepath.Join(cpufreqDir, policy.Name(), "affected_cpus")
-		cpus, err := os.ReadFile(cpusPath)
-		if err != nil || strings.TrimSpace(string(cpus)) == "" {
-			continue
-		}
-
-		// Get scaling governor
-		govPath := filepath.Join(cpufreqDir, policy.Name(), "scaling_governor")
-		data, err := os.ReadFile(govPath)
-		if err != nil {
-			continue
-		}
-
-		policyScaling := strings.TrimSpace(string(data))
-
-		// Check that all policies have the same scaling governor
-		if scaling != "" && scaling != policyScaling {
-			return "", fmt.Errorf("inconsistent scaling governors")
-		}
-		scaling = policyScaling
-	}
-
-	return scaling, nil
 }
 
 func main() {
@@ -559,9 +463,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Update the node with CPU model info (using NFD-compatible labels)
-	if err := updateCPUModelLabel(clientset, nodeName); err != nil {
-		klog.ErrorS(err, "Failed to update node with CPU model information")
+	// Update annotations, if needed
+	if err := annotateCPUModel(clientset, nodeName); err != nil {
+		klog.ErrorS(err, "Failed to annotate node with CPU model information")
 		// Continue running even if annotation fails
 	}
 
