@@ -47,6 +47,11 @@ func (p *NFDPowerProvider) GetProviderName() string {
 	return "NFD-Based"
 }
 
+func (p *NFDPowerProvider) GetNodeHardwareInfo(node *v1.Node) (string, []string) {
+	// NOT IMPLEMENTED
+	return "", []string{}
+}
+
 // GetNodePowerInfo returns power information for a node
 func (p *NFDPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *config.HardwareProfiles) (*config.NodePower, error) {
 	if hwConfig == nil {

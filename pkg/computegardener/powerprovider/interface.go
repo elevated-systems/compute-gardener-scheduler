@@ -31,6 +31,9 @@ type PowerInfoProvider interface {
 	// GetNodePowerInfo returns power information for a node
 	GetNodePowerInfo(node *v1.Node, hwConfig *config.HardwareProfiles) (*config.NodePower, error)
 
+	// GetNodeHardwareInfo extracts hardware information from node annotations
+	GetNodeHardwareInfo(node *v1.Node) (string, []string)
+
 	// GetProviderType returns whether this provider uses measured or estimated data
 	GetProviderType() PowerDataType
 

@@ -385,7 +385,13 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					if scheduler.hardwareProfiler != nil {
 						// Get node power profile with defaults applied
 						if profile, err := scheduler.hardwareProfiler.GetNodePowerProfile(node); err == nil {
-							cpuModel, gpuModel := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
+							var gpuModel string
+							cpuModel, gpuModels := scheduler.hardwareProfiler.GetNodeHardwareInfo(node)
+							if len(gpuModels) > 0 {
+								gpuModel = gpuModels[0]
+							} else {
+								gpuModel = ""
+							}
 							memGB := float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024)
 							klog.V(2).InfoS("Automatically detected node hardware profile",
 								"node", node.Name,

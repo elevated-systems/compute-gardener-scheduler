@@ -66,6 +66,11 @@ func (p *KeplerPowerProvider) GetProviderName() string {
 	return "Kepler-Measured"
 }
 
+func (p *KeplerPowerProvider) GetNodeHardwareInfo(node *v1.Node) (string, []string) {
+	// NOT IMPLEMENTED
+	return "", []string{}
+}
+
 // GetNodePowerInfo returns power information for a node
 func (p *KeplerPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *config.HardwareProfiles) (*config.NodePower, error) {
 	if p.promClient == nil {

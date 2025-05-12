@@ -52,7 +52,7 @@ func (p *AnnotationPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *conf
 	}
 
 	// Extract hardware info from annotations
-	cpuModel, gpuModels := p.getHardwareInfoFromAnnotations(node)
+	cpuModel, gpuModels := p.GetNodeHardwareInfo(node)
 	if cpuModel == "" {
 		return nil, fmt.Errorf("CPU model annotation missing or empty")
 	}
@@ -127,8 +127,8 @@ func (p *AnnotationPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *conf
 	return nodePower, nil
 }
 
-// getHardwareInfoFromAnnotations extracts CPU and GPU information from annotations
-func (p *AnnotationPowerProvider) getHardwareInfoFromAnnotations(node *v1.Node) (cpuModel string, gpuModels []string) {
+// GetNodeHardwareInfo extracts CPU and GPU information from annotations
+func (p *AnnotationPowerProvider) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModels []string) {
 	// Get CPU model
 	if model, ok := node.Annotations[common.AnnotationCPUModel]; ok && model != "" {
 		cpuModel = model

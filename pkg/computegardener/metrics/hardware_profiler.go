@@ -97,7 +97,7 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	}
 
 	// Strategy 2: Direct hardware inspection from node annotations or properties
-	cpuModel, gpuModel := hp.detectNodeHardwareInfoFromSystem(node)
+	cpuModel, gpuModels := hp.detectNodeHardwareInfoFromSystem(node)
 
 	if cpuModel != "" {
 		if cpuProfile, exists := hp.config.CPUProfiles[cpuModel]; exists {
@@ -108,8 +108,9 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 			}
 
 			// Add GPU power if available and in our profiles
-			if gpuModel != "" && gpuModel != "none" {
-				if gpuProfile, exists := hp.config.GPUProfiles[gpuModel]; exists {
+			//TODO: confirm this and ensure handles multiple GPUs
+			if len(gpuModels) > 0 {
+				if gpuProfile, exists := hp.config.GPUProfiles[gpuModels[0]]; exists {
 					nodePower.IdleGPUPower = gpuProfile.IdlePower
 					nodePower.MaxGPUPower = gpuProfile.MaxPower
 				}
@@ -142,8 +143,8 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	}
 
 	// Get CPU model information for better error diagnostics
-	var cpuModelInfo, gpuModelInfo string
-	cpuModelInfo, gpuModelInfo = hp.detectNodeHardwareInfoFromSystem(node)
+	var cpuModelInfo string
+	cpuModelInfo, gpuModels = hp.detectNodeHardwareInfoFromSystem(node)
 
 	// Log detailed diagnostics about why hardware profile detection failed
 	var cpuProfileCount int
@@ -158,7 +159,7 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	klog.V(2).InfoS("Hardware profile detection failed",
 		"node", node.Name,
 		"cpuModel", cpuModelInfo,
-		"gpuModel", gpuModelInfo,
+		"gpuModels", gpuModels,
 		"profilesConfigured", hp.config != nil,
 		"cpuProfileCount", cpuProfileCount,
 		"cpuModelInProfiles", profileExists)
@@ -191,7 +192,7 @@ func (hp *HardwareProfiler) cacheNodeProfile(nodeUID string, profile *config.Nod
 
 // GetNodeHardwareInfo returns CPU and GPU models for a node
 // This is a public method that can be used for logging and debugging
-func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModel string) {
+func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModels []string) {
 	return hp.detectNodeHardwareInfoFromSystem(node)
 }
 
@@ -269,7 +270,7 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
 // Uses the PowerProvider system to respect priorities between annotations and NFD labels
-func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
+func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModels []string) {
 	// Get the best power provider based on priority order
 	if provider, found := powerprovider.GetBestProvider(node); found {
 		// Try to use the highest priority provider to get the hardware info
@@ -278,34 +279,12 @@ func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpu
 			"provider", provider.GetProviderName(),
 			"priority", provider.GetPriority())
 
-		if nodePower, err := provider.GetNodePowerInfo(node, hp.config); err == nil {
-			// At this point we can extract the CPU and GPU models from the profiles
-			// by finding which profiles match the power values
-			for model, profile := range hp.config.CPUProfiles {
-				if profile.IdlePower == nodePower.IdlePower && profile.MaxPower == nodePower.MaxPower {
-					cpuModel = model
-					break
-				}
-			}
+		if cpuModel, gpuModels = provider.GetNodeHardwareInfo(node); cpuModel != "" {
+			klog.V(2).InfoS("Power provider detected hardware",
+				"node", node.Name,
+				"cpuModel", cpuModel,
+				"gpuModels", gpuModels)
 
-			// Find GPU model similarly
-			if nodePower.MaxGPUPower > 0 {
-				for model, profile := range hp.config.GPUProfiles {
-					if profile.IdlePower == nodePower.IdleGPUPower && profile.MaxPower == nodePower.MaxGPUPower {
-						gpuModel = model
-						break
-					}
-				}
-			}
-
-			// If we found the models, return them
-			if cpuModel != "" {
-				klog.V(2).InfoS("Identified CPU model from provider",
-					"node", node.Name,
-					"model", cpuModel,
-					"provider", provider.GetProviderName())
-				return cpuModel, gpuModel
-			}
 		}
 	}
 
@@ -340,26 +319,26 @@ func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpu
 	}
 
 	// Fallback check NFD labels for GPU information
-	if gpuModel == "" {
+	if len(gpuModels) == 0 {
 		if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
 			// We have an NVIDIA GPU model from NFD labels
-			gpuModel = model
+			gpuModels = append(gpuModels, model)
 		} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
 			// If GPU exists but no annotation, determine from node characteristics
 			// In production, consider adding a daemon that reports actual GPU model
 			if strings.Contains(node.Name, "gpu") ||
 				strings.Contains(node.Name, "p3") ||
 				strings.Contains(node.Name, "g4") {
-				gpuModel = "NVIDIA V100" // Common in AWS p3 instances
+				gpuModels = append(gpuModels, "NVIDIA V100") // Common in AWS p3 instances
 			} else if strings.Contains(node.Name, "a10") {
-				gpuModel = "NVIDIA A10G"
+				gpuModels = append(gpuModels, "NVIDIA A10G")
 			} else {
-				gpuModel = "NVIDIA T4" // Common default
+				gpuModels = append(gpuModels, "NVIDIA T4") // Common default
 			}
 		}
 	}
 
-	return cpuModel, gpuModel
+	return cpuModel, gpuModels
 }
 
 // estimateMemoryPower provides a simple estimate of memory power consumption based on capacity
