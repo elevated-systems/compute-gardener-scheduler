@@ -5,11 +5,13 @@ import (
 	"time"
 
 	"k8s.io/klog/v2"
+
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // InMemoryStore implements PodMetricsStorage interface with in-memory storage
 type InMemoryStore struct {
-	data                 map[string]*PodMetricsHistory // key: PodUID
+	data                 map[string]*types.PodMetricsHistory // key: PodUID
 	mutex                sync.RWMutex
 	cleanupPeriod        time.Duration
 	retentionTime        time.Duration // How long to keep completed pod metrics
@@ -26,7 +28,7 @@ func NewInMemoryStore(
 	downsamplingStrategy DownsamplingStrategy,
 ) *InMemoryStore {
 	store := &InMemoryStore{
-		data:                 make(map[string]*PodMetricsHistory),
+		data:                 make(map[string]*types.PodMetricsHistory),
 		cleanupPeriod:        cleanupPeriod,
 		retentionTime:        retentionTime,
 		maxRecordsPerPod:     maxRecordsPerPod,
@@ -41,18 +43,18 @@ func NewInMemoryStore(
 }
 
 // AddRecord adds a new metrics record for a pod
-func (s *InMemoryStore) AddRecord(podUID, podName, namespace, nodeName string, record PodMetricsRecord) {
+func (s *InMemoryStore) AddRecord(podUID, podName, namespace, nodeName string, record types.PodMetricsRecord) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	history, exists := s.data[podUID]
 	if !exists {
-		history = &PodMetricsHistory{
+		history = &types.PodMetricsHistory{
 			PodUID:     podUID,
 			PodName:    podName,
 			Namespace:  namespace,
 			NodeName:   nodeName,
-			Records:    make([]PodMetricsRecord, 0, 10),
+			Records:    make([]types.PodMetricsRecord, 0, 10),
 			StartTime:  record.Timestamp,
 			MaxRecords: s.maxRecordsPerPod,
 		}
@@ -96,7 +98,7 @@ func (s *InMemoryStore) MarkCompleted(podUID string) {
 }
 
 // GetHistory retrieves the full metrics history for a pod
-func (s *InMemoryStore) GetHistory(podUID string) (*PodMetricsHistory, bool) {
+func (s *InMemoryStore) GetHistory(podUID string) (*types.PodMetricsHistory, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -111,7 +113,7 @@ func (s *InMemoryStore) Cleanup() {
 	podsToRemove := []string{}
 
 	// Collect pods that need to be removed (using read lock via ForEach)
-	s.ForEach(func(podUID string, history *PodMetricsHistory) {
+	s.ForEach(func(podUID string, history *types.PodMetricsHistory) {
 		if history.Completed && now.Sub(history.LastSeen) > s.retentionTime {
 			podsToRemove = append(podsToRemove, podUID)
 		}
@@ -158,7 +160,7 @@ func (s *InMemoryStore) Size() int {
 }
 
 // ForEach executes a function for each pod history in the store
-func (s *InMemoryStore) ForEach(fn func(string, *PodMetricsHistory)) {
+func (s *InMemoryStore) ForEach(fn func(string, *types.PodMetricsHistory)) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 

@@ -4,14 +4,16 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // Helper function to create test metric records
-func createTestMetricRecords(count int, startTime time.Time, interval time.Duration) []PodMetricsRecord {
-	records := make([]PodMetricsRecord, count)
+func createTestMetricRecords(count int, startTime time.Time, interval time.Duration) []types.PodMetricsRecord {
+	records := make([]types.PodMetricsRecord, count)
 	for i := 0; i < count; i++ {
 		// Generate records with time interval and a sine wave pattern for CPU usage
-		records[i] = PodMetricsRecord{
+		records[i] = types.PodMetricsRecord{
 			Timestamp:     startTime.Add(interval * time.Duration(i)),
 			CPU:           math.Sin(float64(i)*0.5) + 2.0,     // CPU varies between 1.0 and 3.0
 			Memory:        float64(1024 * 1024 * (50 + i%20)), // Memory varies between 50-70 MB

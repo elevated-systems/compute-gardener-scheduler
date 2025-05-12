@@ -9,22 +9,22 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 )
 
 // KeplerPowerProvider provides power information from Kepler metrics
 type KeplerPowerProvider struct {
 	// Prometheus client for querying Kepler metrics
-	promClient *metrics.PrometheusMetricsClient
+	promClient *clients.PrometheusMetricsClient
 }
 
 // Make sure KeplerPowerProvider implements PowerInfoProvider
 var _ PowerInfoProvider = &KeplerPowerProvider{}
 
 // NewKeplerPowerProvider creates a new Kepler-based power provider
-func NewKeplerPowerProvider(promClient *metrics.PrometheusMetricsClient) *KeplerPowerProvider {
+func NewKeplerPowerProvider(promClient *clients.PrometheusMetricsClient) *KeplerPowerProvider {
 	provider := &KeplerPowerProvider{
 		promClient: promClient,
 	}

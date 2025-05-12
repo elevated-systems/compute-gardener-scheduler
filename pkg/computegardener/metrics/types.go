@@ -1,47 +1,23 @@
 package metrics
 
 import (
-	"time"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
-
-// PodMetricsRecord represents a point-in-time measurement of pod resource usage
-type PodMetricsRecord struct {
-	Timestamp       time.Time
-	CPU             float64 // CPU usage in cores
-	Memory          float64 // Memory usage in bytes
-	GPUPowerWatts   float64 // GPU power in Watts
-	PowerEstimate   float64 // Estimated power at this point across all hw in Watts
-	CarbonIntensity float64 // Carbon intensity at this point in gCO2eq/kWh
-	ElectricityRate float64 // Electricity rate at this point in $/kWh
-}
-
-// PodMetricsHistory stores a time series of pod metrics
-type PodMetricsHistory struct {
-	PodUID     string
-	PodName    string
-	Namespace  string
-	NodeName   string
-	Records    []PodMetricsRecord
-	StartTime  time.Time
-	LastSeen   time.Time
-	MaxRecords int // Configurable limit on records to prevent unbounded growth
-	Completed  bool
-}
 
 // PodMetricsStorage defines the interface for storing pod metrics
 type PodMetricsStorage interface {
 	// AddRecord adds a new metrics record for a pod
-	AddRecord(podUID, podName, namespace, nodeName string, record PodMetricsRecord)
+	AddRecord(podUID, podName, namespace, nodeName string, record types.PodMetricsRecord)
 
 	// MarkCompleted marks a pod as completed to prevent further metrics collection
 	MarkCompleted(podUID string)
 
 	// GetHistory retrieves the full metrics history for a pod
-	GetHistory(podUID string) (*PodMetricsHistory, bool)
+	GetHistory(podUID string) (*types.PodMetricsHistory, bool)
 
 	// Cleanup removes old completed pod data
 	Cleanup()
@@ -53,19 +29,19 @@ type PodMetricsStorage interface {
 	Size() int
 
 	// ForEach executes a function for each pod history in the store
-	ForEach(func(string, *PodMetricsHistory))
+	ForEach(func(string, *types.PodMetricsHistory))
 }
 
 // DownsamplingStrategy defines how to reduce the number of metrics points
 // while preserving the overall shape of the time series
 type DownsamplingStrategy interface {
 	// Downsample reduces the number of data points while preserving trend
-	Downsample(records []PodMetricsRecord, targetCount int) []PodMetricsRecord
+	Downsample(records []types.PodMetricsRecord, targetCount int) []types.PodMetricsRecord
 }
 
 // CalculateTotalEnergy calculates the total energy used by a pod in kWh
 // using the trapezoid rule for numerical integration
-func CalculateTotalEnergy(records []PodMetricsRecord) float64 {
+func CalculateTotalEnergy(records []types.PodMetricsRecord) float64 {
 	if len(records) < 2 {
 		return 0
 	}
@@ -112,7 +88,7 @@ func CalculateTotalEnergy(records []PodMetricsRecord) float64 {
 
 // CalculateTotalCarbonEmissions calculates the total carbon emissions in gCO2eq
 // using the trapezoid rule for numerical integration
-func CalculateTotalCarbonEmissions(records []PodMetricsRecord) float64 {
+func CalculateTotalCarbonEmissions(records []types.PodMetricsRecord) float64 {
 	if len(records) < 2 {
 		return 0
 	}
@@ -152,7 +128,7 @@ func CalculatePodMetrics(
 	gpuPowerWatts float64,
 	carbonIntensity float64,
 	calculatePower func(nodeName string, cpu, memory, gpu float64) float64,
-) PodMetricsRecord {
+) types.PodMetricsRecord {
 	// Sum CPU and memory usage across all containers
 	var totalCPU float64
 	var totalMemory float64
@@ -171,7 +147,7 @@ func CalculatePodMetrics(
 
 	// Return a record with all the fields including 0 for ElectricityRate
 	// ElectricityRate will be set in the metrics collector if available
-	return PodMetricsRecord{
+	return types.PodMetricsRecord{
 		Timestamp:       podMetrics.Timestamp.Time,
 		CPU:             totalCPU,
 		Memory:          totalMemory,

@@ -13,9 +13,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
+	cgtypes "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // metricsCollectionWorker periodically collects pod metrics and updates the store
@@ -270,7 +272,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 	trackedPods := make(map[string]bool)
 
 	// Find active pods in our metrics cache
-	cs.metricsStore.ForEach(func(podUID string, history *metrics.PodMetricsHistory) {
+	cs.metricsStore.ForEach(func(podUID string, history *cgtypes.PodMetricsHistory) {
 		// Skip pods already marked as completed - we only care about active ones
 		if !history.Completed {
 			trackedPods[podUID] = true
@@ -601,7 +603,7 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 	}
 
 	// Get the Prometheus client from the GPU metrics client (which is a PrometheusMetricsClient)
-	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusMetricsClient)
+	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
 	if !ok {
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}

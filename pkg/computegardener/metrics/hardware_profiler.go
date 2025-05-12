@@ -11,6 +11,7 @@ import (
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/powerprovider"
 )
 
 // HardwareProfiler provides methods to detect and compute power profiles for nodes
@@ -267,9 +268,48 @@ func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string 
 }
 
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
-// Uses NFD labels if available, or basic architecture information if NFD not present
+// Uses the PowerProvider system to respect priorities between annotations and NFD labels
 func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
-	// Try to use NFD CPU labels to identify the CPU model
+	// Get the best power provider based on priority order
+	if provider, found := powerprovider.GetBestProvider(node); found {
+		// Try to use the highest priority provider to get the hardware info
+		klog.V(2).InfoS("Using power provider to detect hardware",
+			"node", node.Name,
+			"provider", provider.GetProviderName(),
+			"priority", provider.GetPriority())
+
+		if nodePower, err := provider.GetNodePowerInfo(node, hp.config); err == nil {
+			// At this point we can extract the CPU and GPU models from the profiles
+			// by finding which profiles match the power values
+			for model, profile := range hp.config.CPUProfiles {
+				if profile.IdlePower == nodePower.IdlePower && profile.MaxPower == nodePower.MaxPower {
+					cpuModel = model
+					break
+				}
+			}
+
+			// Find GPU model similarly
+			if nodePower.MaxGPUPower > 0 {
+				for model, profile := range hp.config.GPUProfiles {
+					if profile.IdlePower == nodePower.IdleGPUPower && profile.MaxPower == nodePower.MaxGPUPower {
+						gpuModel = model
+						break
+					}
+				}
+			}
+
+			// If we found the models, return them
+			if cpuModel != "" {
+				klog.V(2).InfoS("Identified CPU model from provider",
+					"node", node.Name,
+					"model", cpuModel,
+					"provider", provider.GetProviderName())
+				return cpuModel, gpuModel
+			}
+		}
+	}
+
+	// Fallback to NFD labels if power provider approach didn't work
 	cpuModel = hp.identifyCPUModelFromNFDLabels(node)
 	if cpuModel != "" {
 		klog.V(2).InfoS("Identified CPU model from NFD labels", "node", node.Name, "model", cpuModel)

@@ -17,6 +17,7 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
@@ -56,9 +57,9 @@ type ComputeGardenerScheduler struct {
 	clock            clock.Clock
 	hardwareProfiler *metrics.HardwareProfiler
 
-	// Metrics components
-	coreMetricsClient metrics.CoreMetricsClient
-	gpuMetricsClient  metrics.GPUMetricsClient
+	// Metrics clients and components
+	coreMetricsClient clients.CoreMetricsClient
+	gpuMetricsClient  clients.GPUMetricsClient
 	metricsStore      metrics.PodMetricsStorage
 
 	// Scheduler state
@@ -147,8 +148,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	}
 
 	// Setup metrics clients - if metrics server is not available, they'll be nil
-	var coreMetricsClient metrics.CoreMetricsClient
-	var gpuMetricsClient metrics.GPUMetricsClient
+	var coreMetricsClient clients.CoreMetricsClient
+	var gpuMetricsClient clients.GPUMetricsClient
 	var metricsStore metrics.PodMetricsStorage
 
 	// Setup downsampling strategy based on config
@@ -189,7 +190,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		// Try to initialize metrics client (will be nil if metrics-server not available)
 		// We'll log at startup but continue even if it's not available
 		if client, err := createMetricsClient(h); err == nil {
-			coreMetricsClient = metrics.NewK8sMetricsClient(client)
+			coreMetricsClient = clients.NewK8sMetricsClient(client)
 		} else {
 			klog.ErrorS(err, "Failed to initialize metrics-server client, energy metrics will be limited")
 		}
@@ -199,10 +200,10 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			klog.InfoS("Initializing Prometheus GPU metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
 
-			promClient, err := metrics.NewPrometheusMetricsClient(cfg.Metrics.Prometheus.URL)
+			promClient, err := clients.NewPrometheusMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
 				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
-				gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+				gpuMetricsClient = clients.NewNullGPUMetricsClient()
 			} else {
 				// Configure DCGM metrics if settings are provided
 				if cfg.Metrics.Prometheus.DCGMPowerMetric != "" {
@@ -230,7 +231,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		} else {
 			// Initialize a null GPU metrics client as fallback
 			klog.V(2).InfoS("No Prometheus URL configured, using null GPU metrics client")
-			gpuMetricsClient = metrics.NewNullGPUMetricsClient()
+			gpuMetricsClient = clients.NewNullGPUMetricsClient()
 		}
 	}
 

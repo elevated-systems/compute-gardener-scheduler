@@ -3,6 +3,8 @@ package metrics
 import (
 	"math"
 	"sort"
+
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // LTTBDownsampling implements the Largest-Triangle-Three-Buckets algorithm
@@ -11,7 +13,7 @@ type LTTBDownsampling struct{}
 
 // Downsample reduces the number of data points while preserving trend using LTTB algorithm
 // LTTB selects points that maximize the triangle area, preserving visual features
-func (d *LTTBDownsampling) Downsample(records []PodMetricsRecord, targetCount int) []PodMetricsRecord {
+func (d *LTTBDownsampling) Downsample(records []types.PodMetricsRecord, targetCount int) []types.PodMetricsRecord {
 	if targetCount >= len(records) {
 		return records
 	}
@@ -20,16 +22,16 @@ func (d *LTTBDownsampling) Downsample(records []PodMetricsRecord, targetCount in
 	if targetCount < 3 {
 		// For very small target counts, just keep first and last
 		if targetCount == 2 {
-			return []PodMetricsRecord{
+			return []types.PodMetricsRecord{
 				records[0],
 				records[len(records)-1],
 			}
 		}
-		return []PodMetricsRecord{records[0]} // targetCount == 1
+		return []types.PodMetricsRecord{records[0]} // targetCount == 1
 	}
 
 	// The result will contain the original first and last points plus targetCount-2 sampled points
-	result := make([]PodMetricsRecord, targetCount)
+	result := make([]types.PodMetricsRecord, targetCount)
 	result[0] = records[0]                          // First point
 	result[targetCount-1] = records[len(records)-1] // Last point
 
@@ -89,7 +91,7 @@ type SimpleTimeBasedDownsampling struct{}
 
 // Downsample reduces the number of data points by keeping more recent points
 // and progressively fewer older points
-func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, targetCount int) []PodMetricsRecord {
+func (d *SimpleTimeBasedDownsampling) Downsample(records []types.PodMetricsRecord, targetCount int) []types.PodMetricsRecord {
 	if targetCount >= len(records) {
 		return records
 	}
@@ -106,7 +108,7 @@ func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, tar
 	remainingPoints := targetCount - recentKeepCount
 	if remainingPoints <= 0 {
 		// If we can't keep any old points, just return the recent ones
-		result := make([]PodMetricsRecord, 0, targetCount)
+		result := make([]types.PodMetricsRecord, 0, targetCount)
 		for i := recentStart; i < totalLen; i++ {
 			result = append(result, records[i])
 		}
@@ -114,7 +116,7 @@ func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, tar
 	}
 
 	// Sample older points at larger intervals
-	result := make([]PodMetricsRecord, 0, targetCount)
+	result := make([]types.PodMetricsRecord, 0, targetCount)
 
 	// Always include the first point
 	result = append(result, records[0])
@@ -143,13 +145,13 @@ func (d *SimpleTimeBasedDownsampling) Downsample(records []PodMetricsRecord, tar
 type MinMaxDownsampling struct{}
 
 // Downsample reduces the number of data points while preserving min/max values
-func (d *MinMaxDownsampling) Downsample(records []PodMetricsRecord, targetCount int) []PodMetricsRecord {
+func (d *MinMaxDownsampling) Downsample(records []types.PodMetricsRecord, targetCount int) []types.PodMetricsRecord {
 	if targetCount >= len(records) {
 		return records
 	}
 
 	// We always want to keep first and last points
-	result := make([]PodMetricsRecord, 0, targetCount)
+	result := make([]types.PodMetricsRecord, 0, targetCount)
 	result = append(result, records[0])
 
 	// If targetCount is very small, we might just keep first and last

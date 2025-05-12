@@ -1,10 +1,11 @@
-package metrics
+package clients
 
 import (
 	"context"
 	"fmt"
 	"time"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -632,15 +633,15 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 
 // ConvertToStandardFormat converts the GPU metrics history to standard PodMetricsRecord format
 // that can be used with the common calculation utilities
-func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []PodMetricsRecord {
+func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []types.PodMetricsRecord {
 	if len(h.Timestamps) == 0 {
 		return nil
 	}
 
-	records := make([]PodMetricsRecord, len(h.Timestamps))
+	records := make([]types.PodMetricsRecord, len(h.Timestamps))
 
 	for i := range h.Timestamps {
-		records[i] = PodMetricsRecord{
+		records[i] = types.PodMetricsRecord{
 			Timestamp:     h.Timestamps[i],
 			GPUPowerWatts: h.Power[i], // GPU power in watts
 			PowerEstimate: h.Power[i], // GPU power in watts
