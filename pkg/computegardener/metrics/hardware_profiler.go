@@ -310,49 +310,52 @@ func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpu
 	}
 
 	// Fallback to NFD labels if power provider approach didn't work
-	cpuModel = hp.identifyCPUModelFromNFDLabels(node)
-	if cpuModel != "" {
-		klog.V(2).InfoS("Identified CPU model from NFD labels", "node", node.Name, "model", cpuModel)
-	} else {
-		// Provide a generic fallback based on architecture and core count
-		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
-		arch := node.Labels["kubernetes.io/arch"]
-		cpuCores := node.Status.Capacity.Cpu().Value()
+	if cpuModel == "" {
+		cpuModel = hp.identifyCPUModelFromNFDLabels(node)
+		if cpuModel != "" {
+			klog.V(2).InfoS("Identified CPU model from NFD labels", "node", node.Name, "model", cpuModel)
+		} else {
+			// Provide a generic fallback based on architecture and core count
+			// Note: accurate power estimates require the cpu-info-exporter DaemonSet
+			arch := node.Labels["kubernetes.io/arch"]
+			cpuCores := node.Status.Capacity.Cpu().Value()
 
-		// Use very generic model names that indicate architecture but not specific model
-		// (this encourages users to deploy the cpu-info-exporter for accuracy)
-		switch arch {
-		case "amd64":
-			cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
-		case "arm64":
-			cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
-		default:
-			cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			// Use very generic model names that indicate architecture but not specific model
+			// (this encourages users to deploy the cpu-info-exporter for accuracy)
+			switch arch {
+			case "amd64":
+				cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			case "arm64":
+				cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			default:
+				cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			}
 		}
 	}
 
-	// For GPUs, check if node has NVIDIA GPUs allocated
-	// First check NFD labels for accurate GPU information
-	if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
-		// We have an NVIDIA GPU model from NFD labels
-		gpuModel = model
-	} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
-		// If GPU exists but no annotation, determine from node characteristics
-		// In production, consider adding a daemon that reports actual GPU model
-		if strings.Contains(node.Name, "gpu") ||
-			strings.Contains(node.Name, "p3") ||
-			strings.Contains(node.Name, "g4") {
-			gpuModel = "NVIDIA V100" // Common in AWS p3 instances
-		} else if strings.Contains(node.Name, "a10") {
-			gpuModel = "NVIDIA A10G"
-		} else {
-			gpuModel = "NVIDIA T4" // Common default
+	// Fallback check NFD labels for GPU information
+	if gpuModel == "" {
+		if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
+			// We have an NVIDIA GPU model from NFD labels
+			gpuModel = model
+		} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
+			// If GPU exists but no annotation, determine from node characteristics
+			// In production, consider adding a daemon that reports actual GPU model
+			if strings.Contains(node.Name, "gpu") ||
+				strings.Contains(node.Name, "p3") ||
+				strings.Contains(node.Name, "g4") {
+				gpuModel = "NVIDIA V100" // Common in AWS p3 instances
+			} else if strings.Contains(node.Name, "a10") {
+				gpuModel = "NVIDIA A10G"
+			} else {
+				gpuModel = "NVIDIA T4" // Common default
+			}
 		}
 	}
 
