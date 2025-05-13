@@ -3,9 +3,9 @@ name: compute-gardener-scheduler
 description: A Helm chart for the Compute Gardener Scheduler, a carbon and price aware Kubernetes scheduler
 type: application
 # Chart version - increment when chart (including values.yaml) changes; version and appVersion do not need to stay in sync
-version: 0.2.0
+version: 0.2.1
 # Application version - git tag and hash
-appVersion: "v0.2.0-17f75b6"
+appVersion: "v0.2.1-9ce13ce"
 keywords:
   - kubernetes
   - scheduler
