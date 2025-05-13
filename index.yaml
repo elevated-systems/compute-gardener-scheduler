@@ -2,6 +2,26 @@ apiVersion: v1
 entries:
   compute-gardener-scheduler:
   - apiVersion: v2
+    appVersion: v0.2.1-9ce13ce
+    created: "2025-05-13T22:03:49.464441232Z"
+    description: A Helm chart for the Compute Gardener Scheduler, a carbon and price
+      aware Kubernetes scheduler
+    digest: 06c38f5dbeecb03e1b04f897848d76b2fa01c271811e6fce5bc2c3c43fb58046
+    keywords:
+    - kubernetes
+    - scheduler
+    - carbon-aware
+    - sustainability
+    - energy-pricing
+    maintainers:
+    - name: davemasselink
+      url: https://github.com/davemasselink
+    name: compute-gardener-scheduler
+    type: application
+    urls:
+    - https://github.com/elevated-systems/compute-gardener-scheduler/releases/download/compute-gardener-scheduler-0.2.1/compute-gardener-scheduler-0.2.1.tgz
+    version: 0.2.1
+  - apiVersion: v2
     appVersion: v0.2.0-17f75b6
     created: "2025-04-03T06:04:08.06071915Z"
     description: A Helm chart for the Compute Gardener Scheduler, a carbon and price
@@ -161,4 +181,4 @@ entries:
     urls:
     - https://github.com/elevated-systems/compute-gardener-scheduler/releases/download/compute-gardener-scheduler-0.1.1/compute-gardener-scheduler-0.1.1.tgz
     version: 0.1.1
-generated: "2025-04-03T06:04:08.060774224Z"
+generated: "2025-05-13T22:03:49.464480776Z"
