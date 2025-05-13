@@ -357,20 +357,13 @@ func getCPUModelInfo() (model, vendor, family string, err error) {
 	return model, vendor, family, nil
 }
 
-// updateCPUModelLabel adds CPU model information to the node as NFD compatible labels
-func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error {
+// annotateCPUModel annotates the node with CPU model information for backward compatibility
+func annotateCPUModel(clientset *kubernetes.Clientset, nodeName string) error {
 	// Get CPU model info
-	cpuModel, cpuVendor, cpuFamily, err := getCPUModelInfo()
+	cpuModel, _, _, err := getCPUModelInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get CPU model info: %v", err)
 	}
-
-	// Log what we found
-	klog.InfoS("Detected CPU information",
-		"node", nodeName,
-		"model", cpuModel,
-		"vendor", cpuVendor,
-		"family", cpuFamily)
 
 	// Get node
 	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
@@ -378,30 +371,30 @@ func updateCPUModelLabel(clientset *kubernetes.Clientset, nodeName string) error
 		return fmt.Errorf("failed to get node %s: %v", nodeName, err)
 	}
 
-	// Check if label already exists and matches
-	if val, exists := node.Labels[common.NFDLabelCPUModel]; exists && val == cpuModel {
-		klog.V(2).InfoS("Node already has correct CPU model label",
+	// Check if annotations already exist and match
+	if val, exists := node.Annotations[common.AnnotationCPUModel]; exists && val == cpuModel {
+		klog.V(2).InfoS("Node already has correct CPU model annotation",
 			"node", nodeName,
 			"model", cpuModel)
 		return nil
 	}
 
-	// Create a copy of the node with updated labels
+	// Create a copy of the node with updated annotations
 	nodeCopy := node.DeepCopy()
-	if nodeCopy.Labels == nil {
-		nodeCopy.Labels = make(map[string]string)
+	if nodeCopy.Annotations == nil {
+		nodeCopy.Annotations = make(map[string]string)
 	}
 
-	// Add NFD-compatible labels
-	nodeCopy.Labels[common.NFDLabelCPUModel] = cpuModel
+	// Add annotations
+	nodeCopy.Annotations[common.AnnotationCPUModel] = cpuModel
 
 	// Update the node
 	_, err = clientset.CoreV1().Nodes().Update(context.Background(), nodeCopy, metav1.UpdateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to update node labels: %v", err)
+		return fmt.Errorf("failed to update node annotations: %v", err)
 	}
 
-	klog.InfoS("Successfully updated node with CPU model label",
+	klog.InfoS("Successfully updated node with CPU model annotation",
 		"node", nodeName,
 		"model", cpuModel)
 
@@ -470,8 +463,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Annotate the node with CPU model info
-	if err := updateCPUModelLabel(clientset, nodeName); err != nil {
+	// Update annotations, if needed
+	if err := annotateCPUModel(clientset, nodeName); err != nil {
 		klog.ErrorS(err, "Failed to annotate node with CPU model information")
 		// Continue running even if annotation fails
 	}

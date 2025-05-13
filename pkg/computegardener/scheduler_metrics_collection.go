@@ -13,9 +13,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
+	cgtypes "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // metricsCollectionWorker periodically collects pod metrics and updates the store
@@ -270,7 +272,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 	trackedPods := make(map[string]bool)
 
 	// Find active pods in our metrics cache
-	cs.metricsStore.ForEach(func(podUID string, history *metrics.PodMetricsHistory) {
+	cs.metricsStore.ForEach(func(podUID string, history *cgtypes.PodMetricsHistory) {
 		// Skip pods already marked as completed - we only care about active ones
 		if !history.Completed {
 			trackedPods[podUID] = true
@@ -600,8 +602,8 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 		return 0, fmt.Errorf("prometheus client not available")
 	}
 
-	// Get the Prometheus client from the GPU metrics client (which is a PrometheusGPUMetricsClient)
-	promClient, ok := cs.gpuMetricsClient.(*metrics.PrometheusGPUMetricsClient)
+	// Get the Prometheus client from the GPU metrics client (which is a PrometheusMetricsClient)
+	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
 	if !ok {
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}
@@ -620,36 +622,75 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 
 // getNodeCPUModelInfo returns CPU model, base frequency, and power scaling mode
 func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string, float64, string) {
+	// Default power scaling model
+	powerScaling := "quadratic"
+
 	// Attempt to get node from informer cache
 	node, err := cs.handle.SharedInformerFactory().Core().V1().Nodes().Lister().Get(nodeName)
 	if err != nil {
 		klog.V(2).InfoS("Failed to get node for CPU model info", "node", nodeName, "error", err)
-		return "", 0.0, "quadratic"
+		return "", 0.0, powerScaling
 	}
 
-	// Try to get CPU model from node label
+	// Try to identify CPU model using available information
 	cpuModel := ""
+
+	// First try to get the complete CPU model name
 	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok {
 		cpuModel = model
-		klog.V(2).InfoS("Found CPU model from node annotation", "node", nodeName, "model", cpuModel)
+		klog.V(2).InfoS("Found CPU model from NFD label", "node", nodeName, "model", cpuModel)
 	} else {
-		klog.V(2).InfoS("No CPU model annotation found", "node", nodeName)
-		return "", 0.0, "quadratic"
-	}
+		// If not available, try to construct a model from family, ID and vendor
+		family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
+		modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
+		vendorID, hasVendorID := node.Labels[common.NFDLabelCPUModelVendorID]
 
-	baseFreq := 0.0
-	powerScaling := "quadratic" // Default power scaling model
+		if hasVendorID && hasFamily && hasModelID {
+			// Build a simple identifier to use in our lookup
+			lookupKey := fmt.Sprintf("%s-%s", family, modelID)
 
-	// Get base frequency from annotation if available
-	if freqStr, ok := node.Labels[common.NFDLabelCPUBaseFrequency]; ok {
-		if freq, err := strconv.ParseFloat(freqStr, 64); err == nil {
-			baseFreq = freq
-			klog.V(2).InfoS("Found base frequency from annotation", "node", nodeName, "freq", baseFreq)
+			// Try to map to a known CPU model
+			if cs.config.Power.HardwareProfiles != nil {
+				if vendorMapping, ok := cs.config.Power.HardwareProfiles.CPUModelMappings[vendorID]; ok {
+					if mappedModel, ok := vendorMapping[lookupKey]; ok {
+						cpuModel = mappedModel
+						klog.V(2).InfoS("Mapped CPU model from NFD components",
+							"node", nodeName,
+							"vendor", vendorID,
+							"family", family,
+							"modelID", modelID,
+							"mappedModel", cpuModel)
+					}
+				}
+			}
+
+			// If we couldn't map it, use a generic identifier
+			if cpuModel == "" {
+				cpuModel = fmt.Sprintf("%s CPU Family %s Model %s", vendorID, family, modelID)
+				klog.V(2).InfoS("Using generic CPU model identifier",
+					"node", nodeName,
+					"genericModel", cpuModel)
+			}
+		} else {
+			klog.V(2).InfoS("No CPU model information found",
+				"node", nodeName,
+				"hasFamily", hasFamily,
+				"hasModelID", hasModelID,
+				"hasVendorID", hasVendorID)
+			return "", 0.0, powerScaling
 		}
 	}
 
-	// If not found in annotation, look up in hardware profiles
-	if baseFreq == 0.0 && cs.config.Power.HardwareProfiles != nil && cpuModel != "" {
+	// No CPU model, so can't proceed
+	if cpuModel == "" {
+		return "", 0.0, powerScaling
+	}
+
+	// Get frequency and scaling info from hardware profiles if available
+	baseFreq := 0.0
+
+	// Look up in hardware profiles
+	if cs.config.Power.HardwareProfiles != nil {
 		if profile, exists := cs.config.Power.HardwareProfiles.CPUProfiles[cpuModel]; exists {
 			baseFreq = profile.BaseFrequencyGHz
 			if profile.PowerScaling != "" {
@@ -660,6 +701,10 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 				"cpuModel", cpuModel,
 				"baseFrequency", baseFreq,
 				"powerScaling", powerScaling)
+		} else {
+			klog.V(2).InfoS("CPU model not found in hardware profiles",
+				"node", nodeName,
+				"cpuModel", cpuModel)
 		}
 	}
 

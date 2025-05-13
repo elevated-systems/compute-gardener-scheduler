@@ -3,6 +3,8 @@ package metrics
 import (
 	"testing"
 	"time"
+
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // Helper function to create a test store
@@ -16,8 +18,8 @@ func newTestStore() *InMemoryStore {
 }
 
 // Helper function to create a test record
-func createTestRecord(timestamp time.Time) PodMetricsRecord {
-	return PodMetricsRecord{
+func createTestRecord(timestamp time.Time) types.PodMetricsRecord {
+	return types.PodMetricsRecord{
 		Timestamp:     timestamp,
 		CPU:           0.5,
 		Memory:        1024 * 1024 * 100, // 100 MB
@@ -281,24 +283,24 @@ func TestCalculateTotalEnergy(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		records        []PodMetricsRecord
+		records        []types.PodMetricsRecord
 		expectedEnergy float64
 	}{
 		{
 			name:           "EmptyRecords",
-			records:        []PodMetricsRecord{},
+			records:        []types.PodMetricsRecord{},
 			expectedEnergy: 0,
 		},
 		{
 			name: "SingleRecord",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100},
 			},
 			expectedEnergy: 0, // Can't calculate energy with just one point
 		},
 		{
 			name: "ConstantPower",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100},
 				{Timestamp: now.Add(time.Hour), PowerEstimate: 100},
 			},
@@ -306,7 +308,7 @@ func TestCalculateTotalEnergy(t *testing.T) {
 		},
 		{
 			name: "VariablePower",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100},
 				{Timestamp: now.Add(30 * time.Minute), PowerEstimate: 200},
 				{Timestamp: now.Add(time.Hour), PowerEstimate: 300},
@@ -333,24 +335,24 @@ func TestCalculateTotalCarbonEmissions(t *testing.T) {
 
 	testCases := []struct {
 		name              string
-		records           []PodMetricsRecord
+		records           []types.PodMetricsRecord
 		expectedEmissions float64
 	}{
 		{
 			name:              "EmptyRecords",
-			records:           []PodMetricsRecord{},
+			records:           []types.PodMetricsRecord{},
 			expectedEmissions: 0,
 		},
 		{
 			name: "SingleRecord",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100, CarbonIntensity: 500},
 			},
 			expectedEmissions: 0, // Can't calculate with just one point
 		},
 		{
 			name: "ConstantPowerAndIntensity",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100, CarbonIntensity: 500},
 				{Timestamp: now.Add(time.Hour), PowerEstimate: 100, CarbonIntensity: 500},
 			},
@@ -358,7 +360,7 @@ func TestCalculateTotalCarbonEmissions(t *testing.T) {
 		},
 		{
 			name: "VariablePowerAndIntensity",
-			records: []PodMetricsRecord{
+			records: []types.PodMetricsRecord{
 				{Timestamp: now, PowerEstimate: 100, CarbonIntensity: 400},
 				{Timestamp: now.Add(30 * time.Minute), PowerEstimate: 200, CarbonIntensity: 500},
 				{Timestamp: now.Add(time.Hour), PowerEstimate: 300, CarbonIntensity: 600},

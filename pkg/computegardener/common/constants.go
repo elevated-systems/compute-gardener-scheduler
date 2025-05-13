@@ -57,15 +57,31 @@ const (
 	// Node annotations
 	// ----------------------------------------
 
+	// Hardware annotations - CPU
+	AnnotationCPUModel         = AnnotationBase + "/cpu-model"
+	AnnotationCPUBaseFrequency = AnnotationBase + "/cpu-base-frequency" // Base/nominal CPU frequency in GHz
+	AnnotationCPUMinFrequency  = AnnotationBase + "/cpu-min-frequency"  // Minimum CPU frequency in GHz
+	AnnotationCPUMaxFrequency  = AnnotationBase + "/cpu-max-frequency"  // Maximum CPU frequency in GHz
+
+	// Hardware annotations - GPU
+	AnnotationGPUModel      = AnnotationBase + "/gpu-model"
+	AnnotationGPUCount      = AnnotationBase + "/gpu-count"
+	AnnotationGPUTotalPower = AnnotationBase + "/gpu-total-power"
+
 	// Node Feature Discovery (NFD) labels for hardware information
 	// Base prefix for all NFD labels
 	NFDLabelBase = "feature.node.kubernetes.io"
 
-	// CPU labels - from standard NFD discovery
-	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name"
-	NFDLabelCPUBaseFrequency = NFDLabelBase + "/cpu-hardware_limits.base_frequency_khz" // Note: in kHz, need to convert
-	NFDLabelCPUMinFrequency  = NFDLabelBase + "/cpu-hardware_limits.min_frequency_khz"  // Note: in kHz, need to convert
-	NFDLabelCPUMaxFrequency  = NFDLabelBase + "/cpu-hardware_limits.max_frequency_khz"  // Note: in kHz, need to convert
+	// CPU labels - from NFD discovery or our node exporter
+	NFDLabelCPUModelFamily   = NFDLabelBase + "/cpu-model.family"
+	NFDLabelCPUModelID       = NFDLabelBase + "/cpu-model.id"
+	NFDLabelCPUModelVendorID = NFDLabelBase + "/cpu-model.vendor_id"
+	NFDLabelCPUModel         = NFDLabelBase + "/cpu-model.name" // Used by our exporter when family/id/vendor_id are not present
+
+	// CPU power state labels - from NFD discovery
+	NFDLabelCPUPStateScalingGovernor = NFDLabelBase + "/cpu-pstate.scaling_governor" // e.g., "powersave", "performance"
+	NFDLabelCPUPStateStatus          = NFDLabelBase + "/cpu-pstate.status"           // e.g., "active"
+	NFDLabelCPUPStateTurbo           = NFDLabelBase + "/cpu-pstate.turbo"            // e.g., "true", "false"
 
 	// Generic NFD labels for PCIe devices (may be used for non-NVIDIA GPUs)
 	NFDLabelPCIVendorPrefix = NFDLabelBase + "/pci-" // Vendor-specific prefixes follow

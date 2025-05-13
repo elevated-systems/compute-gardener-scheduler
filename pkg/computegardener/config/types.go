@@ -22,9 +22,13 @@ type PowerConfig struct {
 // HardwareProfiles contains mappings from hardware identifiers to power profiles
 type HardwareProfiles struct {
 	// Power profiles for hardware components
-	CPUProfiles map[string]PowerProfile       `yaml:"cpuProfiles"` // CPU model -> power profile
-	GPUProfiles map[string]PowerProfile       `yaml:"gpuProfiles"` // GPU model -> power profile
-	MemProfiles map[string]MemoryPowerProfile `yaml:"memProfiles"` // Memory type -> power profile
+	CPUProfiles map[string]PowerProfile       `yaml:"cpuProfiles"`           // CPU model -> power profile
+	GPUProfiles map[string]PowerProfile       `yaml:"gpuProfiles,omitempty"` // GPU model -> power profile
+	MemProfiles map[string]MemoryPowerProfile `yaml:"memProfiles,omitempty"` // Memory type -> power profile
+
+	// NFD CPU model mappings - from NFD labels to specific CPU model names
+	// Map of vendor (e.g., "Intel") to map of family-model (e.g., "6-94") to CPU model name
+	CPUModelMappings map[string]map[string]string `yaml:"cpuModelMappings,omitempty"`
 
 	// Cloud instance mappings to hardware components
 	CloudInstanceMapping map[string]map[string]HardwareComponents `yaml:"cloudInstanceMapping"` // Provider -> instance type -> hardware components

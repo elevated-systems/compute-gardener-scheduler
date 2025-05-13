@@ -29,6 +29,7 @@ import (
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	carbonmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon/mock"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
@@ -843,8 +844,11 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node-1",
 			Labels: map[string]string{
-				common.NFDLabelCPUModel:      "Intel",
-				common.NvidiaLabelGPUProduct: "NVIDIA A100",
+				// Use the NFD-style labels that our updated code expects
+				common.NFDLabelCPUModelFamily:   "6",
+				common.NFDLabelCPUModelID:       "94",
+				common.NFDLabelCPUModelVendorID: "Intel",
+				common.NvidiaLabelGPUProduct:    "NVIDIA A100",
 			},
 		},
 	}
@@ -897,6 +901,12 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 				GPUProfiles: map[string]config.PowerProfile{
 					"NVIDIA A100": {IdlePower: 50, MaxPower: 200},
 				},
+				// Add CPU model mappings needed for the test
+				CPUModelMappings: map[string]map[string]string{
+					"Intel": {
+						"6-94": "Intel", // Map family-model to the CPU profile name
+					},
+				},
 			},
 			expectFiltered: false,
 		},
@@ -916,6 +926,12 @@ func TestFilterWithHardwareProfile(t *testing.T) {
 				},
 				GPUProfiles: map[string]config.PowerProfile{
 					"NVIDIA A100": {IdlePower: 50, MaxPower: 200},
+				},
+				// Add CPU model mappings needed for the test
+				CPUModelMappings: map[string]map[string]string{
+					"Intel": {
+						"6-94": "Intel", // Map family-model to the CPU profile name
+					},
 				},
 			},
 			expectFiltered: true,
@@ -1428,7 +1444,7 @@ func TestPreFilterWithPricingFailure(t *testing.T) {
 // --- Helper Functions ---
 // newTestSchedulerWithMetricsClient creates a new test scheduler
 // with a custom metrics client and all the other defaults
-func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient metrics.CoreMetricsClient, gpuClient metrics.GPUMetricsClient, electricityRate float64, baseTime time.Time) *ComputeGardenerScheduler {
+func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients.CoreMetricsClient, gpuClient clients.GPUMetricsClient, electricityRate float64, baseTime time.Time) *ComputeGardenerScheduler {
 	// Use default if not specified
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -1443,7 +1459,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient metrics
 	}
 
 	if gpuClient == nil {
-		gpuClient = metrics.NewNullGPUMetricsClient()
+		gpuClient = clients.NewNullGPUMetricsClient()
 	}
 
 	// Initialize hardware profiler if hardware profiles are configured
@@ -1474,7 +1490,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient metrics
 
 // newTestSchedulerWithCustomClients creates a new test scheduler
 // with a custom metrics client, carbon, pricing implementations, and clientset.
-func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient metrics.CoreMetricsClient, gpuClient metrics.GPUMetricsClient, carbonImpl carbon.Implementation, priceImpl price.Implementation, electricityRate float64, baseTime time.Time, kubeClient *fake.Clientset) *ComputeGardenerScheduler {
+func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients.CoreMetricsClient, gpuClient clients.GPUMetricsClient, carbonImpl carbon.Implementation, priceImpl price.Implementation, electricityRate float64, baseTime time.Time, kubeClient *fake.Clientset) *ComputeGardenerScheduler {
 	// Use default if not specified
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -1489,7 +1505,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient metrics
 	}
 
 	if gpuClient == nil {
-		gpuClient = metrics.NewNullGPUMetricsClient()
+		gpuClient = clients.NewNullGPUMetricsClient()
 	}
 
 	if carbonImpl == nil {

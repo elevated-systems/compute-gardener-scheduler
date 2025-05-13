@@ -14,30 +14,30 @@ kind: ClusterRole
 metadata:
   name: compute-gardener-scheduler-metrics-reader
 rules:
-- apiGroups:
-  - "metrics.k8s.io"
-  resources:
-  - nodes
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- nonResourceURLs:
-  - "/metrics"
-  - "/api/v1/query"
-  - "/api/v1/query_range"
-  verbs:
-  - get
+  - apiGroups:
+      - "metrics.k8s.io"
+    resources:
+      - nodes
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - nonResourceURLs:
+      - "/metrics"
+      - "/api/v1/query"
+      - "/api/v1/query_range"
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: compute-gardener-scheduler-metrics-reader
 subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
+  - kind: ServiceAccount
+    name: compute-gardener-scheduler
+    namespace: compute-gardener
 roleRef:
   kind: ClusterRole
   name: compute-gardener-scheduler-metrics-reader
@@ -48,9 +48,9 @@ kind: ClusterRoleBinding
 metadata:
   name: compute-gardener-scheduler-as-kube-scheduler
 subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
+  - kind: ServiceAccount
+    name: compute-gardener-scheduler
+    namespace: compute-gardener
 roleRef:
   kind: ClusterRole
   name: system:kube-scheduler
@@ -61,9 +61,9 @@ kind: ClusterRoleBinding
 metadata:
   name: compute-gardener-scheduler-as-volume-scheduler
 subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
+  - kind: ServiceAccount
+    name: compute-gardener-scheduler
+    namespace: compute-gardener
 roleRef:
   kind: ClusterRole
   name: system:volume-scheduler
@@ -79,9 +79,9 @@ roleRef:
   name: extension-apiserver-authentication-reader
   apiGroup: rbac.authorization.k8s.io
 subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
+  - kind: ServiceAccount
+    name: compute-gardener-scheduler
+    namespace: compute-gardener
 ---
 # Add permissions for the scheduler to update pods for initial metrics annotations
 apiVersion: rbac.authorization.k8s.io/v1
@@ -89,25 +89,25 @@ kind: ClusterRole
 metadata:
   name: compute-gardener-scheduler-pod-updater
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-  - update
-  - patch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: compute-gardener-scheduler-pod-updater
 subjects:
-- kind: ServiceAccount
-  name: compute-gardener-scheduler
-  namespace: compute-gardener
+  - kind: ServiceAccount
+    name: compute-gardener-scheduler
+    namespace: compute-gardener
 roleRef:
   kind: ClusterRole
   name: compute-gardener-scheduler-pod-updater
@@ -117,8 +117,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: compute-gardener-scheduler-monitor
-  namespace: monitoring  # Standard Prometheus namespace, change if your cluster uses a different one
-  # Note: Install Prometheus Operator CRDs before applying this file: 
+  namespace: monitoring # Standard Prometheus namespace, change if your cluster uses a different one
+  # Note: Install Prometheus Operator CRDs before applying this file:
   # kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
 spec:
   selector:
@@ -126,16 +126,16 @@ spec:
       component: scheduler
       tier: control-plane
   endpoints:
-  - port: https 
-    scheme: https
-    path: /metrics
-    interval: 15s  # Match the CPU exporter's sampling interval
-    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-    tlsConfig:
-      insecureSkipVerify: true  # For testing only, consider using proper CA verification in production
+    - port: https
+      scheme: https
+      path: /metrics
+      interval: 15s # Match the CPU exporter's sampling interval
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true # For testing only, consider using proper CA verification in production
   namespaceSelector:
     matchNames:
-    - compute-gardener
+      - compute-gardener
 ---
 apiVersion: v1
 kind: Service
@@ -147,10 +147,10 @@ metadata:
     tier: control-plane
 spec:
   ports:
-  - name: https
-    port: 10259
-    targetPort: 10259
-    protocol: TCP
+    - name: https
+      port: 10259
+      targetPort: 10259
+      protocol: TCP
   selector:
     component: scheduler
     tier: control-plane
@@ -230,77 +230,79 @@ spec:
         tier: control-plane
         version: second
       annotations:
-        prometheus.io/scrape: 'true'
-        prometheus.io/port: '10259'
-        prometheus.io/scheme: 'https'
-        prometheus.io/path: '/metrics'
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10259"
+        prometheus.io/scheme: "https"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: compute-gardener-scheduler
       containers:
-      - command:
-        - /bin/kube-scheduler
-        - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
-        - --bind-address=0.0.0.0
-        - --secure-port=10259
-        - --authentication-skip-lookup=true
-        - --authentication-tolerate-lookup-failure=true
-        - --authorization-always-allow-paths=/metrics
-        image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.3-alpha-5a67f00
-        imagePullPolicy: Always
-        env:
-        - name: ELECTRICITY_MAP_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: compute-gardener-scheduler-secrets
-              key: electricity-map-api-key
-        - name: PRICING_PROVIDER
-          value: "tou"
-        - name: PRICING_SCHEDULES_PATH
-          value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
-        - name: HARDWARE_PROFILES_PATH
-          value: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles/hardware-profiles.yaml"
-        # Prometheus configuration - adjust the URL to match your cluster's Prometheus instance
-        - name: PROMETHEUS_URL
-          value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
-        - name: PROMETHEUS_USE_DCGM
-          value: "true"
-        - name: PROMETHEUS_DCGM_POWER_METRIC
-          value: "DCGM_FI_DEV_POWER_USAGE"
-        ports:
-        - containerPort: 10259
-          name: https
-          protocol: TCP
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 10259
-            scheme: HTTPS
-          initialDelaySeconds: 15
-        name: compute-gardener-kube-scheduler
-        readinessProbe:
-          httpGet:
-            path: /healthz
-            port: 10259
-            scheme: HTTPS
-        resources:
-          requests:
-            cpu: 50m
-            memory: 128Mi
-          limits:
-            cpu: 200m
-            memory: 256Mi
-        securityContext:
-          privileged: false
-        volumeMounts:
-          - name: config-volume
-            mountPath: /etc/kubernetes/compute-gardener-scheduler
-          - name: pricing-schedules-volume
-            mountPath: /etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml
-            subPath: schedules.yaml
-          - name: hardware-profiles-volume
-            mountPath: /etc/kubernetes/compute-gardener-scheduler/hardware-profiles
+        - command:
+            - /bin/kube-scheduler
+            - --config=/etc/kubernetes/compute-gardener-scheduler/compute-gardener-scheduler-config.yaml
+            - --bind-address=0.0.0.0
+            - --secure-port=10259
+            - --authentication-skip-lookup=true
+            - --authentication-tolerate-lookup-failure=true
+            - --authorization-always-allow-paths=/metrics
+          image: docker.io/dmasselink/compute-gardener-scheduler:v0.1.3-alpha-5a67f00
+          imagePullPolicy: Always
+          env:
+            - name: ELECTRICITY_MAP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: compute-gardener-scheduler-secrets
+                  key: electricity-map-api-key
+            - name: PRICING_PROVIDER
+              value: "tou"
+            - name: PRICING_SCHEDULES_PATH
+              value: "/etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml"
+            - name: HARDWARE_PROFILES_PATH
+              value: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles/hardware-profiles.yaml"
+            # Prometheus configuration - adjust the URL to match your cluster's Prometheus instance
+            - name: PROMETHEUS_URL
+              value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+            - name: PROMETHEUS_USE_DCGM
+              value: "true"
+            - name: PROMETHEUS_DCGM_POWER_METRIC
+              value: "DCGM_FI_DEV_POWER_USAGE"
+          ports:
+            - containerPort: 10259
+              name: https
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10259
+              scheme: HTTPS
+            initialDelaySeconds: 15
+          name: compute-gardener-kube-scheduler
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10259
+              scheme: HTTPS
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            privileged: false
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/kubernetes/compute-gardener-scheduler
+            - name: pricing-schedules-volume
+              mountPath: /etc/kubernetes/compute-gardener-scheduler/pricing-schedules.yaml
+              subPath: schedules.yaml
+            - name: hardware-profiles-volume
+              mountPath: /etc/kubernetes/compute-gardener-scheduler/hardware-profiles
       hostNetwork: false
       hostPID: false
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
       volumes:
         - name: config-volume
           configMap:

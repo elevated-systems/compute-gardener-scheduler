@@ -106,18 +106,27 @@ func TestHardwareProfilerWithOnPrem(t *testing.T) {
 				MaxPower:  125.0,
 			},
 		},
+		// Add the CPU model mappings that we need for the test
+		CPUModelMappings: map[string]map[string]string{
+			"Intel": {
+				"6-142": "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
+			},
+		},
 	}
 
 	// Create a hardware profiler with the test configuration
 	profiler := NewHardwareProfiler(profiles)
 
-	// Test node with CPU model annotation
+	// Test node with NFD CPU model labels
 	onPremNode := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "on-prem-node",
 			Labels: map[string]string{
-				common.NFDLabelCPUModel:      "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
-				common.NvidiaLabelGPUProduct: "NVIDIA GeForce GTX 1660",
+				// NFD CPU labels - Intel Skylake i5-6500 corresponds to family 6, model 142
+				common.NFDLabelCPUModelFamily:   "6",
+				common.NFDLabelCPUModelID:       "142",
+				common.NFDLabelCPUModelVendorID: "Intel",
+				common.NvidiaLabelGPUProduct:    "NVIDIA GeForce GTX 1660",
 			},
 		},
 	}

@@ -14,22 +14,27 @@
 - ✅ Grafana dashboard visualizing most scheduler captured metrics including carbon and cost savings
 - ✅ Extend unit test coverage to >40%
 
-### v0.2.0 (early April 2025)
+### v0.2.0 (April 2025)
 - ✅ Validate savings calculations and metrics collection
 - ✅ Validate as secondary scheduler in Google Cloud Platform (not autopilot nodes)
 - ✅ Various metrics collection and dashboard viz enhancements
 
+### v0.2.1 (May 2025)
+- ✅ Build initial support for Kepler data integration
+- ✅ Support various, cascading node detection strategies: custom annotations, NFD labels
+- ✅ Addl dashboard viz enhancements
+
 ## Upcoming Releases
 
-### v0.3.0 (early May 2025)
+### v0.2.2 (June 2025)
 - 🚀 Implement simple forecasting to schedule at optimal times (not just waiting for threshold)
 - 🚀 Validate as secondary scheduler in AWS (likely not auto-provisioned nodes)
 - 🚀 Enhance and validate energy budget admission webhook
 - 🚀 Increase test coverage to >60%
 
-### v0.4.0 (mid 2025)
+### v0.3.0 (mid-late 2025)
 - 🔮 Implement multi-cluster/spatial deferral (likely)
-- 🔮 Support for custom carbon intensity sources beyond Electricity Maps API (likely Watt Time)
+- 🔮 Support for custom carbon intensity sources beyond Electricity Maps API (likely WattTime)
 - 🔮 Develop predictive workload classification for automatic energy optimization (maybe)
 
 ## Ongoing Initiatives

@@ -11,6 +11,7 @@ import (
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/powerprovider"
 )
 
 // HardwareProfiler provides methods to detect and compute power profiles for nodes
@@ -96,7 +97,7 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	}
 
 	// Strategy 2: Direct hardware inspection from node annotations or properties
-	cpuModel, gpuModel := hp.detectNodeHardwareInfoFromSystem(node)
+	cpuModel, gpuModels := hp.detectNodeHardwareInfoFromSystem(node)
 
 	if cpuModel != "" {
 		if cpuProfile, exists := hp.config.CPUProfiles[cpuModel]; exists {
@@ -107,8 +108,9 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 			}
 
 			// Add GPU power if available and in our profiles
-			if gpuModel != "" && gpuModel != "none" {
-				if gpuProfile, exists := hp.config.GPUProfiles[gpuModel]; exists {
+			//TODO: confirm this and ensure handles multiple GPUs
+			if len(gpuModels) > 0 {
+				if gpuProfile, exists := hp.config.GPUProfiles[gpuModels[0]]; exists {
 					nodePower.IdleGPUPower = gpuProfile.IdlePower
 					nodePower.MaxGPUPower = gpuProfile.MaxPower
 				}
@@ -141,8 +143,8 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	}
 
 	// Get CPU model information for better error diagnostics
-	var cpuModelInfo, gpuModelInfo string
-	cpuModelInfo, gpuModelInfo = hp.detectNodeHardwareInfoFromSystem(node)
+	var cpuModelInfo string
+	cpuModelInfo, gpuModels = hp.detectNodeHardwareInfoFromSystem(node)
 
 	// Log detailed diagnostics about why hardware profile detection failed
 	var cpuProfileCount int
@@ -157,7 +159,7 @@ func (hp *HardwareProfiler) DetectNodePowerProfile(node *v1.Node) (*config.NodeP
 	klog.V(2).InfoS("Hardware profile detection failed",
 		"node", node.Name,
 		"cpuModel", cpuModelInfo,
-		"gpuModel", gpuModelInfo,
+		"gpuModels", gpuModels,
 		"profilesConfigured", hp.config != nil,
 		"cpuProfileCount", cpuProfileCount,
 		"cpuModelInProfiles", profileExists)
@@ -190,61 +192,153 @@ func (hp *HardwareProfiler) cacheNodeProfile(nodeUID string, profile *config.Nod
 
 // GetNodeHardwareInfo returns CPU and GPU models for a node
 // This is a public method that can be used for logging and debugging
-func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModel string) {
+func (hp *HardwareProfiler) GetNodeHardwareInfo(node *v1.Node) (cpuModel string, gpuModels []string) {
 	return hp.detectNodeHardwareInfoFromSystem(node)
 }
 
+// getCPUModelKey creates a lookup key for our CPU mapping table based on NFD labels
+func (hp *HardwareProfiler) getCPUModelKey(node *v1.Node) string {
+	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
+	modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
+
+	if !hasFamily || !hasModelID {
+		return ""
+	}
+
+	// The base key uses the NFD CPU model family and ID
+	return fmt.Sprintf("%s-%s", family, modelID)
+}
+
+// identifyCPUModelFromNFDLabels tries to identify the CPU model from NFD labels
+// Uses family, model, vendor and power state information to look up the specific CPU model
+func (hp *HardwareProfiler) identifyCPUModelFromNFDLabels(node *v1.Node) string {
+	// Extract the NFD CPU model information - family, model ID, and vendor
+	family, hasFamily := node.Labels[common.NFDLabelCPUModelFamily]
+	modelID, hasModelID := node.Labels[common.NFDLabelCPUModelID]
+	vendorID, hasVendorID := node.Labels[common.NFDLabelCPUModelVendorID]
+
+	if !hasFamily || !hasModelID || !hasVendorID {
+		klog.V(2).InfoS("Missing NFD CPU information",
+			"node", node.Name,
+			"hasFamily", hasFamily,
+			"hasModelID", hasModelID,
+			"hasVendorID", hasVendorID)
+		return ""
+	}
+
+	// Check for power state information
+	governor, hasGovernor := node.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	turbo, hasTurbo := node.Labels[common.NFDLabelCPUPStateTurbo]
+
+	// Log the NFD information we found
+	klog.V(2).InfoS("Found NFD CPU information",
+		"node", node.Name,
+		"vendorID", vendorID,
+		"family", family,
+		"modelID", modelID,
+		"hasGovernor", hasGovernor,
+		"governor", governor,
+		"hasTurbo", hasTurbo,
+		"turbo", turbo)
+
+	// Get the mapping key for CPU identification
+	baseKey := hp.getCPUModelKey(node)
+	if baseKey == "" {
+		return ""
+	}
+
+	// Look for known CPU models in our config-based mappings
+	if hp.config != nil && hp.config.CPUModelMappings != nil {
+		if vendorMapping, ok := hp.config.CPUModelMappings[vendorID]; ok {
+			// Try direct model lookup
+			if cpuModel, ok := vendorMapping[baseKey]; ok {
+				return cpuModel
+			}
+
+			// Try family-only fallback (least specific)
+			if cpuModel, ok := vendorMapping[family]; ok {
+				return cpuModel
+			}
+		}
+	}
+
+	// If we can't determine from NFD labels, construct a generic model name
+	cpuCores := node.Status.Capacity.Cpu().Value()
+	return fmt.Sprintf("%s CPU Family %s Model %s (%d cores)",
+		vendorID, family, modelID, cpuCores)
+}
+
 // detectNodeHardwareInfoFromSystem determines hardware components from the node
-// Uses annotations if available, or basic architecture information if annotations not present
-func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModel string) {
-	// Extract CPU info from NFD labels. The NFD DaemonSet is responsible for populating them.
-	if model, ok := node.Labels[common.NFDLabelCPUModel]; ok {
-		cpuModel = model
-		klog.V(2).InfoS("Using CPU model from NFD label", "node", node.Name, "model", cpuModel)
-	} else {
-		// Provide a generic fallback based on architecture and core count
-		// Note: accurate power estimates require the cpu-info-exporter DaemonSet
-		arch, _ := node.Labels["kubernetes.io/arch"]
-		cpuCores := node.Status.Capacity.Cpu().Value()
+// Uses the PowerProvider system to respect priorities between annotations and NFD labels
+func (hp *HardwareProfiler) detectNodeHardwareInfoFromSystem(node *v1.Node) (cpuModel string, gpuModels []string) {
+	// Get the best power provider based on priority order
+	if provider, found := powerprovider.GetBestProvider(node); found {
+		// Try to use the highest priority provider to get the hardware info
+		klog.V(2).InfoS("Using power provider to detect hardware",
+			"node", node.Name,
+			"provider", provider.GetProviderName(),
+			"priority", provider.GetPriority())
 
-		// Use very generic model names that indicate architecture but not specific model
-		// (this encourages users to deploy the cpu-info-exporter for accuracy)
-		switch arch {
-		case "amd64":
-			cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
-		case "arm64":
-			cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
-		default:
-			cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
-			klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
-				"node", node.Name, "model", cpuModel, "cores", cpuCores)
+		if cpuModel, gpuModels = provider.GetNodeHardwareInfo(node); cpuModel != "" {
+			klog.V(2).InfoS("Power provider detected hardware",
+				"node", node.Name,
+				"cpuModel", cpuModel,
+				"gpuModels", gpuModels)
+
 		}
 	}
 
-	// For GPUs, check if node has NVIDIA GPUs allocated
-	// First check NFD labels for accurate GPU information
-	if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
-		// We have an NVIDIA GPU model from NFD labels
-		gpuModel = model
-	} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
-		// If GPU exists but no annotation, determine from node characteristics
-		// In production, consider adding a daemon that reports actual GPU model
-		if strings.Contains(node.Name, "gpu") ||
-			strings.Contains(node.Name, "p3") ||
-			strings.Contains(node.Name, "g4") {
-			gpuModel = "NVIDIA V100" // Common in AWS p3 instances
-		} else if strings.Contains(node.Name, "a10") {
-			gpuModel = "NVIDIA A10G"
+	// Fallback to NFD labels if power provider approach didn't work
+	if cpuModel == "" {
+		cpuModel = hp.identifyCPUModelFromNFDLabels(node)
+		if cpuModel != "" {
+			klog.V(2).InfoS("Identified CPU model from NFD labels", "node", node.Name, "model", cpuModel)
 		} else {
-			gpuModel = "NVIDIA T4" // Common default
+			// Provide a generic fallback based on architecture and core count
+			// Note: accurate power estimates require the cpu-info-exporter DaemonSet
+			arch := node.Labels["kubernetes.io/arch"]
+			cpuCores := node.Status.Capacity.Cpu().Value()
+
+			// Use very generic model names that indicate architecture but not specific model
+			// (this encourages users to deploy the cpu-info-exporter for accuracy)
+			switch arch {
+			case "amd64":
+				cpuModel = fmt.Sprintf("Generic x86_64 (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			case "arm64":
+				cpuModel = fmt.Sprintf("Generic ARM64 (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			default:
+				cpuModel = fmt.Sprintf("Unknown architecture (%d cores)", cpuCores)
+				klog.V(2).InfoS("Using generic CPU model (cpu-exporter not detected)",
+					"node", node.Name, "model", cpuModel, "cores", cpuCores)
+			}
 		}
 	}
 
-	return cpuModel, gpuModel
+	// Fallback check NFD labels for GPU information
+	if len(gpuModels) == 0 {
+		if model, ok := node.Labels[common.NvidiaLabelGPUProduct]; ok {
+			// We have an NVIDIA GPU model from NFD labels
+			gpuModels = append(gpuModels, model)
+		} else if gpuCount, ok := node.Status.Capacity[common.NvidiaLabelBase]; ok && gpuCount.Value() > 0 {
+			// If GPU exists but no annotation, determine from node characteristics
+			// In production, consider adding a daemon that reports actual GPU model
+			if strings.Contains(node.Name, "gpu") ||
+				strings.Contains(node.Name, "p3") ||
+				strings.Contains(node.Name, "g4") {
+				gpuModels = append(gpuModels, "NVIDIA V100") // Common in AWS p3 instances
+			} else if strings.Contains(node.Name, "a10") {
+				gpuModels = append(gpuModels, "NVIDIA A10G")
+			} else {
+				gpuModels = append(gpuModels, "NVIDIA T4") // Common default
+			}
+		}
+	}
+
+	return cpuModel, gpuModels
 }
 
 // estimateMemoryPower provides a simple estimate of memory power consumption based on capacity
@@ -504,26 +598,71 @@ func NodeSpecsChanged(oldNode, newNode *v1.Node) bool {
 		return true
 	}
 
-	// Check for CPU model labels changed
-	oldCPUModel, oldHasCPUModel := oldNode.Labels[common.NFDLabelCPUModel]
-	newCPUModel, newHasCPUModel := newNode.Labels[common.NFDLabelCPUModel]
-
-	if oldHasCPUModel != newHasCPUModel {
-		if newHasCPUModel {
-			klog.V(2).InfoS("CPU model label added to node",
-				"node", newNode.Name,
-				"model", newCPUModel,
-				"labelKey", common.NFDLabelCPUModel)
-		}
+	// Check for changes in CPU model information from NFD labels
+	// Check family
+	oldCPUFamily, oldHasCPUFamily := oldNode.Labels[common.NFDLabelCPUModelFamily]
+	newCPUFamily, newHasCPUFamily := newNode.Labels[common.NFDLabelCPUModelFamily]
+	if oldHasCPUFamily != newHasCPUFamily || (oldHasCPUFamily && newHasCPUFamily && oldCPUFamily != newCPUFamily) {
+		klog.V(2).InfoS("CPU family label changed on node",
+			"node", newNode.Name,
+			"oldFamily", oldCPUFamily,
+			"newFamily", newCPUFamily)
 		return true
 	}
 
-	if oldHasCPUModel && newHasCPUModel && oldCPUModel != newCPUModel {
-		klog.V(2).InfoS("CPU model label changed on node",
+	// Check model ID
+	oldCPUModelID, oldHasCPUModelID := oldNode.Labels[common.NFDLabelCPUModelID]
+	newCPUModelID, newHasCPUModelID := newNode.Labels[common.NFDLabelCPUModelID]
+	if oldHasCPUModelID != newHasCPUModelID || (oldHasCPUModelID && newHasCPUModelID && oldCPUModelID != newCPUModelID) {
+		klog.V(2).InfoS("CPU model ID label changed on node",
 			"node", newNode.Name,
-			"oldModel", oldCPUModel,
-			"newModel", newCPUModel,
-			"labelKey", common.NFDLabelCPUModel)
+			"oldModelID", oldCPUModelID,
+			"newModelID", newCPUModelID)
+		return true
+	}
+
+	// Check vendor ID
+	oldCPUVendorID, oldHasCPUVendorID := oldNode.Labels[common.NFDLabelCPUModelVendorID]
+	newCPUVendorID, newHasCPUVendorID := newNode.Labels[common.NFDLabelCPUModelVendorID]
+	if oldHasCPUVendorID != newHasCPUVendorID || (oldHasCPUVendorID && newHasCPUVendorID && oldCPUVendorID != newCPUVendorID) {
+		klog.V(2).InfoS("CPU vendor ID label changed on node",
+			"node", newNode.Name,
+			"oldVendorID", oldCPUVendorID,
+			"newVendorID", newCPUVendorID)
+		return true
+	}
+
+	// Check CPU power state changes - these can significantly affect power consumption
+	// Check CPU scaling governor (most impactful - powersave vs performance)
+	oldGovernor, oldHasGovernor := oldNode.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	newGovernor, newHasGovernor := newNode.Labels[common.NFDLabelCPUPStateScalingGovernor]
+	if oldHasGovernor != newHasGovernor || (oldHasGovernor && newHasGovernor && oldGovernor != newGovernor) {
+		klog.V(2).InfoS("CPU scaling governor changed on node",
+			"node", newNode.Name,
+			"oldGovernor", oldGovernor,
+			"newGovernor", newGovernor)
+		return true
+	}
+
+	// Check CPU p-state status
+	oldStatus, oldHasStatus := oldNode.Labels[common.NFDLabelCPUPStateStatus]
+	newStatus, newHasStatus := newNode.Labels[common.NFDLabelCPUPStateStatus]
+	if oldHasStatus != newHasStatus || (oldHasStatus && newHasStatus && oldStatus != newStatus) {
+		klog.V(2).InfoS("CPU p-state status changed on node",
+			"node", newNode.Name,
+			"oldStatus", oldStatus,
+			"newStatus", newStatus)
+		return true
+	}
+
+	// Check CPU turbo status
+	oldTurbo, oldHasTurbo := oldNode.Labels[common.NFDLabelCPUPStateTurbo]
+	newTurbo, newHasTurbo := newNode.Labels[common.NFDLabelCPUPStateTurbo]
+	if oldHasTurbo != newHasTurbo || (oldHasTurbo && newHasTurbo && oldTurbo != newTurbo) {
+		klog.V(2).InfoS("CPU turbo status changed on node",
+			"node", newNode.Name,
+			"oldTurbo", oldTurbo,
+			"newTurbo", newTurbo)
 		return true
 	}
 
