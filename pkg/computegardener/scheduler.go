@@ -68,6 +68,9 @@ type ComputeGardenerScheduler struct {
 
 	// Metrics deduplication - track pods we've already counted for delay metrics
 	delayedPods map[string]bool // Map of pod UIDs to prevent double-counting of delays
+
+	// Pod state timing - track when pods enter different states for queue duration metrics
+	podStateTimes map[string]time.Time // Map of pod UIDs to when they entered current state
 }
 
 var (
@@ -255,6 +258,9 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		// Initialize delay tracking map
 		delayedPods: make(map[string]bool),
+		
+		// Initialize pod state timing map
+		podStateTimes: make(map[string]time.Time),
 	}
 
 	// Start health check worker
@@ -456,12 +462,14 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	// Check if pod has been waiting too long
 	if cs.hasExceededMaxDelay(pod) {
 		metrics.SchedulingAttempts.WithLabelValues("max_delay_exceeded").Inc()
+		cs.updatePodState(pod, metrics.PodStateMaxDelayExceeded, "max_delay_exceeded")
 		return nil, framework.NewStatus(framework.Success, "maximum scheduling delay exceeded")
 	}
 
 	// Check if pod has annotation to opt-out
 	if cs.isOptedOut(pod) {
 		metrics.SchedulingAttempts.WithLabelValues("skipped").Inc()
+		cs.updatePodState(pod, metrics.PodStateUnknown, "opted_out")
 		return nil, framework.NewStatus(framework.Success, "")
 	}
 
@@ -488,6 +496,9 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 				period = "off-peak"
 			}
 			metrics.ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
+
+			// Update pod state for price delay
+			cs.updatePodState(pod, metrics.PodStatePriceDelayed, period)
 
 			// Record metrics for price-based delay - only count each pod once
 			podUID := string(pod.UID)
@@ -534,6 +545,9 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	// Store any pod-specific information in cycle state for Filter stage
 	// Currently we're keeping this lightweight - just marking that the pod passed PreFilter
 	state.Write("compute-gardener-passed-prefilter", &preFilterState{passed: true})
+
+	// Update pod state to indicate it's waiting for resources (passed all constraint checks)
+	cs.updatePodState(pod, metrics.PodStatePendingResource, "waiting_for_resources")
 
 	klog.V(2).InfoS("PreFilter completed successfully",
 		"pod", klog.KObj(pod),
@@ -721,6 +735,9 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 		klog.V(3).InfoS("Hardware profiler not enabled", "pod", klog.KObj(pod))
 	}
 
+	// Update pod state to indicate successful filtering (ready for scheduling)
+	cs.updatePodState(pod, metrics.PodStateScheduling, "filter_passed")
+
 	return framework.NewStatus(framework.Success, "")
 }
 
@@ -819,6 +836,12 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 			"currentIntensity", currentIntensity,
 			"threshold", threshold,
 			"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
+
+		// Record constraint violation
+		cs.recordConstraintViolation("carbon_intensity", threshold, currentIntensity)
+
+		// Update pod state for carbon delay
+		cs.updatePodState(pod, metrics.PodStateCarbonDelayed, cs.config.Carbon.APIConfig.Region)
 
 		// Only count carbon delay once per pod
 		podUID := string(pod.UID)
@@ -973,6 +996,53 @@ func hasGPURequest(pod *v1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// updatePodState updates the pod state gauge metric and tracks queue duration
+func (cs *ComputeGardenerScheduler) updatePodState(pod *v1.Pod, state, reason string) {
+	podUID := string(pod.UID)
+	
+	// Check if this pod was in a previous state and record queue duration
+	if previousTime, exists := cs.podStateTimes[podUID]; exists {
+		duration := cs.clock.Since(previousTime)
+		metrics.PodQueueDuration.WithLabelValues(reason, pod.Namespace).Observe(duration.Seconds())
+		
+		klog.V(3).InfoS("Pod queue duration recorded",
+			"pod", klog.KObj(pod),
+			"previousState", "unknown", // We could track previous state if needed
+			"newState", state,
+			"duration", duration.String())
+	}
+	
+	// Update the current state time
+	cs.podStateTimes[podUID] = cs.clock.Now()
+	
+	// Update the state gauge metric
+	metrics.PodStateGauge.WithLabelValues(
+		pod.Name,
+		pod.Namespace,
+		state,
+		reason,
+	).Set(1)
+	
+	klog.V(3).InfoS("Pod state updated",
+		"pod", klog.KObj(pod),
+		"state", state,
+		"reason", reason)
+}
+
+// recordConstraintViolation records when a constraint threshold is violated
+func (cs *ComputeGardenerScheduler) recordConstraintViolation(constraintType string, threshold, actual float64) {
+	metrics.ConstraintViolations.WithLabelValues(
+		constraintType,
+		fmt.Sprintf("%.2f", threshold),
+		fmt.Sprintf("%.2f", actual),
+	).Inc()
+	
+	klog.V(3).InfoS("Constraint violation recorded",
+		"constraintType", constraintType,
+		"threshold", threshold,
+		"actual", actual)
 }
 
 // carbonCacheRefreshWorker refreshes the carbon intensity cache at regular intervals

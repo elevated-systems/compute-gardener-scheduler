@@ -635,8 +635,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_pod) (scheduler_compute_gardener_carbon_delay_total)",
-          "legendFormat": "Carbon-based delays",
+          "expr": "sum(rate(scheduler_compute_gardener_carbon_delay_total[5m]))",
+          "legendFormat": "Carbon-based delay rate",
           "range": true,
           "refId": "A"
         },
@@ -646,8 +646,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_pod) (scheduler_compute_gardener_price_delay_total)",
-          "legendFormat": "Price-based delays",
+          "expr": "sum(rate(scheduler_compute_gardener_price_delay_total[5m]))",
+          "legendFormat": "Price-based delay rate",
           "range": true,
           "refId": "B"
         }
@@ -894,7 +894,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Timeline showing pod scheduling states over time with color-coded segments for different states (waiting, delayed, running, completed)",
+      "description": "Enhanced timeline showing pod scheduling pipeline states: Resource Waiting (normal pending), Carbon/Price Delayed (constraint-based delays), Recently Scheduled (successful transitions), Running, and Completed phases",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -916,7 +916,7 @@
                 "1": {
                   "color": "#FF9830",
                   "index": 1,
-                  "text": "Pending"
+                  "text": "Resource Waiting"
                 },
                 "2": {
                   "color": "green",
@@ -947,6 +947,11 @@
                   "color": "#C4162A",
                   "index": 7,
                   "text": "Max Delay Exceeded"
+                },
+                "8": {
+                  "color": "#8AB8FF",
+                  "index": 8,
+                  "text": "Recently Scheduled"
                 }
               },
               "type": "value"
@@ -995,11 +1000,11 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_pod) (kube_pod_status_phase{phase=\"Pending\",exported_pod=~\".*\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})) * 1",
+          "expr": "# Pods waiting for resources (normal pending - not delayed by constraints)\n(kube_pod_status_phase{phase=\"Pending\",exported_pod=~\".*\"} \n * on(exported_pod, exported_namespace) group_left(scheduler_name) \n (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n unless\n (increase(scheduler_compute_gardener_carbon_delay_total[5m]) > 0 or increase(scheduler_compute_gardener_price_delay_total[5m]) > 0)) * 1",
           "format": "time_series",
           "hide": false,
           "instant": false,
-          "legendFormat": "{{exported_pod}} - Pending",
+          "legendFormat": "{{exported_pod}} - Resource Waiting",
           "range": true,
           "refId": "A"
         },
@@ -1051,9 +1056,9 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Carbon delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_carbon_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 5",
+          "expr": "# Pods delayed by carbon constraints - sustained delays\n(kube_pod_status_phase{phase=\"Pending\"} \n * on(exported_pod, exported_namespace) group_left(scheduler_name) \n (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n and\n increase(scheduler_compute_gardener_carbon_delay_total[5m]) > 0) * 5",
           "hide": false,
-          "legendFormat": "{{exported_pod}} - Carbon Delay",
+          "legendFormat": "{{exported_pod}} - Carbon Delayed",
           "range": true,
           "refId": "E"
         },
@@ -1063,9 +1068,9 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Price delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_price_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 6",
+          "expr": "# Pods delayed by price constraints - sustained delays\n(kube_pod_status_phase{phase=\"Pending\"} \n * on(exported_pod, exported_namespace) group_left(scheduler_name) \n (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n and\n increase(scheduler_compute_gardener_price_delay_total[5m]) > 0) * 6",
           "hide": false,
-          "legendFormat": "{{exported_pod}} - Price Delay",
+          "legendFormat": "{{exported_pod}} - Price Delayed",
           "range": true,
           "refId": "F"
         },
@@ -1075,16 +1080,496 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Max delay exceeded - detect when scheduler gives up on delaying\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_scheduling_attempt_total{result=\"max_delay_exceeded\"}[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 7",
+          "expr": "# Pods that exceeded max delay and are being scheduled anyway\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_scheduling_attempt_total{result=\"max_delay_exceeded\"}[5m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 7",
           "hide": false,
           "legendFormat": "{{exported_pod}} - Max Delay Exceeded",
           "range": true,
           "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "# Recently scheduled pods (last 10 minutes) - shows successful scheduling\n((time() - kube_pod_status_scheduled_time) < 600 and (time() - kube_pod_status_scheduled_time) > 0)\n * kube_pod_status_phase{phase=\"Running\"} \n * on(exported_pod, exported_namespace) group_left(scheduler_name) \n (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"}) * 8",
+          "hide": false,
+          "legendFormat": "{{exported_pod}} - Recently Scheduled",
+          "range": true,
+          "refId": "H"
         }
       ],
       "title": "Pod State Timeline",
       "transformations": [],
       "type": "state-timeline"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Queue depth and scheduling decisions vs external constraint factors",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Carbon Intensity.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "gCO2/kWh"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Rate.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "custom.transform",
+                "value": "scale(1000)"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "id": 51,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"}))",
+          "legendFormat": "Pending Pod Queue",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scheduler_compute_gardener_carbon_intensity{region=~\"$region\"} / 10",
+          "legendFormat": "Carbon Intensity (÷10)",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scheduler_compute_gardener_electricity_rate * 1000",
+          "legendFormat": "Electricity Rate (×1000)",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(scheduler_compute_gardener_carbon_delay_total[5m]) * 300",
+          "legendFormat": "Carbon Delay Rate (×300)",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(scheduler_compute_gardener_price_delay_total[5m]) * 300",
+          "legendFormat": "Price Delay Rate (×300)",
+          "range": true,
+          "refId": "E"
+        }
+      ],
+      "title": "Queue Behavior vs Scheduling Constraints",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Current pod states in the scheduler pipeline",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {"text": "Unknown", "color": "gray"},
+                "1": {"text": "Pending Resources", "color": "orange"},
+                "2": {"text": "Carbon Delayed", "color": "green"},
+                "3": {"text": "Price Delayed", "color": "yellow"},
+                "4": {"text": "Scheduling", "color": "blue"},
+                "5": {"text": "Scheduled", "color": "light-green"},
+                "6": {"text": "Max Delay Exceeded", "color": "red"}
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "id": 56,
+      "options": {
+        "displayMode": "table",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scheduler_compute_gardener_pod_state",
+          "legendFormat": "{{pod}} ({{state}}: {{reason}})",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Current Pod States in Pipeline",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Time pods spend in different scheduling states",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "id": 57,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, rate(scheduler_compute_gardener_pod_queue_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50 - {{reason}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_queue_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95 - {{reason}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, rate(scheduler_compute_gardener_pod_queue_duration_seconds_bucket[5m]))",
+          "legendFormat": "p99 - {{reason}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Pod Queue Duration by State",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Constraint threshold violations causing scheduling delays",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "id": 58,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(scheduler_compute_gardener_constraint_violations_total[5m])",
+          "legendFormat": "{{constraint_type}} (threshold: {{threshold_value}}, actual: {{actual_value}})",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Constraint Violations Rate",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1204,7 +1689,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 69
       },
       "id": 99,
       "options": {
@@ -1361,7 +1846,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 69
       },
       "id": 16,
       "options": {
@@ -1450,7 +1935,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 53
       },
       "id": 18,
       "options": {
@@ -1491,7 +1976,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 85
       },
       "id": 30,
       "panels": [],
@@ -1557,7 +2042,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 86
       },
       "id": 50,
       "options": {
@@ -1662,7 +2147,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 94
       },
       "id": 20,
       "options": {
@@ -1756,7 +2241,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 94
       },
       "id": 22,
       "options": {
@@ -1827,7 +2312,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 102
       },
       "id": 32,
       "options": {
@@ -1921,7 +2406,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 102
       },
       "id": 34,
       "options": {
@@ -1962,7 +2447,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 110
       },
       "id": 52,
       "panels": [],
@@ -2032,7 +2517,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 77
+        "y": 111
       },
       "id": 53,
       "options": {
@@ -2142,7 +2627,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 77
+        "y": 111
       },
       "id": 54,
       "options": {
@@ -2194,7 +2679,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 119
       },
       "id": 36,
       "panels": [],
@@ -2260,7 +2745,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 86
+        "y": 120
       },
       "id": 8,
       "options": {
@@ -2353,7 +2838,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 86
+        "y": 120
       },
       "id": 38,
       "options": {
@@ -2470,7 +2955,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 94
+        "y": 128
       },
       "id": 40,
       "options": {
@@ -2531,7 +3016,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 94
+        "y": 128
       },
       "id": 42,
       "options": {

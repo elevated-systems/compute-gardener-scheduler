@@ -8,6 +8,15 @@ import (
 const (
 	// Subsystem name used for scheduler metrics
 	schedulerSubsystem = "scheduler_compute_gardener"
+
+	// Pod state constants for PodStateGauge
+	PodStateUnknown         = "0"
+	PodStatePendingResource = "1"
+	PodStateCarbonDelayed   = "2"
+	PodStatePriceDelayed    = "3"
+	PodStateScheduling      = "4"
+	PodStateScheduled       = "5"
+	PodStateMaxDelayExceeded = "6"
 )
 
 var (
@@ -241,6 +250,40 @@ var (
 		},
 		[]string{"namespace", "owner_kind", "action"},
 	)
+
+	// PodStateGauge tracks the current state of pods in the scheduler pipeline
+	PodStateGauge = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "pod_state",
+			Help:           "Current state of pods in scheduler pipeline (0=unknown, 1=pending_resources, 2=carbon_delayed, 3=price_delayed, 4=scheduling, 5=scheduled, 6=max_delay_exceeded)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace", "state", "reason"},
+	)
+
+	// PodQueueDuration tracks how long pods spend in different states
+	PodQueueDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "pod_queue_duration_seconds",
+			Help:           "Time pods spend waiting for scheduling decisions",
+			Buckets:        metrics.ExponentialBuckets(1, 2, 12), // 1s to ~1hr
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"reason", "namespace"},
+	)
+
+	// ConstraintViolations tracks threshold breaches that cause delays
+	ConstraintViolations = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "constraint_violations_total",
+			Help:           "Count of constraint violations causing scheduling delays",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"constraint_type", "threshold_value", "actual_value"},
+	)
 )
 
 func init() {
@@ -266,4 +309,7 @@ func init() {
 	legacyregistry.MustRegister(NodeEfficiency)
 	legacyregistry.MustRegister(EnergyBudgetTracking)
 	legacyregistry.MustRegister(EnergyBudgetExceeded)
+	legacyregistry.MustRegister(PodStateGauge)
+	legacyregistry.MustRegister(PodQueueDuration)
+	legacyregistry.MustRegister(ConstraintViolations)
 }

@@ -96,6 +96,17 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			"podUID", podUID)
 	}
 
+	// Remove pod from state timing map to clean up memory 
+	if cs.podStateTimes != nil {
+		delete(cs.podStateTimes, podUID)
+		klog.V(2).InfoS("Removed pod from state timing map",
+			"pod", klog.KObj(pod),
+			"podUID", podUID)
+	}
+
+	// Update pod state to indicate completion
+	cs.updatePodState(pod, metrics.PodStateScheduled, "completed")
+
 	klog.V(2).InfoS("Found metrics history for pod",
 		"pod", klog.KObj(pod),
 		"podUID", podUID,
