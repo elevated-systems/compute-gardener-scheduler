@@ -26,9 +26,18 @@ scheduler:
     limits:
       cpu: 200m
       memory: 256Mi
-  nodeSelector:
-    node-role.kubernetes.io/control-plane: "true"
-  affinity: {}
+  # Node affinity configuration, ensures scheduler runs on control-plane nodes
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: In
+                values:
+                  - ""
+                  - "true"
+
   tolerations: []
   priorityClassName: ""
 
