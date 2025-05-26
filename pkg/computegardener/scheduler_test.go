@@ -25,18 +25,17 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
+	testingclock "k8s.io/utils/clock/testing"
+
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
-	carbonmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon/mock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
-	metricsmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/mock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
-	pricingmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price/mock"
+	testingmocks "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/testing"
 )
 
 // mockHTTPClient implements api.HTTPClient for testing
@@ -139,7 +138,7 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 
 	var carbonImpl carbon.Implementation
 	if cfg.Carbon.Enabled {
-		carbonImpl = carbonmock.New(carbonIntensity)
+		carbonImpl = testingmocks.NewMockCarbon(carbonIntensity)
 	}
 
 	return &ComputeGardenerScheduler{
@@ -147,9 +146,9 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		priceImpl:   pricingmock.NewWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
+		priceImpl:   testingmocks.NewMockPricingWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
 		carbonImpl:  carbonImpl,
-		clock:       clock.NewMockClock(mockTime),
+		clock:       testingclock.NewFakeClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 		delayedPods: make(map[string]bool),           // Initialize delayed pods map
 	}
@@ -644,9 +643,9 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		config:      cfg,
 		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 		cache:       cache,
-		priceImpl:   pricingmock.New(0.1),
-		carbonImpl:  carbonmock.NewWithError(),
-		clock:       clock.NewMockClock(baseTime),
+		priceImpl:   testingmocks.NewMockPricing(0.1),
+		carbonImpl:  testingmocks.NewMockCarbonWithError(),
+		clock:       testingclock.NewFakeClock(baseTime),
 		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 		delayedPods: make(map[string]bool),           // Initialize delayed pods map
 	}
@@ -1124,9 +1123,9 @@ func TestHealthCheck(t *testing.T) {
 			var carbonImpl carbon.Implementation
 			if tt.carbonEnabled {
 				if tt.carbonWithError {
-					carbonImpl = carbonmock.NewWithError()
+					carbonImpl = testingmocks.NewMockCarbonWithError()
 				} else {
-					carbonImpl = carbonmock.New(100)
+					carbonImpl = testingmocks.NewMockCarbon(100)
 				}
 			}
 
@@ -1136,9 +1135,9 @@ func TestHealthCheck(t *testing.T) {
 				config:      cfg,
 				apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
 				cache:       cache,
-				priceImpl:   pricingmock.New(0.1),
+				priceImpl:   testingmocks.NewMockPricing(0.1),
 				carbonImpl:  carbonImpl,
-				clock:       clock.NewMockClock(baseTime),
+				clock:       testingclock.NewFakeClock(baseTime),
 				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 				delayedPods: make(map[string]bool),           // Initialize delayed pods map
 			}
@@ -1318,13 +1317,13 @@ func TestRecordInitialMetricsUpdateFailure(t *testing.T) {
 		},
 	}
 
-	mockCarbon := &carbonmock.MockCarbonImplementation{
+	mockCarbon := &testingmocks.MockCarbonImplementation{
 		GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
 			return 0.5, nil
 		},
 	}
 
-	mockPricing := &pricingmock.MockPriceImplementation{
+	mockPricing := &testingmocks.MockPriceImplementation{
 		GetCurrentRateFunc: func(currentTime time.Time) float64 {
 			return 0.1
 		},
@@ -1370,7 +1369,7 @@ func TestPreFilterWithCarbonFailure(t *testing.T) {
 		},
 	}
 
-	mockCarbon := &carbonmock.MockCarbonImplementation{
+	mockCarbon := &testingmocks.MockCarbonImplementation{
 		GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
 			return 0.0, errors.New("simulated carbon api error")
 		},
@@ -1410,7 +1409,7 @@ func TestPreFilterWithPricingFailure(t *testing.T) {
 		},
 	}
 
-	mockPricing := &pricingmock.MockPriceImplementation{
+	mockPricing := &testingmocks.MockPriceImplementation{
 		GetCurrentRateFunc: func(currentTime time.Time) float64 {
 			return -1.0
 		},
@@ -1451,7 +1450,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 	}
 
 	if metricsClient == nil {
-		metricsClient = &metricsmock.MockCoreMetricsClient{
+		metricsClient = &testingmocks.MockCoreMetricsClient{
 			GetPodMetricsFunc: func(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error) {
 				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
 			},
@@ -1473,7 +1472,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 
 	return &ComputeGardenerScheduler{
 		config: cfg,
-		priceImpl: &pricingmock.MockPriceImplementation{
+		priceImpl: &testingmocks.MockPriceImplementation{
 			GetCurrentRateFunc: func(currentTime time.Time) float64 { return electricityRate },
 			IsPeakTimeFunc:     func(currentTime time.Time) bool { return false },
 		},
@@ -1482,7 +1481,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 		coreMetricsClient: metricsClient,
 		gpuMetricsClient:  gpuClient,
 		hardwareProfiler:  hardwareProfiler,
-		clock:             clock.NewMockClock(baseTime),
+		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
 		delayedPods:       make(map[string]bool),
 	}
@@ -1497,7 +1496,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 	}
 
 	if metricsClient == nil {
-		metricsClient = &metricsmock.MockCoreMetricsClient{
+		metricsClient = &testingmocks.MockCoreMetricsClient{
 			GetPodMetricsFunc: func(ctx context.Context, namespace, name string) (*metricsv1beta1.PodMetrics, error) {
 				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
 			},
@@ -1509,7 +1508,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 	}
 
 	if carbonImpl == nil {
-		carbonImpl = &carbonmock.MockCarbonImplementation{
+		carbonImpl = &testingmocks.MockCarbonImplementation{
 			GetCurrentIntensityFunc: func(ctx context.Context) (float64, error) {
 				return 0.0, nil // No carbon by default
 			},
@@ -1517,7 +1516,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 	}
 
 	if priceImpl == nil {
-		priceImpl = &pricingmock.MockPriceImplementation{
+		priceImpl = &testingmocks.MockPriceImplementation{
 			GetCurrentRateFunc: func(currentTime time.Time) float64 { return electricityRate },
 			IsPeakTimeFunc:     func(currentTime time.Time) bool { return false },
 		}
@@ -1548,7 +1547,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 		coreMetricsClient: metricsClient,
 		gpuMetricsClient:  gpuClient,
 		hardwareProfiler:  hardwareProfiler,
-		clock:             clock.NewMockClock(baseTime),
+		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
 		delayedPods:       make(map[string]bool),
 		handle:            handle,

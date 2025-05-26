@@ -14,11 +14,12 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1client "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
+	"k8s.io/utils/clock"
+
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"

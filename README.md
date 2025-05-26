@@ -13,7 +13,7 @@ This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kub
 - **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data (requires [Electricity Maps API](https://api-portal.electricitymaps.com/) key)
 - **Price-Aware Scheduling**: Schedule pods based on time-of-use (TOU) electricity pricing
 - **Pod-Level Controls**: Customize scheduling via annotations and thresholds
-- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration
+- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration based on NFD labels, Kepler data or sensed HW
 - **Region Mapping**: Automatically map most major cloud provider regions to their corresponding Electricity Maps API carbon intensity regions.
 - **Grafana Dashboard**: View workload and scheduler performance metrics in simple visualizations.
 - **Energy Budget Tracking**: Define and monitor energy usage limits for workloads

@@ -16,14 +16,14 @@ import (
 	k8smetrictesutil "k8s.io/component-base/metrics/testutil"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	testingclock "k8s.io/utils/clock/testing"
+
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
-	carbonmock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon/mock"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clock"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
-	pricemock "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price/mock"
+	testingmocks "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/testing"
 	cgtypes "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
@@ -109,7 +109,7 @@ func setupTestSchedulerForCompletion(
 		metricsStore: metricsStore,
 		carbonImpl:   carbonImpl,
 		priceImpl:    priceImpl,
-		clock:        clock.NewMockClock(time.Now()), // Use mock clock if needed
+		clock:        testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
 		delayedPods:  make(map[string]bool),
 	}
 }
@@ -555,8 +555,8 @@ func TestBasicPodCompletionMetrics(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			// Setup Mocks
 			mockStore := &MockMetricsStore{}
-			mockCarbon := &carbonmock.MockCarbonImplementation{}
-			mockPrice := &pricemock.MockPriceImplementation{}
+			mockCarbon := &testingmocks.MockCarbonImplementation{}
+			mockPrice := &testingmocks.MockPriceImplementation{}
 
 			if tc.MetricsHistory != nil {
 				mockStore.On("GetHistory", tc.PodUID).Return(tc.MetricsHistory, true)
@@ -616,8 +616,8 @@ func TestSavingsCalculation(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			// Setup Mocks
 			mockStore := &MockMetricsStore{}
-			mockCarbon := &carbonmock.MockCarbonImplementation{}
-			mockPrice := &pricemock.MockPriceImplementation{}
+			mockCarbon := &testingmocks.MockCarbonImplementation{}
+			mockPrice := &testingmocks.MockPriceImplementation{}
 
 			mockStore.On("GetHistory", tc.PodUID).Return(tc.MetricsHistory, true)
 			mockStore.On("MarkCompleted", tc.PodUID).Return()
@@ -775,8 +775,8 @@ func TestEdgeCases(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			// Setup Mocks
 			mockStore := &MockMetricsStore{}
-			mockCarbon := &carbonmock.MockCarbonImplementation{}
-			mockPrice := &pricemock.MockPriceImplementation{}
+			mockCarbon := &testingmocks.MockCarbonImplementation{}
+			mockPrice := &testingmocks.MockPriceImplementation{}
 
 			mockStore.On("GetHistory", tc.PodUID).Return(tc.MetricsHistory, true)
 			if tc.MarkCompleted {
@@ -835,8 +835,8 @@ func TestEdgeCases(t *testing.T) {
 func TestProcessPodCompletionMetrics_Basic(t *testing.T) {
 	// Setup Mocks
 	mockStore := &MockMetricsStore{}
-	mockCarbon := &carbonmock.MockCarbonImplementation{}
-	mockPrice := &pricemock.MockPriceImplementation{}
+	mockCarbon := &testingmocks.MockCarbonImplementation{}
+	mockPrice := &testingmocks.MockPriceImplementation{}
 
 	podUID := "test-pod-uid-basic"
 	podName := "test-pod-basic"
