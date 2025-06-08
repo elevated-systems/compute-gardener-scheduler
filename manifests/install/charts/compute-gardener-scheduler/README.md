@@ -29,7 +29,7 @@ This Helm chart deploys the Compute Gardener Scheduler, a Kubernetes scheduler p
 
 - **Prometheus**: Highly recommended but not strictly required. Without Prometheus, you won't be able to visualize scheduler performance metrics or validate carbon/cost savings. The scheduler will continue to function, but you'll miss valuable insights into its operation. Prometheus is also essential for CPU frequency and GPU power data collection.
 
-- **Node Exporter**: Optional component that significantly improves power estimation accuracy. This DaemonSet monitors the actual CPU frequencies of each node, providing more precise data for CPU power calculations that reflect dynamic frequency scaling. Without it, the scheduler will estimate power based on static CPU models only.
+- **Node Exporter**: Required for accurate power estimation. The scheduler depends on standard Prometheus node-exporter to collect CPU frequency data for dynamic frequency scaling calculations. Most Prometheus installations include node-exporter by default.
 
 - **GPU Metrics Collection**: Optional component for NVIDIA GPU monitoring. When enabled, it provides accurate GPU power consumption data via Prometheus. The scheduler integrates with industry-standard GPU metrics to capture real-time GPU power usage with per-device granularity.
   
@@ -60,11 +60,10 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set priceAware.enabled=true \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 
-# Installation with hardware metrics (CPU frequency & GPU) monitoring for more accurate power estimation
+# Installation with GPU monitoring for comprehensive power estimation
 helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
   --namespace compute-gardener \
   --create-namespace \
-  --set nodeExporter.enabled=true \
   --set metrics.gpuMetrics.enabled=true \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 
@@ -214,9 +213,6 @@ The following table lists the configurable parameters of the Compute Gardener Sc
 | `priceAware.schedules` | List of Time-of-Use schedules (see below) | `[]` |
 | `hardwareProfiles.enabled` | Enable hardware profiles | `true` |
 | `hardwareProfiles.mountPath` | Path to mount the hardware profiles | `/etc/kubernetes/compute-gardener-scheduler/hardware-profiles` |
-| `nodeExporter.enabled` | Enable hardware metrics exporter (CPU & GPU) | `false` |
-| `nodeExporter.image` | Hardware metrics exporter image | `docker.io/dmasselink/compute-gardener-node-exporter:latest` |
-| `nodeExporter.metricsPort` | Port for hardware metrics | `9100` |
 | `metrics.enabled` | Enable metrics | `true` |
 | `metrics.serviceMonitor.enabled` | Enable ServiceMonitor for Prometheus | `true` |
 | `metrics.serviceMonitor.namespace` | ServiceMonitor namespace | `cattle-monitoring-system` |

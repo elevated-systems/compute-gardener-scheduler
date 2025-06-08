@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -42,6 +42,31 @@ func (c *PrometheusMetricsClient) SetDCGMUtilMetric(metric string) {
 	klog.V(2).InfoS("DCGM utilization metric configured", "metric", metric)
 }
 
+// GetNodeCPUTemperature gets current CPU core temperature for a node
+func (c *PrometheusMetricsClient) GetNodeCPUTemperature(ctx context.Context, nodeName string) (float64, error) {
+	// Standard node-exporter CPU core temperature metric
+	return c.QueryNodeMetric(ctx, common.MetricCPUTemperatureQuery, nodeName)
+}
+
+// GetNodeGPUTemperature gets current GPU temperature for a node using DCGM
+func (c *PrometheusMetricsClient) GetNodeGPUTemperature(ctx context.Context, nodeName string, tempType string) (float64, error) {
+	if !c.useDCGM {
+		return 0, fmt.Errorf("GPU temperature requires DCGM metrics")
+	}
+
+	var metricName string
+	switch tempType {
+	case "core":
+		metricName = common.DCGMMetricGPUTempCore
+	case "memory":
+		metricName = common.DCGMMetricGPUTempMemory
+	default:
+		return 0, fmt.Errorf("unsupported GPU temperature type: %s", tempType)
+	}
+
+	return c.QueryNodeMetric(ctx, metricName, nodeName)
+}
+
 // GetDCGMPowerMetric returns the current DCGM power metric name
 func (c *PrometheusMetricsClient) GetDCGMPowerMetric() string {
 	return c.dcgmPowerMetric
@@ -73,8 +98,8 @@ func NewPrometheusMetricsClient(prometheusURL string) (*PrometheusMetricsClient,
 
 		// Enable DCGM metrics by default
 		useDCGM:         true,
-		dcgmPowerMetric: "DCGM_FI_DEV_POWER_USAGE",
-		dcgmUtilMetric:  "DCGM_FI_DEV_GPU_UTIL",
+		dcgmPowerMetric: common.DCGMMetricGPUPower,
+		dcgmUtilMetric:  common.DCGMMetricGPUUtilization,
 	}
 
 	klog.InfoS("Created Prometheus GPU metrics client",
@@ -588,6 +613,8 @@ type PodGPUMetricsHistory struct {
 	Timestamps  []time.Time
 	Utilization []float64
 	Power       []float64
+	TempCore    []float64 // GPU core temperature (°C) from DCGM_FI_DEV_GPU_TEMP
+	TempMemory  []float64 // GPU memory temperature (°C) from DCGM_FI_DEV_MEM_TEMP
 }
 
 // CalculateAverageGPUMetrics computes average utilization and power over the time window
@@ -629,25 +656,4 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 	}
 
 	return totalEnergy
-}
-
-// ConvertToStandardFormat converts the GPU metrics history to standard PodMetricsRecord format
-// that can be used with the common calculation utilities
-func (h *PodGPUMetricsHistory) ConvertToStandardFormat() []types.PodMetricsRecord {
-	if len(h.Timestamps) == 0 {
-		return nil
-	}
-
-	records := make([]types.PodMetricsRecord, len(h.Timestamps))
-
-	for i := range h.Timestamps {
-		records[i] = types.PodMetricsRecord{
-			Timestamp:     h.Timestamps[i],
-			GPUPowerWatts: h.Power[i], // GPU power in watts
-			PowerEstimate: h.Power[i], // GPU power in watts
-			// CPU and Memory will be 0 as this is GPU-specific
-		}
-	}
-
-	return records
 }
