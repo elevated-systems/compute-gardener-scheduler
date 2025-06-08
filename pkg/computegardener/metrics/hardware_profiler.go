@@ -11,7 +11,7 @@ import (
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/powerprovider"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/powerprovider"
 )
 
 // HardwareProfiler provides methods to detect and compute power profiles for nodes

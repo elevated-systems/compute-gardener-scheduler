@@ -196,9 +196,9 @@ Peruse our [issues](https://github.com/elevated-systems/compute-gardener-schedul
 # Build
 make build
 
-# Build and Push Images (scheduler and node-exporter)
+# Build and Push Image
 # Be sure to set your registry details in Makefile first
-make build-push-images
+make build-push-image
 
 # Run tests
 make unit-test

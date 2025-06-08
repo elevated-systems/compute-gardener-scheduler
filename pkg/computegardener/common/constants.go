@@ -128,11 +128,10 @@ const (
 
 // Prometheus metric names for hardware monitoring
 const (
-	// CPU metrics
-	MetricCPUFrequencyGHz     = "node_cpu_frequency_ghz"      // Current CPU frequency in GHz
-	MetricCPUBaseFrequencyGHz = "node_cpu_base_frequency_ghz" // Base/nominal CPU frequency in GHz
-	MetricCPUMinFrequencyGHz  = "node_cpu_min_frequency_ghz"  // Minimum CPU frequency in GHz
-	MetricCPUMaxFrequencyGHz  = "node_cpu_max_frequency_ghz"  // Maximum CPU frequency in GHz
+	// CPU metrics from standard node-exporter
+	MetricCPUFrequencyHertz    = "node_cpu_scaling_frequency_hertz" // Current dynamic CPU frequency in Hz
+	MetricCPUFrequencyMinHertz = "node_cpu_frequency_min_hertz"     // Minimum CPU frequency in Hz (static limit)
+	MetricCPUFrequencyMaxHertz = "node_cpu_frequency_max_hertz"     // Maximum CPU frequency in Hz (static limit)
 
 	// GPU metrics
 	MetricGPUCount             = "compute_gardener_gpu_count"                      // Number of GPUs on a node
@@ -140,4 +139,13 @@ const (
 	MetricGPUMaxPower          = "compute_gardener_gpu_max_power_watts"            // Maximum GPU power limit in watts
 	MetricGPUUtilization       = "compute_gardener_gpu_utilization_percent"        // GPU utilization percentage
 	MetricGPUMemoryUtilization = "compute_gardener_gpu_memory_utilization_percent" // GPU memory utilization percentage
+
+	// Temperature metrics from standard node-exporter
+	MetricCPUTemperatureQuery = `node_hwmon_temp_celsius{chip=~"coretemp-.*", sensor=~"temp[0-9]+"}` // CPU core temperature query
+
+	// DCGM GPU metrics
+	DCGMMetricGPUPower       = "DCGM_FI_DEV_POWER_USAGE" // GPU power consumption in watts
+	DCGMMetricGPUUtilization = "DCGM_FI_DEV_GPU_UTIL"    // GPU utilization percentage
+	DCGMMetricGPUTempCore    = "DCGM_FI_DEV_GPU_TEMP"    // GPU core temperature in Celsius
+	DCGMMetricGPUTempMemory  = "DCGM_FI_DEV_MEM_TEMP"    // GPU memory temperature in Celsius
 )
