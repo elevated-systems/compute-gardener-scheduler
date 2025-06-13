@@ -162,7 +162,7 @@ JOB_POD=$(kubectl get pods -l job-name=carbon-aware-job -o jsonpath='{.items[0].
 kubectl annotate pod $JOB_POD compute-gardener-scheduler.kubernetes.io/skip=true
 ```
 
-With this annotation applied, the scheduler will process the pod on its next scheduling cycle (typically within 1-2 minutes), bypassing any carbon intensity thresholds.
+With this annotation applied, the scheduler will process the pod on its next scheduling cycle (typically within 1 minute), bypassing any carbon intensity thresholds.
 
 **Important:** Even at this point, with just these three steps completed, your Compute Gardener Scheduler is now able to reduce your carbon footprint by making intelligent scheduling decisions. Every Compute Gardener scheduled workload that gets delayed during a high-carbon period and runs during a lower-carbon period represents real carbon emissions avoided - whether those savings are being tracked or not. The following steps are all optional and can be explored based on your specific interests or needs.
 

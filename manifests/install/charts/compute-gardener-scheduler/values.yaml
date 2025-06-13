@@ -11,7 +11,7 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.1-9ce13ce
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.2-ea898cc
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
