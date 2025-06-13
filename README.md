@@ -157,16 +157,16 @@ gpuProfiles:
 Key metrics available:
 
 **Carbon and Pricing**
-- `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity
-- `scheduler_compute_gardener_electricity_rate`: Current electricity rate
-- `scheduler_compute_gardener_carbon_delay_total`: Scheduling delays due to carbon
+- `compute_gardener_scheduler_carbon_intensity`: Current carbon intensity
+- `compute_gardener_scheduler_electricity_rate`: Current electricity rate
+- `compute_gardener_scheduler_carbon_delay_total`: Scheduling delays due to carbon
 
 **Energy Budget**
-- `scheduler_compute_gardener_energy_budget_usage_percent`: Budget usage percentage
-- `scheduler_compute_gardener_job_energy_usage_kwh`: Energy usage for completed jobs
+- `compute_gardener_scheduler_energy_budget_usage_percent`: Budget usage percentage
+- `compute_gardener_scheduler_job_energy_usage_kwh`: Energy usage for completed jobs
 
 **Hardware**
-- `scheduler_compute_gardener_node_power_estimate_watts`: Power consumption
+- `compute_gardener_scheduler_node_power_estimate_watts`: Power consumption
 
 
 ### Namespace-Level Energy Policies

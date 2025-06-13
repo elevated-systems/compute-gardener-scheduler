@@ -107,7 +107,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_carbon_intensity{region=~\"$region\"}",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\"}",
           "legendFormat": "{{region}}",
           "range": true,
           "refId": "A"
@@ -233,7 +233,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_electricity_rate",
+          "expr": "compute_gardener_scheduler_electricity_rate",
           "hide": false,
           "instant": true,
           "legendFormat": "Current Rate",
@@ -354,7 +354,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace, exported_pod) (scheduler_compute_gardener_estimated_savings{type=\"carbon\", unit=\"grams_co2\"} / 1000)",
+          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"carbon\", unit=\"grams_co2\"} / 1000)",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Carbon savings (kg CO2)",
           "range": true,
           "refId": "A"
@@ -365,7 +365,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace, exported_pod) (scheduler_compute_gardener_estimated_savings{type=\"cost\", unit=\"dollars\"})",
+          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"cost\", unit=\"dollars\"})",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Cost savings ($)",
           "range": true,
           "refId": "C"
@@ -498,7 +498,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_carbon_intensity{region=~\"$region\"}",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\"}",
           "legendFormat": "Carbon Intensity (gCO2/kWh) - {{region}}",
           "range": true,
           "refId": "A"
@@ -635,7 +635,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_pod) (scheduler_compute_gardener_carbon_delay_total)",
+          "expr": "sum by(exported_pod) (compute_gardener_scheduler_carbon_delay_total)",
           "legendFormat": "Carbon-based delays",
           "range": true,
           "refId": "A"
@@ -646,7 +646,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_pod) (scheduler_compute_gardener_price_delay_total)",
+          "expr": "sum by(exported_pod) (compute_gardener_scheduler_price_delay_total)",
           "legendFormat": "Price-based delays",
           "range": true,
           "refId": "B"
@@ -740,7 +740,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_metrics_cache_size",
+          "expr": "compute_gardener_scheduler_metrics_cache_size",
           "legendFormat": "Pods in metrics cache",
           "range": true,
           "refId": "A"
@@ -751,7 +751,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(scheduler_compute_gardener_metrics_samples_stored)",
+          "expr": "sum(compute_gardener_scheduler_metrics_samples_stored)",
           "legendFormat": "Total samples stored",
           "range": true,
           "refId": "B"
@@ -845,7 +845,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.75, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.75, rate(compute_gardener_scheduler_pod_scheduling_duration_seconds_bucket[5m]))",
           "legendFormat": "p75 {{result}}",
           "range": true,
           "refId": "A"
@@ -856,7 +856,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(compute_gardener_scheduler_pod_scheduling_duration_seconds_bucket[5m]))",
           "legendFormat": "p95 {{result}}",
           "range": true,
           "refId": "B"
@@ -867,7 +867,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, rate(scheduler_compute_gardener_pod_scheduling_duration_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(compute_gardener_scheduler_pod_scheduling_duration_seconds_bucket[5m]))",
           "legendFormat": "p99 {{result}}",
           "range": true,
           "refId": "C"
@@ -1051,7 +1051,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Carbon delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_carbon_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 5",
+          "expr": "# Carbon delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(compute_gardener_scheduler_carbon_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 5",
           "hide": false,
           "legendFormat": "{{exported_pod}} - Carbon Delay",
           "range": true,
@@ -1063,7 +1063,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Price delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_price_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 6",
+          "expr": "# Price delay - only included for pending pods that are delayed\nsum by(exported_pod) (\n  increase(compute_gardener_scheduler_price_delay_total[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 6",
           "hide": false,
           "legendFormat": "{{exported_pod}} - Price Delay",
           "range": true,
@@ -1075,7 +1075,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "# Max delay exceeded - detect when scheduler gives up on delaying\nsum by(exported_pod) (\n  increase(scheduler_compute_gardener_scheduling_attempt_total{result=\"max_delay_exceeded\"}[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 7",
+          "expr": "# Max delay exceeded - detect when scheduler gives up on delaying\nsum by(exported_pod) (\n  increase(compute_gardener_scheduler_scheduling_attempt_total{result=\"max_delay_exceeded\"}[1m]) > 0\n  and\n  kube_pod_status_phase{phase=\"Pending\"} * on(exported_pod, exported_namespace) group_left(scheduler_name) (kube_pod_info{scheduler_name=\"compute-gardener-scheduler\"})\n) * 7",
           "hide": false,
           "legendFormat": "{{exported_pod}} - Max Delay Exceeded",
           "range": true,
@@ -1229,7 +1229,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_energy_usage_kwh > 0",
+          "expr": "compute_gardener_scheduler_job_energy_usage_kwh > 0",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
           "range": true,
           "refId": "A"
@@ -1240,7 +1240,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0",
+          "expr": "compute_gardener_scheduler_job_carbon_emissions_grams / 1000 > 0",
           "hide": false,
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
@@ -1386,7 +1386,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace) (scheduler_compute_gardener_job_energy_usage_kwh > 0)",
+          "expr": "sum by (exported_namespace) (compute_gardener_scheduler_job_energy_usage_kwh > 0)",
           "legendFormat": "{{exported_namespace}} - energy_usage",
           "range": true,
           "refId": "A"
@@ -1397,7 +1397,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace) (scheduler_compute_gardener_job_carbon_emissions_grams / 1000 > 0)",
+          "expr": "sum by (exported_namespace) (compute_gardener_scheduler_job_carbon_emissions_grams / 1000 > 0)",
           "hide": false,
           "legendFormat": "{{exported_namespace}} - carbon_emissions",
           "range": true,
@@ -1476,7 +1476,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_energy_budget_usage_percent",
+          "expr": "compute_gardener_scheduler_energy_budget_usage_percent",
           "legendFormat": "{{exported_namespace}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -1583,7 +1583,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_power_estimate_watts{node=~\"$node\", phase=\"current\"} > 0)",
+          "expr": "sum by (node, exported_pod) (compute_gardener_scheduler_node_power_estimate_watts{node=~\"$node\", phase=\"current\"} > 0)",
           "legendFormat": "Total(CPU+GPU): {{node}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -1594,7 +1594,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_gpu_power_watts{node=~\"$node\", phase=\"current\"} > 0)",
+          "expr": "sum by (node, exported_pod) (compute_gardener_scheduler_node_gpu_power_watts{node=~\"$node\", phase=\"current\"} > 0)",
           "legendFormat": "GPU Power: {{node}}/{{exported_pod}}",
           "range": true,
           "refId": "B"
@@ -1688,7 +1688,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_cpu_usage_cores{node=~\"$node\", phase=\"current\"} > 0)",
+          "expr": "sum by (node, exported_pod) (compute_gardener_scheduler_node_cpu_usage_cores{node=~\"$node\", phase=\"current\"} > 0)",
           "legendFormat": "{{node}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -1782,7 +1782,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_power_estimate_watts{node=~\"$node\", phase=\"current\"} > 0)",
+          "expr": "sum by (node, exported_pod) (compute_gardener_scheduler_node_power_estimate_watts{node=~\"$node\", phase=\"current\"} > 0)",
           "legendFormat": "{{node}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -1853,7 +1853,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_node_efficiency{node=~\"$node\"}",
+          "expr": "compute_gardener_scheduler_node_efficiency{node=~\"$node\"}",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -1947,7 +1947,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (node, exported_pod) (scheduler_compute_gardener_node_gpu_power_watts{node=~\"$node\", phase=\"current\"} > 0)",
+          "expr": "sum by (node, exported_pod) (compute_gardener_scheduler_node_gpu_power_watts{node=~\"$node\", phase=\"current\"} > 0)",
           "legendFormat": "{{node}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -2057,7 +2057,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_namespace) (increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[$__range]))",
+          "expr": "sum by(exported_namespace) (increase(compute_gardener_scheduler_job_energy_usage_kwh_sum[$__range]))",
           "hide": false,
           "legendFormat": "{{exported_namespace}} - Energy (kWh)",
           "range": true,
@@ -2069,7 +2069,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(scheduler_compute_gardener_job_energy_usage_kwh_sum[$__range])) by(exported_namespace) and on() label_replace(vector($namespace_energy_budget_kwh), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
+          "expr": "sum(increase(compute_gardener_scheduler_job_energy_usage_kwh_sum[$__range])) by(exported_namespace) and on() label_replace(vector($namespace_energy_budget_kwh), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
           "hide": true,
           "legendFormat": "Budget Threshold ({{exported_namespace}})",
           "range": true,
@@ -2167,7 +2167,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by(exported_namespace) (increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[$__range])) / 1000",
+          "expr": "sum by(exported_namespace) (increase(compute_gardener_scheduler_job_carbon_emissions_grams_sum[$__range])) / 1000",
           "legendFormat": "{{exported_namespace}} - Carbon (kg CO2)",
           "range": true,
           "refId": "A"
@@ -2178,7 +2178,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(scheduler_compute_gardener_job_carbon_emissions_grams_sum[$__range]) / 1000) by(exported_namespace) and on() label_replace(vector($namespace_carbon_budget_kgco2), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
+          "expr": "sum(increase(compute_gardener_scheduler_job_carbon_emissions_grams_sum[$__range]) / 1000) by(exported_namespace) and on() label_replace(vector($namespace_carbon_budget_kgco2), \"exported_namespace\", \"$budget_namespace\", \"\", \".*\")",
           "hide": true,
           "legendFormat": "Budget Threshold ({{exported_namespace}})",
           "range": true,
@@ -2285,7 +2285,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_scheduling_attempt_total",
+          "expr": "compute_gardener_scheduler_scheduling_attempt_total",
           "legendFormat": "{{result}}",
           "range": true,
           "refId": "A"
@@ -2378,7 +2378,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_power_filtered_nodes_total",
+          "expr": "compute_gardener_scheduler_power_filtered_nodes_total",
           "legendFormat": "{{reason}}",
           "range": true,
           "refId": "A"
@@ -2496,7 +2496,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_scheduling_efficiency",
+          "expr": "compute_gardener_scheduler_scheduling_efficiency",
           "legendFormat": "{{metric}}/{{exported_pod}}",
           "range": true,
           "refId": "A"
@@ -2565,7 +2565,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "scheduler_compute_gardener_energy_budget_exceeded_total",
+          "expr": "compute_gardener_scheduler_energy_budget_exceeded_total",
           "legendFormat": "{{exported_namespace}}/{{owner_kind}} ({{action}})",
           "range": true,
           "refId": "A"
@@ -2596,7 +2596,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(scheduler_compute_gardener_job_energy_usage_kwh_sum, exported_namespace)",
+        "definition": "label_values(compute_gardener_scheduler_job_energy_usage_kwh_sum, exported_namespace)",
         "description": "Filter namespace for budget monitoring",
         "hide": 0,
         "includeAll": false,
@@ -2605,7 +2605,7 @@
         "name": "budget_namespace",
         "options": [],
         "query": {
-          "query": "label_values(scheduler_compute_gardener_job_energy_usage_kwh_sum, exported_namespace)",
+          "query": "label_values(compute_gardener_scheduler_job_energy_usage_kwh_sum, exported_namespace)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -2670,14 +2670,14 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(scheduler_compute_gardener_carbon_intensity, region)",
+        "definition": "label_values(compute_gardener_scheduler_carbon_intensity, region)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "region",
         "options": [],
         "query": {
-          "query": "label_values(scheduler_compute_gardener_carbon_intensity, region)",
+          "query": "label_values(compute_gardener_scheduler_carbon_intensity, region)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -2700,14 +2700,14 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(scheduler_compute_gardener_node_cpu_usage_cores, node)",
+        "definition": "label_values(compute_gardener_scheduler_node_cpu_usage_cores, node)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "node",
         "options": [],
         "query": {
-          "query": "label_values(scheduler_compute_gardener_node_cpu_usage_cores, node)",
+          "query": "label_values(compute_gardener_scheduler_node_cpu_usage_cores, node)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

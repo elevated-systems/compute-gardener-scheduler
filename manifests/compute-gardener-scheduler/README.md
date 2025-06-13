@@ -257,18 +257,18 @@ The deployment includes both a Service and ServiceMonitor for Prometheus integra
 
 Available metrics include:
 
-- `scheduler_compute_gardener_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
-- `scheduler_compute_gardener_electricity_rate`: Current electricity rate ($/kWh) for a given location
-- `scheduler_compute_gardener_scheduling_attempt_total`: Number of attempts to schedule pods by result
-- `scheduler_compute_gardener_pod_scheduling_duration_seconds`: Latency for scheduling attempts
-- `scheduler_compute_gardener_estimated_savings`: Estimated savings from scheduling (carbon, cost)
-- `scheduler_compute_gardener_price_delay_total`: Number of scheduling delays due to price thresholds
-- `scheduler_compute_gardener_carbon_delay_total`: Number of scheduling delays due to carbon intensity thresholds
-- `scheduler_compute_gardener_node_cpu_usage_cores`: CPU usage on nodes at baseline and completion
-- `scheduler_compute_gardener_node_power_estimate_watts`: Estimated node power consumption
-- `scheduler_compute_gardener_job_energy_usage_kwh`: Estimated energy usage for completed jobs
-- `scheduler_compute_gardener_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
-- `scheduler_compute_gardener_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
+- `compute_gardener_scheduler_carbon_intensity`: Current carbon intensity (gCO2eq/kWh) for a given region
+- `compute_gardener_scheduler_electricity_rate`: Current electricity rate ($/kWh) for a given location
+- `compute_gardener_scheduler_scheduling_attempt_total`: Number of attempts to schedule pods by result
+- `compute_gardener_scheduler_pod_scheduling_duration_seconds`: Latency for scheduling attempts
+- `compute_gardener_scheduler_estimated_savings`: Estimated savings from scheduling (carbon, cost)
+- `compute_gardener_scheduler_price_delay_total`: Number of scheduling delays due to price thresholds
+- `compute_gardener_scheduler_carbon_delay_total`: Number of scheduling delays due to carbon intensity thresholds
+- `compute_gardener_scheduler_node_cpu_usage_cores`: CPU usage on nodes at baseline and completion
+- `compute_gardener_scheduler_node_power_estimate_watts`: Estimated node power consumption
+- `compute_gardener_scheduler_job_energy_usage_kwh`: Estimated energy usage for completed jobs
+- `compute_gardener_scheduler_job_carbon_emissions_grams`: Estimated carbon emissions for completed jobs
+- `compute_gardener_scheduler_scheduling_efficiency`: Scheduling efficiency metrics (carbon/cost improvements)
 
 ### Metrics Collection Components
 
