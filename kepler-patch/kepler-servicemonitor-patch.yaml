@@ -1,0 +1,27 @@
+# Manual patch to apply after building Kepler manifests
+# Apply this with: kubectl patch servicemonitor kepler-exporter -n monitoring --patch-file=kepler-servicemonitor-patch.yaml
+
+spec:
+  endpoints:
+    - relabelings:
+        - action: replace
+          regex: (.*)
+          replacement: $1
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: instance
+
+      # Add metric relabeling rules to filter metrics for compute-gardener-scheduler
+      metricRelabelings:
+        # ========================================
+        # NAMESPACE FILTERING - Approximate workload filtering
+        # ========================================
+        # NOTE: Kepler doesn't expose scheduler or annotation metadata in metrics
+        # This filters by namespace as an approximation. Customize as needed.
+        #
+        # Keep metrics from the dedicated compute-gardener workloads namespace
+        # Create namespace: kubectl create namespace compute-gardener-workloads
+        # Deploy workloads there with schedulerName: compute-gardener-scheduler
+        - sourceLabels: [container_namespace]
+          regex: "compute-gardener-workloads"
+          action: keep

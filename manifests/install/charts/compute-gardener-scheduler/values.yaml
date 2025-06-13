@@ -152,25 +152,6 @@ hardwareProfiles:
   enabled: true
   mountPath: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles"
 
-# Node exporter configuration for CPU hardware metrics
-nodeExporter:
-  # Enable the hardware metrics exporter DaemonSet for accurate CPU model detection and power measurements
-  # Note: For GPU metrics, see metrics.gpuMetrics section
-  enabled: true
-  image: docker.io/dmasselink/compute-gardener-node-exporter:v0.2.1-9ce13ce
-  imagePullPolicy: IfNotPresent
-  resources:
-    requests:
-      cpu: 10m
-      memory: 20Mi
-    limits:
-      cpu: 100m
-      memory: 100Mi
-  # Port for metrics endpoint
-  metricsPort: 9100
-  # Log verbosity level (0-5)
-  logLevel: 1
-
 # Additional plugin configuration
 plugins:
   # Can be expanded with further plugin-specific configuration

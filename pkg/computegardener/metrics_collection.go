@@ -13,11 +13,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
-	cgtypes "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 )
 
 // metricsCollectionWorker periodically collects pod metrics and updates the store
@@ -272,7 +271,7 @@ func (cs *ComputeGardenerScheduler) checkPodsForCompletion(ctx context.Context, 
 	trackedPods := make(map[string]bool)
 
 	// Find active pods in our metrics cache
-	cs.metricsStore.ForEach(func(podUID string, history *cgtypes.PodMetricsHistory) {
+	cs.metricsStore.ForEach(func(podUID string, history *metrics.PodMetricsHistory) {
 		// Skip pods already marked as completed - we only care about active ones
 		if !history.Completed {
 			trackedPods[podUID] = true
@@ -608,16 +607,15 @@ func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float6
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}
 
-	// Query for CPU frequency using the node exporter metric
-	// The metric name is defined in common.MetricCPUFrequencyGHz
-	// This assumes that our node exporter is exporting this metric
-	freq, err := promClient.QueryNodeMetric(context.Background(), common.MetricCPUFrequencyGHz, nodeName)
+	// Query for CPU frequency using the standard node-exporter metric
+	freqHz, err := promClient.QueryNodeMetric(context.Background(), common.MetricCPUFrequencyHertz, nodeName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query CPU frequency: %v", err)
 	}
 
-	// Return the frequency in GHz
-	return freq, nil
+	// Convert Hz to GHz by dividing by 1e9 and return it
+	freqGHz := freqHz / 1e9
+	return freqGHz, nil
 }
 
 // getNodeCPUModelInfo returns CPU model, base frequency, and power scaling mode

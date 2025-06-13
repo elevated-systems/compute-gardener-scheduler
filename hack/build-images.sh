@@ -21,7 +21,6 @@ set -o pipefail
 SCRIPT_ROOT=$(realpath $(dirname "${BASH_SOURCE[@]}")/..)
 
 SCHEDULER_DIR="${SCRIPT_ROOT}"/build/scheduler
-NODE_EXPORTER_DIR="${SCRIPT_ROOT}"/build/node-exporter
 
 # -t is the Docker engine default
 TAG_FLAG="-t"
@@ -59,18 +58,6 @@ ${IMAGE_BUILD_CMD} build \
   --build-arg CGO_ENABLED=0 \
   ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/${IMAGE} .
 
-# Build node exporter image if requested
-if [[ "${BUILD_NODE_EXPORTER:-true}" == "true" ]]; then
-  echo "Building hardware node exporter image..."
-  ${IMAGE_BUILD_CMD} build \
-    --platform=${PLATFORMS} \
-    -f ${NODE_EXPORTER_DIR}/Dockerfile \
-    --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
-    --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
-    --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \
-    --build-arg CGO_ENABLED=0 \
-    ${EXTRA_ARGS:-}  ${TAG_FLAG:-} ${REGISTRY}/compute-gardener-node-exporter:${RELEASE_VERSION} .
-fi
 
 if [[ ! -z $BLD_INSTANCE ]]; then
   ${DOCKER_BUILDX_CMD:-${BUILDER} buildx} rm $BLD_INSTANCE

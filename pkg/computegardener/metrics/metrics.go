@@ -7,7 +7,7 @@ import (
 
 const (
 	// Subsystem name used for scheduler metrics
-	schedulerSubsystem = "scheduler_compute_gardener"
+	schedulerSubsystem = "compute_gardener_scheduler"
 )
 
 var (

@@ -24,7 +24,6 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 	testingmocks "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/testing"
-	cgtypes "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/types"
 )
 
 // MockMetricsStore is a mock implementation of PodMetricsStorage for testing
@@ -32,7 +31,7 @@ type MockMetricsStore struct {
 	mock.Mock
 }
 
-func (m *MockMetricsStore) AddRecord(podUID, podName, namespace, nodeName string, record cgtypes.PodMetricsRecord) {
+func (m *MockMetricsStore) AddRecord(podUID, podName, namespace, nodeName string, record metrics.PodMetricsRecord) {
 	m.Called(podUID, podName, namespace, nodeName, record)
 }
 
@@ -40,12 +39,12 @@ func (m *MockMetricsStore) MarkCompleted(podUID string) {
 	m.Called(podUID)
 }
 
-func (m *MockMetricsStore) GetHistory(podUID string) (*cgtypes.PodMetricsHistory, bool) {
+func (m *MockMetricsStore) GetHistory(podUID string) (*metrics.PodMetricsHistory, bool) {
 	args := m.Called(podUID)
 	if args.Get(0) == nil {
 		return nil, args.Bool(1)
 	}
-	return args.Get(0).(*cgtypes.PodMetricsHistory), args.Bool(1)
+	return args.Get(0).(*metrics.PodMetricsHistory), args.Bool(1)
 }
 
 func (m *MockMetricsStore) Cleanup() {
@@ -61,7 +60,7 @@ func (m *MockMetricsStore) Size() int {
 	return args.Int(0)
 }
 
-func (m *MockMetricsStore) ForEach(fn func(string, *cgtypes.PodMetricsHistory)) {
+func (m *MockMetricsStore) ForEach(fn func(string, *metrics.PodMetricsHistory)) {
 	m.Called(fn)
 }
 
@@ -149,7 +148,7 @@ type MetricsTestCase struct {
 	PodName             string
 	Namespace           string
 	NodeName            string
-	MetricsHistory      *cgtypes.PodMetricsHistory
+	MetricsHistory      *metrics.PodMetricsHistory
 	PodAnnotations      map[string]string
 	OwnerReferences     []metav1.OwnerReference
 	ExpectedEnergyKWh   float64
@@ -169,8 +168,8 @@ var basicMetricsTestCases = []MetricsTestCase{
 		PodName:   "test-pod-basic",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.1},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.1},
 				{Timestamp: time.Now(), PowerEstimate: 50, CarbonIntensity: 150, ElectricityRate: 0.12},
@@ -195,7 +194,7 @@ var basicMetricsTestCases = []MetricsTestCase{
 		PodName:   "test-pod-completed",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
+		MetricsHistory: &metrics.PodMetricsHistory{
 			Completed: true,
 		},
 		ExpectedEnergyKWh:   0,
@@ -223,8 +222,8 @@ var savingsTestCases = []MetricsTestCase{
 		PodName:   "test-pod-savings-positive",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.18},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 180, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.12},
@@ -258,8 +257,8 @@ var savingsTestCases = []MetricsTestCase{
 		PodName:   "test-pod-savings-negative",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.12},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 180, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.18},
@@ -297,8 +296,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-within",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -324,8 +323,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-exceeded-log",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 200, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 200, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 200, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -356,8 +355,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-exceeded-annotate",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 220, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 220, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 220, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -388,8 +387,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-exceeded-label",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 240, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 240, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 240, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -420,8 +419,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-exceeded-notify",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 260, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 260, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 260, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -452,8 +451,8 @@ var energyBudgetTestCases = []MetricsTestCase{
 		PodName:   "test-pod-budget-exceeded-owner",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 280, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 280, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 280, CarbonIntensity: 200, ElectricityRate: 0.15},
@@ -493,8 +492,8 @@ var edgeCaseTestCases = []MetricsTestCase{
 		PodName:   "test-pod-zero-energy",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 0, CarbonIntensity: 0, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 0, CarbonIntensity: 0, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 0, CarbonIntensity: 0, ElectricityRate: 0.15},
@@ -511,8 +510,8 @@ var edgeCaseTestCases = []MetricsTestCase{
 		PodName:   "test-pod-missing-annotations",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.12},
@@ -530,8 +529,8 @@ var edgeCaseTestCases = []MetricsTestCase{
 		PodName:   "test-pod-missing-final",
 		Namespace: "default",
 		NodeName:  "test-node",
-		MetricsHistory: &cgtypes.PodMetricsHistory{
-			Records: []cgtypes.PodMetricsRecord{
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
 				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.15},
 				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 0, ElectricityRate: 0}, // Missing final values
@@ -844,8 +843,8 @@ func TestProcessPodCompletionMetrics_Basic(t *testing.T) {
 	nodeName := "test-node"
 
 	// Sample metrics history
-	history := &cgtypes.PodMetricsHistory{
-		Records: []cgtypes.PodMetricsRecord{
+	history := &metrics.PodMetricsHistory{
+		Records: []metrics.PodMetricsRecord{
 			{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.1},
 			{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.1},
 			{Timestamp: time.Now(), PowerEstimate: 50, CarbonIntensity: 150, ElectricityRate: 0.12},
@@ -915,7 +914,7 @@ func TestProcessPodCompletionMetrics_AlreadyCompleted(t *testing.T) {
 	podUID := "test-pod-uid-completed"
 
 	// History indicates already completed
-	history := &cgtypes.PodMetricsHistory{Completed: true}
+	history := &metrics.PodMetricsHistory{Completed: true}
 	mockStore.On("GetHistory", podUID).Return(history, true)
 
 	scheduler := setupTestSchedulerForCompletion(mockStore, nil, nil, nil)
