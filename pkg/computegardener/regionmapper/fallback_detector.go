@@ -1,3 +1,11 @@
+// Package regionmapper provides fallback cloud provider detection logic.
+//
+// DEPRECATED: This file contains legacy cloud provider detection logic that is being
+// replaced by CloudInfo integration. These functions are maintained for backward
+// compatibility and fallback scenarios only.
+//
+// New code should use the CloudInfo-based detection methods in cloudinfo_integration.go
+// via RegionMapper struct methods like DetectCloudInfoFromCluster() and DetectCloudInfoFromNode().
 package regionmapper
 
 import (
@@ -34,6 +42,12 @@ var cloudProviders = []CloudProviderInfo{
 }
 
 // DetectCloudProviderAndRegion attempts to determine the cloud provider and region from node metadata
+//
+// DEPRECATED: This function is deprecated in favor of CloudInfo-based detection.
+// Use RegionMapper.detectProviderAndRegionWithFallback() instead, which tries CloudInfo first
+// and falls back to this function only when CloudInfo fails.
+//
+// This function is maintained for backward compatibility and fallback scenarios.
 func DetectCloudProviderAndRegion(node *v1.Node) (provider string, region string, ok bool) {
 	if node == nil {
 		return "", "", false
@@ -80,6 +94,11 @@ func DetectCloudProviderAndRegion(node *v1.Node) (provider string, region string
 }
 
 // DetectCloudProvider determines the cloud provider from node labels and provider ID
+//
+// DEPRECATED: This function is deprecated in favor of CloudInfo-based detection.
+// Use cloudinfo.ParseProviderID() for provider detection from ProviderID.
+//
+// This function is maintained for backward compatibility and fallback scenarios.
 func DetectCloudProvider(node *v1.Node) string {
 	if node == nil {
 		return ""
@@ -115,6 +134,8 @@ func DetectCloudProvider(node *v1.Node) string {
 }
 
 // detectAWSRegion attempts to determine the AWS region from node metadata
+//
+// DEPRECATED: Use CloudInfo-based detection instead.
 func detectAWSRegion(node *v1.Node) (string, bool) {
 	// Try to extract from providerID
 	// Format: aws://region/instance-id
@@ -144,6 +165,8 @@ func detectAWSRegion(node *v1.Node) (string, bool) {
 }
 
 // detectGCPRegion attempts to determine the GCP region from node metadata
+//
+// DEPRECATED: Use CloudInfo-based detection instead.
 func detectGCPRegion(node *v1.Node) (string, bool) {
 	// Try to extract from providerID
 	// Format: gce://project/zone/instance
@@ -175,6 +198,8 @@ func detectGCPRegion(node *v1.Node) (string, bool) {
 }
 
 // detectAzureRegion attempts to determine the Azure region from node metadata
+//
+// DEPRECATED: Use CloudInfo-based detection instead.
 func detectAzureRegion(node *v1.Node) (string, bool) {
 	// Try to extract from providerID
 	// Format: azure:///subscriptions/sub-id/resourceGroups/MC_resource-group_cluster-name_location/providers/Microsoft.Compute/virtualMachines/node-name

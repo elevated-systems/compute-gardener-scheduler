@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/regionmapper/regions"
@@ -12,6 +13,9 @@ import (
 // RegionMapper provides mapping functionality for cloud regions
 type RegionMapper struct {
 	config *Config
+
+	// Kubernetes client for CloudInfo detection
+	client kubernetes.Interface
 
 	// Maps cloud provider region IDs to region info
 	awsRegionMap   map[string]RegionInfo
@@ -23,13 +27,14 @@ type RegionMapper struct {
 }
 
 // NewRegionMapper creates a new mapper with default mappings
-func NewRegionMapper() *RegionMapper {
+func NewRegionMapper(client kubernetes.Interface) *RegionMapper {
 	mapper := &RegionMapper{
 		config: &Config{
 			DefaultElectricityMapsZone: "US-CAL-CISO",
 			DefaultTimeZone:            "America/Los_Angeles",
 			DefaultPUE:                 1.2,
 		},
+		client:                 client,
 		electricityMapsZoneMap: make(map[string]map[string]string),
 	}
 
@@ -40,8 +45,8 @@ func NewRegionMapper() *RegionMapper {
 }
 
 // NewRegionMapperWithConfig creates a new mapper with the provided configuration
-func NewRegionMapperWithConfig(config *Config) *RegionMapper {
-	mapper := NewRegionMapper()
+func NewRegionMapperWithConfig(client kubernetes.Interface, config *Config) *RegionMapper {
+	mapper := NewRegionMapper(client)
 
 	// Update with provided configuration
 	if config != nil {
@@ -203,7 +208,7 @@ func (m *RegionMapper) GetRegionInfo(provider, region string) (*RegionInfo, bool
 
 // GetRegionInfoForNode retrieves region information for a specific node
 func (m *RegionMapper) GetRegionInfoForNode(node *v1.Node) (*RegionInfo, bool) {
-	provider, region, ok := DetectCloudProviderAndRegion(node)
+	provider, region, ok := m.detectProviderAndRegionWithFallback(node)
 	if !ok {
 		return nil, false
 	}
@@ -239,7 +244,7 @@ func (m *RegionMapper) GetElectricityMapsZone(provider, region string) (string, 
 
 // GetElectricityMapsZoneForNode returns the Electricity Maps zone for a Kubernetes node
 func (m *RegionMapper) GetElectricityMapsZoneForNode(node *v1.Node) (string, bool) {
-	provider, region, ok := DetectCloudProviderAndRegion(node)
+	provider, region, ok := m.detectProviderAndRegionWithFallback(node)
 	if !ok {
 		return "", false
 	}
@@ -282,7 +287,7 @@ func (m *RegionMapper) GetTimeZone(provider, region string) (string, bool) {
 
 // GetTimeZoneForNode returns the time zone for a Kubernetes node
 func (m *RegionMapper) GetTimeZoneForNode(node *v1.Node) (string, bool) {
-	provider, region, ok := DetectCloudProviderAndRegion(node)
+	provider, region, ok := m.detectProviderAndRegionWithFallback(node)
 	if !ok {
 		return "", false
 	}
@@ -301,7 +306,7 @@ func (m *RegionMapper) GetISO(provider, region string) (string, bool) {
 
 // GetISOForNode returns the electricity ISO/market for a Kubernetes node
 func (m *RegionMapper) GetISOForNode(node *v1.Node) (string, bool) {
-	provider, region, ok := DetectCloudProviderAndRegion(node)
+	provider, region, ok := m.detectProviderAndRegionWithFallback(node)
 	if !ok {
 		return "", false
 	}
@@ -325,7 +330,7 @@ func (m *RegionMapper) GetPUE(provider, region string) (float64, bool) {
 
 // GetPUEForNode returns the default PUE value for a Kubernetes node
 func (m *RegionMapper) GetPUEForNode(node *v1.Node) (float64, bool) {
-	provider, region, ok := DetectCloudProviderAndRegion(node)
+	provider, region, ok := m.detectProviderAndRegionWithFallback(node)
 	if !ok {
 		return 0, false
 	}
