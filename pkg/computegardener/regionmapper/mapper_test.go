@@ -5,10 +5,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestNewRegionMapper(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 	if mapper == nil {
 		t.Fatal("NewRegionMapper returned nil")
 	}
@@ -42,7 +44,8 @@ func TestNewRegionMapper(t *testing.T) {
 
 func TestNewRegionMapperWithConfig(t *testing.T) {
 	// Test with nil config
-	mapper := NewRegionMapperWithConfig(nil)
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapperWithConfig(client, nil)
 	if mapper == nil {
 		t.Fatal("NewRegionMapperWithConfig(nil) returned nil")
 	}
@@ -64,7 +67,7 @@ func TestNewRegionMapperWithConfig(t *testing.T) {
 		},
 	}
 
-	mapper = NewRegionMapperWithConfig(customConfig)
+	mapper = NewRegionMapperWithConfig(client, customConfig)
 	if mapper == nil {
 		t.Fatal("NewRegionMapperWithConfig(customConfig) returned nil")
 	}
@@ -106,7 +109,8 @@ func TestNewRegionMapperWithConfig(t *testing.T) {
 }
 
 func TestGetRegionInfo(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	testCases := []struct {
 		provider  string
@@ -145,7 +149,8 @@ func TestGetRegionInfo(t *testing.T) {
 }
 
 func TestGetRegionInfoForNode(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	testCases := []struct {
 		name     string
@@ -208,7 +213,8 @@ func TestGetRegionInfoForNode(t *testing.T) {
 }
 
 func TestGetElectricityMapsZone(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	// First get the actual zone values from the initialized mapper
 	usEast1Zone, _ := mapper.GetElectricityMapsZone("aws", "us-east-1")
@@ -245,7 +251,8 @@ func TestGetElectricityMapsZone(t *testing.T) {
 }
 
 func TestGetElectricityMapsZoneForNode(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	// Get the actual expected zone for us-east-1
 	usEast1Zone, _ := mapper.GetElectricityMapsZone("aws", "us-east-1")
@@ -302,7 +309,8 @@ func TestGetElectricityMapsZoneForNode(t *testing.T) {
 
 	// Test with default when region not found
 	defaultZone := "DEFAULT-ZONE"
-	defaultMapper := NewRegionMapperWithConfig(&Config{
+	defaultClient := fake.NewSimpleClientset()
+	defaultMapper := NewRegionMapperWithConfig(defaultClient, &Config{
 		DefaultElectricityMapsZone: defaultZone,
 	})
 
@@ -375,7 +383,8 @@ func TestGetTimeZone(t *testing.T) {
 
 	// Test with default when region not found
 	defaultTZ := "UTC"
-	defaultMapper := NewRegionMapperWithConfig(&Config{
+	defaultClient := fake.NewSimpleClientset()
+	defaultMapper := NewRegionMapperWithConfig(defaultClient, &Config{
 		DefaultTimeZone: defaultTZ,
 	})
 
@@ -389,7 +398,8 @@ func TestGetTimeZone(t *testing.T) {
 }
 
 func TestGetTimeZoneForNode(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	testCases := []struct {
 		name     string
@@ -430,7 +440,8 @@ func TestGetTimeZoneForNode(t *testing.T) {
 }
 
 func TestGetISO(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	// Get actual ISO values from the mapper
 	usEast1ISO, _ := mapper.GetISO("aws", "us-east-1")
@@ -460,7 +471,8 @@ func TestGetISO(t *testing.T) {
 }
 
 func TestGetISOForNode(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	testCases := []struct {
 		name     string
@@ -545,7 +557,8 @@ func TestGetPUE(t *testing.T) {
 
 	// Test with default when region not found
 	defaultPUE := 1.5
-	defaultMapper := NewRegionMapperWithConfig(&Config{
+	defaultClient := fake.NewSimpleClientset()
+	defaultMapper := NewRegionMapperWithConfig(defaultClient, &Config{
 		DefaultPUE: defaultPUE,
 	})
 
@@ -559,7 +572,8 @@ func TestGetPUE(t *testing.T) {
 }
 
 func TestGetPUEForNode(t *testing.T) {
-	mapper := NewRegionMapper()
+	client := fake.NewSimpleClientset()
+	mapper := NewRegionMapper(client)
 
 	testCases := []struct {
 		name     string
