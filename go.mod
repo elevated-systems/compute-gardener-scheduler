@@ -7,6 +7,7 @@ go 1.24.0
 
 require (
 	github.com/carbon-aware/cloudinfo v0.0.0-20250605223946-04933c6a3dc4
+	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/common v0.62.0
 	github.com/stretchr/testify v1.10.0

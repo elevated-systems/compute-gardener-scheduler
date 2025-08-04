@@ -11,14 +11,14 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.2-ea898cc
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.3-alpha-cc561bb
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
   # Maximum time to delay pod scheduling when waiting for better conditions (price or carbon)
   maxSchedulingDelay: "24h"
   # Log verbosity level (0-5)
-  logLevel: 1
+  logLevel: 3
   resources:
     requests:
       cpu: 50m
@@ -26,8 +26,8 @@ scheduler:
     limits:
       cpu: 200m
       memory: 256Mi
-  nodeSelector:
-    node-role.kubernetes.io/control-plane: "true"
+  # nodeSelector:
+  #   node-role.kubernetes.io/control-plane: "true"
   affinity: {}
   tolerations: []
   priorityClassName: ""
@@ -46,6 +46,21 @@ carbonAware:
   electricityMap:
     apiKey: "YOUR_ELECTRICITY_MAP_API_KEY" # Change this or use --set-string
     # Additional electricity map settings can be added here
+  
+  # Intelligent forecasting configuration for carbon-aware scheduling
+  forecast:
+    enabled: false # Set to true to enable intelligent forecasting
+    lookAheadHours: 24 # How many hours ahead to forecast (1-168)
+    weatherProvider: "openweathermap" # "openweathermap" or "solcast"
+    weatherAPIKey: "YOUR_WEATHER_API_KEY" # Required when forecasting is enabled
+    databasePath: "/var/lib/compute-gardener/forecast.db" # Path for historical data storage
+    confidenceThreshold: 0.7 # Minimum confidence level for forecast decisions (0.0-1.0)
+    maxDelayHours: 6 # Maximum delay in hours for optimal scheduling
+    updateInterval: "1h" # How often to update forecasts
+    regionLatitude: 37.7749 # Latitude for weather data (San Francisco example)
+    regionLongitude: -122.4194 # Longitude for weather data (San Francisco example)
+    trainingLookbackDays: 30 # Days of historical data to use for model training
+    minimumImprovement: 10.0 # Minimum carbon intensity improvement (gCO2eq/kWh) to justify delay
 
 # Price-aware scheduling configuration
 priceAware:
@@ -101,7 +116,7 @@ metrics:
     interval: "15s" # Match the node exporter's sampling interval
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
   # Set to true for GKE to use PodMonitoring instead of ServiceMonitor
-  gke: false
+  gke: true
 
   # Prometheus configuration for metrics collection
   prometheus:

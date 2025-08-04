@@ -151,6 +151,23 @@ type CarbonConfig struct {
 	Provider           string                   `yaml:"provider"` // e.g. "electricity-maps-api"
 	IntensityThreshold float64                  `yaml:"carbonIntensityThreshold"`
 	APIConfig          ElectricityMapsAPIConfig `yaml:"api"`
+	Forecast           ForecastConfig           `yaml:"forecast"`
+}
+
+// ForecastConfig holds configuration for intelligent carbon intensity forecasting
+type ForecastConfig struct {
+	Enabled              bool          `yaml:"enabled"`
+	LookAheadHours       int           `yaml:"lookAheadHours"`
+	WeatherProvider      string        `yaml:"weatherProvider"`      // "openweathermap" or "solcast"
+	WeatherAPIKey        string        `yaml:"weatherAPIKey"`
+	DatabasePath         string        `yaml:"databasePath"`
+	ConfidenceThreshold  float64       `yaml:"confidenceThreshold"`  // 0.0-1.0
+	MaxDelayHours        int           `yaml:"maxDelayHours"`
+	UpdateInterval       time.Duration `yaml:"updateInterval"`
+	RegionLatitude       float64       `yaml:"regionLatitude"`
+	RegionLongitude      float64       `yaml:"regionLongitude"`
+	TrainingLookbackDays int           `yaml:"trainingLookbackDays"`
+	MinimumImprovement   float64       `yaml:"minimumImprovement"` // gCO2eq/kWh improvement threshold
 }
 
 // PriceConfig holds configuration for price-aware scheduling
@@ -168,6 +185,13 @@ func (c *Config) Validate() error {
 		}
 		if c.Carbon.IntensityThreshold <= 0 {
 			return fmt.Errorf("base carbon intensity threshold must be positive")
+		}
+		
+		// Validate forecast settings if enabled
+		if c.Carbon.Forecast.Enabled {
+			if err := c.validateForecastConfig(); err != nil {
+				return fmt.Errorf("invalid forecast config: %v", err)
+			}
 		}
 	}
 
@@ -408,5 +432,60 @@ func (c *Config) validateHardwareProfiles() error {
 		}
 	}
 
+	return nil
+}
+
+// validateForecastConfig validates forecast configuration settings
+func (c *Config) validateForecastConfig() error {
+	fc := c.Carbon.Forecast
+	
+	// Validate look-ahead hours
+	if fc.LookAheadHours <= 0 || fc.LookAheadHours > 168 { // Max 1 week
+		return fmt.Errorf("lookAheadHours must be between 1 and 168 hours")
+	}
+	
+	// Validate weather provider
+	if fc.WeatherProvider != "" && fc.WeatherProvider != "openweathermap" && fc.WeatherProvider != "solcast" {
+		return fmt.Errorf("weatherProvider must be 'openweathermap' or 'solcast'")
+	}
+	
+	// Weather API key required if provider is specified
+	if fc.WeatherProvider != "" && fc.WeatherAPIKey == "" {
+		return fmt.Errorf("weatherAPIKey is required when weatherProvider is specified")
+	}
+	
+	// Validate confidence threshold
+	if fc.ConfidenceThreshold < 0.0 || fc.ConfidenceThreshold > 1.0 {
+		return fmt.Errorf("confidenceThreshold must be between 0.0 and 1.0")
+	}
+	
+	// Validate max delay hours
+	if fc.MaxDelayHours < 0 || fc.MaxDelayHours > fc.LookAheadHours {
+		return fmt.Errorf("maxDelayHours must be between 0 and lookAheadHours")
+	}
+	
+	// Validate update interval
+	if fc.UpdateInterval <= 0 {
+		return fmt.Errorf("updateInterval must be positive")
+	}
+	
+	// Validate coordinates if provided
+	if fc.RegionLatitude < -90 || fc.RegionLatitude > 90 {
+		return fmt.Errorf("regionLatitude must be between -90 and 90")
+	}
+	if fc.RegionLongitude < -180 || fc.RegionLongitude > 180 {
+		return fmt.Errorf("regionLongitude must be between -180 and 180")
+	}
+	
+	// Validate training lookback days
+	if fc.TrainingLookbackDays <= 0 || fc.TrainingLookbackDays > 365 {
+		return fmt.Errorf("trainingLookbackDays must be between 1 and 365 days")
+	}
+	
+	// Validate minimum improvement threshold
+	if fc.MinimumImprovement < 0 {
+		return fmt.Errorf("minimumImprovement cannot be negative")
+	}
+	
 	return nil
 }
