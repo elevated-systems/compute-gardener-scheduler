@@ -13,6 +13,7 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/forecast"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 )
 
@@ -24,8 +25,9 @@ type MockCarbonImplementation struct {
 	errorMode bool
 
 	// Advanced mode function overrides (when set, these take precedence)
-	GetCurrentIntensityFunc       func(ctx context.Context) (float64, error)
-	CheckIntensityConstraintsFunc func(ctx context.Context, threshold float64) *framework.Status
+	GetCurrentIntensityFunc              func(ctx context.Context) (float64, error)
+	CheckIntensityConstraintsFunc        func(ctx context.Context, threshold float64) *framework.Status
+	GetIntelligentSchedulingDecisionFunc func(ctx context.Context, threshold float64, maxDelay time.Duration) (*forecast.SchedulingDecision, error)
 }
 
 // NewMockCarbon creates a new mock carbon implementation with fixed intensity
@@ -69,6 +71,36 @@ func (m *MockCarbonImplementation) CheckIntensityConstraints(ctx context.Context
 	}
 
 	return framework.NewStatus(framework.Success, "")
+}
+
+func (m *MockCarbonImplementation) GetIntelligentSchedulingDecision(ctx context.Context, threshold float64, maxDelay time.Duration) (*forecast.SchedulingDecision, error) {
+	// Function override takes precedence
+	if m.GetIntelligentSchedulingDecisionFunc != nil {
+		return m.GetIntelligentSchedulingDecisionFunc(ctx, threshold, maxDelay)
+	}
+
+	// Default mock behavior: always return a simple decision based on current intensity
+	intensity, err := m.GetCurrentIntensity(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current intensity: %v", err)
+	}
+
+	decision := &forecast.SchedulingDecision{
+		ShouldSchedule:      intensity <= threshold,
+		RecommendedDelay:    0,
+		CurrentIntensity:    intensity,
+		PredictedIntensity:  intensity, // Use current as predicted for mock
+		ConfidenceLevel:     1.0,       // Perfect confidence for mock
+		ExpectedImprovement: 0.0,
+	}
+
+	if intensity > threshold {
+		decision.Reason = fmt.Sprintf("Mock: Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
+	} else {
+		decision.Reason = "Mock: Current carbon intensity is within acceptable limits"
+	}
+
+	return decision, nil
 }
 
 // MockPriceImplementation implements price.Implementation for testing
