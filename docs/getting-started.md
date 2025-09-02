@@ -9,8 +9,11 @@ Before we begin, ensure you have:
 - A Kubernetes cluster (v1.19+)
 - Helm (v3.2.0+) installed
 - `kubectl` configured to access your cluster
+- an Electricity Maps API key (free tier OK, see note below)
 - Metrics Server installed (optional, for metrics gather)
 - Prometheus installed (optional, for metrics visualization)
+
+> 💡 **Note**: You'll need an Electricity Maps API key for carbon-aware scheduling. Good news - you can [sign up for a free account](https://portal.electricitymaps.com/?plan=free) that includes access to a single region's carbon intensity data, which is all you need to get started with carbon-aware scheduling and the rest of this guide!
 
 ## Step 1: Installing Compute Gardener Scheduler
 
@@ -31,8 +34,6 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set carbonAware.electricityMap.apiKey=YOUR_ELECTRICITY_MAP_API_KEY
 ```
 
-> 💡 **Note**: You'll need an Electricity Maps API key for carbon-aware scheduling. Good news - you can [sign up for a free account](https://portal.electricitymaps.com/?plan=free) that includes access to a single region's carbon intensity data, which is all you need to get started with carbon-aware scheduling!
-
 After installation, verify that all components are running:
 
 ```bash
@@ -47,9 +48,11 @@ NAME                                          READY   STATUS    RESTARTS   AGE
 compute-gardener-scheduler-7b9f66c878-lx4jv   1/1     Running   0          2m
 ```
 
+Please see the [helm chart's README](../manifests/install/charts/compute-gardener-scheduler/README.md) for info on addl install options and configurations.
+
 ## Step 2: Exploring the Sample Pod
 
-The installation includes a sample pod to demonstrate the scheduler's functionality. Let's check it out:
+The installation, by default, includes a sample pod to demonstrate the scheduler's functionality. This behavior can be overwritten at install time. Assuming it was included, let's see what we can learn from it:
 
 ```bash
 # Get the sample pod
@@ -164,7 +167,7 @@ kubectl annotate pod $JOB_POD compute-gardener-scheduler.kubernetes.io/skip=true
 
 With this annotation applied, the scheduler will process the pod on its next scheduling cycle (typically within 1 minute), bypassing any carbon intensity thresholds.
 
-**Important:** Even at this point, with just these three steps completed, your Compute Gardener Scheduler is now able to reduce your carbon footprint by making intelligent scheduling decisions. Every Compute Gardener scheduled workload that gets delayed during a high-carbon period and runs during a lower-carbon period represents real carbon emissions avoided - whether those savings are being tracked or not. The following steps are all optional and can be explored based on your specific interests or needs.
+**Important:** With just these three steps completed, your Compute Gardener Scheduler is now able to reduce your carbon footprint by making intelligent scheduling decisions. Every Compute Gardener scheduled workload that gets delayed during a high-carbon period and runs during a lower-carbon period represents real carbon emissions avoided - whether those savings are being tracked or not. The following steps are all optional but enable such tracking and can be explored based on your specific interests or needs.
 
 ## Step 4: Monitoring the Scheduler's Decisions (Optional)
 
