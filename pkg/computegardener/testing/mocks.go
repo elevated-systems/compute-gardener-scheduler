@@ -10,6 +10,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
@@ -25,6 +26,7 @@ type MockCarbonImplementation struct {
 
 	// Advanced mode function overrides (when set, these take precedence)
 	GetCurrentIntensityFunc       func(ctx context.Context) (float64, error)
+	GetForecastFunc               func(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error)
 	CheckIntensityConstraintsFunc func(ctx context.Context, threshold float64) *framework.Status
 }
 
@@ -49,6 +51,34 @@ func (m *MockCarbonImplementation) GetCurrentIntensity(ctx context.Context) (flo
 		return 0, fmt.Errorf("carbon API error (mock)")
 	}
 	return m.intensity, nil
+}
+
+func (m *MockCarbonImplementation) GetForecast(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error) {
+	// Function override takes precedence
+	if m.GetForecastFunc != nil {
+		return m.GetForecastFunc(ctx, horizonHours)
+	}
+
+	// Simple mode behavior - generate a basic forecast
+	if m.errorMode {
+		return nil, fmt.Errorf("forecast API error (mock)")
+	}
+
+	// Generate simple forecast data
+	var data []api.ForecastData
+	now := time.Now()
+	for i := 0; i < horizonHours; i++ {
+		data = append(data, api.ForecastData{
+			Datetime:        now.Add(time.Duration(i) * time.Hour),
+			CarbonIntensity: m.intensity, // Simple: use same intensity for all forecast points
+		})
+	}
+
+	return &api.ElectricityForecast{
+		Zone:                "test-zone",
+		Data:                data,
+		TemporalGranularity: "hourly",
+	}, nil
 }
 
 func (m *MockCarbonImplementation) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {

@@ -10,8 +10,11 @@ const (
 	// ----------------------------------------
 
 	// Carbon-aware scheduling annotations
-	AnnotationCarbonIntensityThreshold = AnnotationBase + "/carbon-intensity-threshold"
-	AnnotationCarbonEnabled            = AnnotationBase + "/carbon-enabled"
+	// Note: carbon-intensity-mode determines how carbon intensity decisions are made,
+	// and how carbon-intensity-threshold is used
+	AnnotationCarbonIntensityMode      = AnnotationBase + "/carbon-intensity-mode"      // "threshold" (default) or "forecast"
+	AnnotationCarbonIntensityThreshold = AnnotationBase + "/carbon-intensity-threshold" // Used in "threshold" mode and as filter in "forecast" mode
+	AnnotationCarbonEnabled            = AnnotationBase + "/carbon-enabled"            // Global carbon-aware scheduling toggle
 
 	// Price-aware scheduling annotations
 	AnnotationPriceThreshold = AnnotationBase + "/price-threshold"

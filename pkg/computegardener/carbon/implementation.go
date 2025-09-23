@@ -16,6 +16,9 @@ type Implementation interface {
 	// GetCurrentIntensity returns the current carbon intensity for the configured region
 	GetCurrentIntensity(ctx context.Context) (float64, error)
 
+	// GetForecast returns carbon intensity forecast data for the configured region
+	GetForecast(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error)
+
 	// CheckIntensityConstraints checks if current carbon intensity exceeds threshold
 	CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status
 }
@@ -47,6 +50,21 @@ func (c *carbonImpl) GetCurrentIntensity(ctx context.Context) (float64, error) {
 	}
 
 	return data.CarbonIntensity, nil
+}
+
+func (c *carbonImpl) GetForecast(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error) {
+	klog.V(3).InfoS("Fetching carbon intensity forecast",
+		"region", c.config.APIConfig.Region,
+		"horizonHours", horizonHours,
+		"apiKey", c.config.APIConfig.APIKey != "")
+
+	forecast, err := c.apiClient.GetCarbonIntensityForecast(ctx, c.config.APIConfig.Region, horizonHours)
+	if err != nil {
+		klog.V(2).InfoS("Failed to get carbon intensity forecast", "error", err)
+		return nil, fmt.Errorf("failed to get carbon intensity forecast: %v", err)
+	}
+
+	return forecast, nil
 }
 
 func (c *carbonImpl) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {
