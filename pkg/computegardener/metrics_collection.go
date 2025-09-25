@@ -757,6 +757,7 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
 	// Extract UUID from GPU key (format: "gpu/UUID-xyz")
 	if !strings.HasPrefix(gpuKey, "gpu/") {
+		klog.V(3).InfoS("Invalid GPU key format", "gpuKey", gpuKey)
 		return ""
 	}
 	gpuUUID := strings.TrimPrefix(gpuKey, "gpu/")
@@ -764,17 +765,42 @@ func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
 	// Check if we have a Prometheus client
 	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
 	if !ok || promClient == nil {
-		klog.V(2).InfoS("Cannot determine node for GPU: Prometheus client not available", "gpuKey", gpuKey)
+		klog.V(3).InfoS("Cannot determine node for GPU: Prometheus client not available", "gpuKey", gpuKey)
 		return ""
 	}
 
-	// TODO: Implement proper Prometheus query to get instance label from DCGM metrics
-	// We need to enhance the Prometheus client to expose label information
-	// The query should be: DCGM_FI_DEV_POWER_USAGE{UUID="gpuUUID"}
-	// and we need to extract the instance label which contains the node name
+	// Query Prometheus for GPU instance labels to build UUID to node mapping
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	klog.V(2).InfoS("GPU node mapping needs Prometheus client enhancement - will use cached mapping only for now",
-		"gpuKey", gpuKey, "uuid", gpuUUID)
+	uuidToNodeMapping, err := promClient.QueryGPUInstanceLabels(ctx)
+	if err != nil {
+		klog.V(2).InfoS("Failed to query GPU instance labels from Prometheus",
+			"error", err,
+			"gpuKey", gpuKey)
+		return ""
+	}
+
+	// Look up the node name for this specific GPU UUID
+	if nodeName, exists := uuidToNodeMapping[gpuUUID]; exists {
+		klog.V(3).InfoS("Found node for GPU UUID",
+			"gpuKey", gpuKey,
+			"uuid", gpuUUID,
+			"nodeName", nodeName)
+		return nodeName
+	}
+
+	klog.V(2).InfoS("No node mapping found for GPU UUID",
+		"gpuKey", gpuKey,
+		"uuid", gpuUUID,
+		"availableUUIDs", func() []string {
+			keys := make([]string, 0, len(uuidToNodeMapping))
+			for k := range uuidToNodeMapping {
+				keys = append(keys, k)
+			}
+			return keys
+		}())
+
 	return ""
 }
 

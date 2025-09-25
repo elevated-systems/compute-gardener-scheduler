@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
@@ -656,4 +657,77 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 	}
 
 	return totalEnergy
+}
+
+// QueryGPUInstanceLabels queries DCGM metrics to get a mapping of GPU UUIDs to node names
+func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (map[string]string, error) {
+	if !c.useDCGM {
+		return nil, fmt.Errorf("GPU instance label queries require DCGM metrics")
+	}
+
+	// Create a context with timeout
+	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
+	defer cancel()
+
+	// Query DCGM power metrics to get UUID to instance mapping
+	query := c.dcgmPowerMetric
+
+	// Execute the query
+	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("error querying Prometheus for GPU instance labels: %v", err)
+	}
+
+	// Log any warnings
+	if len(warnings) > 0 {
+		klog.V(2).InfoS("Warnings received from Prometheus query",
+			"warnings", warnings,
+			"query", query)
+	}
+
+	// Process results to build UUID -> node mapping
+	uuidToNode := make(map[string]string)
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+
+		for _, sample := range vector {
+			// Extract UUID from the metric labels
+			uuid, hasUUID := sample.Metric["UUID"]
+			instance, hasInstance := sample.Metric["instance"]
+
+			if !hasUUID {
+				klog.V(3).InfoS("Missing UUID label in DCGM metric",
+					"metric", sample.Metric.String())
+				continue
+			}
+
+			if !hasInstance {
+				klog.V(3).InfoS("Missing instance label in DCGM metric",
+					"UUID", uuid,
+					"metric", sample.Metric.String())
+				continue
+			}
+
+			// Extract node name from instance label
+			// Instance can be in formats like "node1:9400" or just "node1"
+			nodeName := string(instance)
+			if colonIdx := strings.Index(nodeName, ":"); colonIdx > 0 {
+				nodeName = nodeName[:colonIdx]
+			}
+
+			uuidToNode[string(uuid)] = nodeName
+
+			klog.V(3).InfoS("Mapped GPU UUID to node",
+				"UUID", uuid,
+				"instance", instance,
+				"nodeName", nodeName)
+		}
+	}
+
+	klog.V(2).InfoS("Built GPU UUID to node mapping from DCGM metrics",
+		"mappingCount", len(uuidToNode),
+		"mappings", uuidToNode)
+
+	return uuidToNode, nil
 }
