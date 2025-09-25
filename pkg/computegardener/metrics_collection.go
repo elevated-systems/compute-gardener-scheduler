@@ -107,10 +107,19 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 
 	// Get GPU power measurements for all pods if GPU metrics client is configured
 	gpuPowers := make(map[string]float64)
+	gpuNodeMapping := make(map[string]string) // GPU key -> node name mapping
 	if cs.gpuMetricsClient != nil {
 		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
 			klog.V(2).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
 			gpuPowers = powers
+
+			// Build GPU UUID to node mapping once for efficiency
+			for gpuKey := range gpuPowers {
+				if nodeName := cs.getNodeForGPUKey(gpuKey); nodeName != "" {
+					gpuNodeMapping[gpuKey] = nodeName
+				}
+			}
+			klog.V(2).InfoS("Built GPU to node mapping", "mappings", gpuNodeMapping)
 		} else {
 			klog.ErrorS(err, "Failed to list GPU power measurements")
 		}
@@ -187,14 +196,49 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			// Check if this is a GPU pod
 			isGPUPod := common.IsGPUPod(pod)
 
-			// For GPU pods, find GPU power measurements from DCGM
+			// For GPU pods, find GPU power measurements from DCGM on the same node
 			if isGPUPod && len(gpuPowers) > 0 {
-				// Use the first GPU power value we find
+				// Find GPU power measurements that belong to this pod's node
+				nodeMatchedGPUPower := 0.0
+				gpuKeysForNode := []string{}
+
+				// Look for GPU keys that match this node, initially from cache
 				for gpuKey, power := range gpuPowers {
-					gpuPower = power
-					klog.V(2).InfoS("Attributed GPU power to pod",
-						"pod", klog.KObj(pod), "gpuKey", gpuKey, "power", power)
-					break
+					var gpuNodeName string
+					if cachedNodeName, exists := gpuNodeMapping[gpuKey]; exists {
+						gpuNodeName = cachedNodeName
+					} else {
+						// Fallback: query for node mapping if not cached
+						gpuNodeName = cs.getNodeForGPUKey(gpuKey)
+					}
+
+					// Use substring matching to handle various node name formats
+					if gpuNodeName != "" && (strings.Contains(gpuNodeName, nodeName) || strings.Contains(nodeName, gpuNodeName)) {
+						nodeMatchedGPUPower += power
+						gpuKeysForNode = append(gpuKeysForNode, gpuKey)
+						klog.V(3).InfoS("GPU node substring match", "gpuNodeName", gpuNodeName, "podNodeName", nodeName)
+					}
+				}
+
+				if nodeMatchedGPUPower > 0 {
+					gpuPower = nodeMatchedGPUPower
+					klog.V(2).InfoS("Attributed node-specific GPU power to pod",
+						"pod", klog.KObj(pod),
+						"node", nodeName,
+						"gpuKeys", gpuKeysForNode,
+						"totalPower", gpuPower)
+				} else {
+					// Fallback: warn about missing node mapping
+					klog.V(1).InfoS("GPU pod found but no GPU power metrics match node - possible configuration issue",
+						"pod", klog.KObj(pod),
+						"node", nodeName,
+						"availableGPUKeys", func() []string {
+							keys := make([]string, 0, len(gpuPowers))
+							for k := range gpuPowers {
+								keys = append(keys, k)
+							}
+							return keys
+						}())
 				}
 			}
 		}
@@ -707,6 +751,31 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 	}
 
 	return cpuModel, baseFreq, powerScaling
+}
+
+// getNodeForGPUKey determines which node a GPU UUID belongs to by querying DCGM metrics
+func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
+	// Extract UUID from GPU key (format: "gpu/UUID-xyz")
+	if !strings.HasPrefix(gpuKey, "gpu/") {
+		return ""
+	}
+	gpuUUID := strings.TrimPrefix(gpuKey, "gpu/")
+
+	// Check if we have a Prometheus client
+	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
+	if !ok || promClient == nil {
+		klog.V(2).InfoS("Cannot determine node for GPU: Prometheus client not available", "gpuKey", gpuKey)
+		return ""
+	}
+
+	// TODO: Implement proper Prometheus query to get instance label from DCGM metrics
+	// We need to enhance the Prometheus client to expose label information
+	// The query should be: DCGM_FI_DEV_POWER_USAGE{UUID="gpuUUID"}
+	// and we need to extract the instance label which contains the node name
+
+	klog.V(2).InfoS("GPU node mapping needs Prometheus client enhancement - will use cached mapping only for now",
+		"gpuKey", gpuKey, "uuid", gpuUUID)
+	return ""
 }
 
 // updateEnergyBudgetTracking calculates and reports real-time energy usage against budgets for running pods
