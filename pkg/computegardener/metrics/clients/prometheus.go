@@ -3,8 +3,6 @@ package clients
 import (
 	"context"
 	"fmt"
-	"net"
-	"strings"
 	"time"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
@@ -712,7 +710,6 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 
 			// Extract UUID from the metric labels
 			uuid, hasUUID := sample.Metric["UUID"]
-			instance, hasInstance := sample.Metric["instance"]
 
 			if !hasUUID {
 				klog.V(2).InfoS("Missing UUID label in DCGM metric",
@@ -727,8 +724,12 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 				continue
 			}
 
-			if !hasInstance {
-				klog.V(2).InfoS("Missing instance label in DCGM metric",
+			// Use DCGM exporter pod to determine node (DCGM exporters run as DaemonSet)
+			podName, hasPod := sample.Metric["pod"]
+			namespace, hasNamespace := sample.Metric["namespace"]
+
+			if !hasPod || !hasNamespace {
+				klog.V(2).InfoS("Missing pod/namespace labels in DCGM metric - cannot determine node",
 					"UUID", uuid,
 					"metric", sample.Metric.String(),
 					"availableLabels", func() []string {
@@ -741,28 +742,23 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 				continue
 			}
 
-			// Extract node identifier from instance label
-			// Instance can be in formats like "node1:9400", "node1", or IP addresses like "10.42.5.95:9400"
-			instanceStr := string(instance)
-			if colonIdx := strings.Index(instanceStr, ":"); colonIdx > 0 {
-				instanceStr = instanceStr[:colonIdx]
-			}
-
-			// Resolve to actual node name (handle both hostname and IP address cases)
-			nodeName, err := c.resolveInstanceToNodeName(ctx, kubeClient, instanceStr)
+			// Resolve DCGM exporter pod to node name
+			nodeName, err := c.resolvePodToNodeName(ctx, kubeClient, string(podName), string(namespace))
 			if err != nil {
-				klog.V(2).InfoS("Failed to resolve instance to node name",
+				klog.V(2).InfoS("Failed to resolve DCGM exporter pod to node name",
 					"UUID", uuid,
-					"instance", instanceStr,
+					"pod", podName,
+					"namespace", namespace,
 					"error", err)
 				continue
 			}
 
 			uuidToNode[string(uuid)] = nodeName
 
-			klog.V(3).InfoS("Mapped GPU UUID to node",
+			klog.V(3).InfoS("Mapped GPU UUID to node via DCGM exporter pod",
 				"UUID", uuid,
-				"instance", instance,
+				"pod", podName,
+				"namespace", namespace,
 				"nodeName", nodeName)
 		}
 	}
@@ -774,33 +770,22 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 	return uuidToNode, nil
 }
 
-// resolveInstanceToNodeName resolves an instance identifier (hostname or IP) to a Kubernetes node name
-func (c *PrometheusMetricsClient) resolveInstanceToNodeName(ctx context.Context, kubeClient kubernetes.Interface, instance string) (string, error) {
-	// Check if instance is an IP address
-	if net.ParseIP(instance) != nil {
-		// Instance is an IP address, need to resolve to node name via Kubernetes API
-		nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return "", fmt.Errorf("failed to list nodes: %v", err)
-		}
 
-		for _, node := range nodes.Items {
-			// Check node addresses for matching IP
-			for _, address := range node.Status.Addresses {
-				if address.Address == instance {
-					klog.V(3).InfoS("Resolved IP to node name via Kubernetes API",
-						"ip", instance,
-						"nodeName", node.Name,
-						"addressType", address.Type)
-					return node.Name, nil
-				}
-			}
-		}
-
-		return "", fmt.Errorf("no node found with IP address %s", instance)
+// resolvePodToNodeName resolves a pod name and namespace to the node it's running on
+func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kubeClient kubernetes.Interface, podName, namespace string) (string, error) {
+	pod, err := kubeClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod %s/%s: %v", namespace, podName, err)
 	}
 
-	// Instance is already a hostname, just return it
-	klog.V(3).InfoS("Instance is already a hostname", "instance", instance)
-	return instance, nil
+	if pod.Spec.NodeName == "" {
+		return "", fmt.Errorf("pod %s/%s has no node assignment", namespace, podName)
+	}
+
+	klog.V(3).InfoS("Resolved pod to node name via Kubernetes API",
+		"pod", podName,
+		"namespace", namespace,
+		"nodeName", pod.Spec.NodeName)
+
+	return pod.Spec.NodeName, nil
 }
