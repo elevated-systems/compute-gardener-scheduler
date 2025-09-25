@@ -13,7 +13,7 @@
 # limitations under the License.
 
 GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod|head -n1)
-PLATFORMS ?= linux/amd64,linux/arm64#,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
 BUILDER ?= docker
 REGISTRY?=docker.io/dmasselink
 RELEASE_VERSION?=$(shell git tag -l "v*" --sort=-committerdate | head -n 1)-$(shell git rev-parse --short HEAD)
