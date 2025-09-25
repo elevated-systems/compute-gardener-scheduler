@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
 
@@ -660,7 +663,7 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 }
 
 // QueryGPUInstanceLabels queries DCGM metrics to get a mapping of GPU UUIDs to node names
-func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (map[string]string, error) {
+func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, kubeClient kubernetes.Interface) (map[string]string, error) {
 	if !c.useDCGM {
 		return nil, fmt.Errorf("GPU instance label queries require DCGM metrics")
 	}
@@ -738,11 +741,21 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (m
 				continue
 			}
 
-			// Extract node name from instance label
-			// Instance can be in formats like "node1:9400" or just "node1"
-			nodeName := string(instance)
-			if colonIdx := strings.Index(nodeName, ":"); colonIdx > 0 {
-				nodeName = nodeName[:colonIdx]
+			// Extract node identifier from instance label
+			// Instance can be in formats like "node1:9400", "node1", or IP addresses like "10.42.5.95:9400"
+			instanceStr := string(instance)
+			if colonIdx := strings.Index(instanceStr, ":"); colonIdx > 0 {
+				instanceStr = instanceStr[:colonIdx]
+			}
+
+			// Resolve to actual node name (handle both hostname and IP address cases)
+			nodeName, err := c.resolveInstanceToNodeName(ctx, kubeClient, instanceStr)
+			if err != nil {
+				klog.V(2).InfoS("Failed to resolve instance to node name",
+					"UUID", uuid,
+					"instance", instanceStr,
+					"error", err)
+				continue
 			}
 
 			uuidToNode[string(uuid)] = nodeName
@@ -759,4 +772,35 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (m
 		"mappings", uuidToNode)
 
 	return uuidToNode, nil
+}
+
+// resolveInstanceToNodeName resolves an instance identifier (hostname or IP) to a Kubernetes node name
+func (c *PrometheusMetricsClient) resolveInstanceToNodeName(ctx context.Context, kubeClient kubernetes.Interface, instance string) (string, error) {
+	// Check if instance is an IP address
+	if net.ParseIP(instance) != nil {
+		// Instance is an IP address, need to resolve to node name via Kubernetes API
+		nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to list nodes: %v", err)
+		}
+
+		for _, node := range nodes.Items {
+			// Check node addresses for matching IP
+			for _, address := range node.Status.Addresses {
+				if address.Address == instance {
+					klog.V(3).InfoS("Resolved IP to node name via Kubernetes API",
+						"ip", instance,
+						"nodeName", node.Name,
+						"addressType", address.Type)
+					return node.Name, nil
+				}
+			}
+		}
+
+		return "", fmt.Errorf("no node found with IP address %s", instance)
+	}
+
+	// Instance is already a hostname, just return it
+	klog.V(3).InfoS("Instance is already a hostname", "instance", instance)
+	return instance, nil
 }

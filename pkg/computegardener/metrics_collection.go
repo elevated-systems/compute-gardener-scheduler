@@ -804,7 +804,7 @@ func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	uuidToNodeMapping, err := promClient.QueryGPUInstanceLabels(ctx)
+	uuidToNodeMapping, err := promClient.QueryGPUInstanceLabels(ctx, cs.handle.ClientSet())
 	if err != nil {
 		klog.V(1).InfoS("Failed to query GPU instance labels from Prometheus",
 			"error", err,
