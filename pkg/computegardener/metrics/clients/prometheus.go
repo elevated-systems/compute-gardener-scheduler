@@ -675,6 +675,9 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (m
 	// Execute the query
 	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
 	if err != nil {
+		klog.V(1).InfoS("Error querying Prometheus for GPU instance labels",
+			"error", err,
+			"query", query)
 		return nil, fmt.Errorf("error querying Prometheus for GPU instance labels: %v", err)
 	}
 
@@ -685,27 +688,53 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context) (m
 			"query", query)
 	}
 
+	klog.V(2).InfoS("Prometheus query result for GPU instance labels",
+		"query", query,
+		"resultType", result.Type().String(),
+		"resultString", result.String())
+
 	// Process results to build UUID -> node mapping
 	uuidToNode := make(map[string]string)
 
 	if result.Type() == model.ValVector {
 		vector := result.(model.Vector)
+		klog.V(2).InfoS("Processing DCGM vector result for GPU mapping",
+			"sampleCount", len(vector))
 
-		for _, sample := range vector {
+		for i, sample := range vector {
+			klog.V(3).InfoS("Processing DCGM sample",
+				"sampleIndex", i,
+				"metric", sample.Metric.String(),
+				"value", sample.Value)
+
 			// Extract UUID from the metric labels
 			uuid, hasUUID := sample.Metric["UUID"]
 			instance, hasInstance := sample.Metric["instance"]
 
 			if !hasUUID {
-				klog.V(3).InfoS("Missing UUID label in DCGM metric",
-					"metric", sample.Metric.String())
+				klog.V(2).InfoS("Missing UUID label in DCGM metric",
+					"metric", sample.Metric.String(),
+					"availableLabels", func() []string {
+						labels := make([]string, 0, len(sample.Metric))
+						for k := range sample.Metric {
+							labels = append(labels, string(k))
+						}
+						return labels
+					}())
 				continue
 			}
 
 			if !hasInstance {
-				klog.V(3).InfoS("Missing instance label in DCGM metric",
+				klog.V(2).InfoS("Missing instance label in DCGM metric",
 					"UUID", uuid,
-					"metric", sample.Metric.String())
+					"metric", sample.Metric.String(),
+					"availableLabels", func() []string {
+						labels := make([]string, 0, len(sample.Metric))
+						for k := range sample.Metric {
+							labels = append(labels, string(k))
+						}
+						return labels
+					}())
 				continue
 			}
 

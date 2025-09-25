@@ -207,9 +207,17 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 					var gpuNodeName string
 					if cachedNodeName, exists := gpuNodeMapping[gpuKey]; exists {
 						gpuNodeName = cachedNodeName
+						klog.V(3).InfoS("Using cached GPU node mapping",
+							"gpuKey", gpuKey,
+							"cachedNodeName", cachedNodeName)
 					} else {
 						// Fallback: query for node mapping if not cached
+						klog.V(3).InfoS("GPU key not in cache, querying Prometheus for node mapping",
+							"gpuKey", gpuKey)
 						gpuNodeName = cs.getNodeForGPUKey(gpuKey)
+						klog.V(3).InfoS("Prometheus query result for GPU node mapping",
+							"gpuKey", gpuKey,
+							"foundNodeName", gpuNodeName)
 					}
 
 					// Use substring matching to handle various node name formats
@@ -755,17 +763,22 @@ func (cs *ComputeGardenerScheduler) getNodeCPUModelInfo(nodeName string) (string
 
 // getNodeForGPUKey determines which node a GPU UUID belongs to by querying DCGM metrics
 func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
+	klog.V(2).InfoS("Looking up node for GPU key", "gpuKey", gpuKey)
+
 	// Extract UUID from GPU key (format: "gpu/UUID-xyz")
 	if !strings.HasPrefix(gpuKey, "gpu/") {
-		klog.V(3).InfoS("Invalid GPU key format", "gpuKey", gpuKey)
+		klog.V(2).InfoS("Invalid GPU key format", "gpuKey", gpuKey)
 		return ""
 	}
 	gpuUUID := strings.TrimPrefix(gpuKey, "gpu/")
+	klog.V(2).InfoS("Extracted GPU UUID from key", "gpuKey", gpuKey, "gpuUUID", gpuUUID)
 
 	// Check if we have a Prometheus client
 	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
 	if !ok || promClient == nil {
-		klog.V(3).InfoS("Cannot determine node for GPU: Prometheus client not available", "gpuKey", gpuKey)
+		klog.V(2).InfoS("Cannot determine node for GPU: Prometheus client not available",
+			"gpuKey", gpuKey,
+			"clientType", fmt.Sprintf("%T", cs.gpuMetricsClient))
 		return ""
 	}
 
@@ -775,22 +788,27 @@ func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
 
 	uuidToNodeMapping, err := promClient.QueryGPUInstanceLabels(ctx)
 	if err != nil {
-		klog.V(2).InfoS("Failed to query GPU instance labels from Prometheus",
+		klog.V(1).InfoS("Failed to query GPU instance labels from Prometheus",
 			"error", err,
 			"gpuKey", gpuKey)
 		return ""
 	}
 
+	klog.V(2).InfoS("Retrieved UUID to node mapping from Prometheus",
+		"gpuKey", gpuKey,
+		"mappingCount", len(uuidToNodeMapping),
+		"mapping", uuidToNodeMapping)
+
 	// Look up the node name for this specific GPU UUID
 	if nodeName, exists := uuidToNodeMapping[gpuUUID]; exists {
-		klog.V(3).InfoS("Found node for GPU UUID",
+		klog.V(2).InfoS("Found node for GPU UUID",
 			"gpuKey", gpuKey,
 			"uuid", gpuUUID,
 			"nodeName", nodeName)
 		return nodeName
 	}
 
-	klog.V(2).InfoS("No node mapping found for GPU UUID",
+	klog.V(1).InfoS("No node mapping found for GPU UUID",
 		"gpuKey", gpuKey,
 		"uuid", gpuUUID,
 		"availableUUIDs", func() []string {
