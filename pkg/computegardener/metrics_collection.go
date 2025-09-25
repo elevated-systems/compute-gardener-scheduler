@@ -109,20 +109,32 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	gpuPowers := make(map[string]float64)
 	gpuNodeMapping := make(map[string]string) // GPU key -> node name mapping
 	if cs.gpuMetricsClient != nil {
+		klog.V(2).InfoS("GPU metrics client available, fetching power measurements",
+			"clientType", fmt.Sprintf("%T", cs.gpuMetricsClient))
+
 		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
 			klog.V(2).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
 			gpuPowers = powers
 
+			klog.V(2).InfoS("Building GPU UUID to node mapping", "gpuKeyCount", len(gpuPowers))
 			// Build GPU UUID to node mapping once for efficiency
 			for gpuKey := range gpuPowers {
+				klog.V(3).InfoS("Processing GPU key for node mapping", "gpuKey", gpuKey)
 				if nodeName := cs.getNodeForGPUKey(gpuKey); nodeName != "" {
 					gpuNodeMapping[gpuKey] = nodeName
+					klog.V(3).InfoS("Added GPU key to node mapping",
+						"gpuKey", gpuKey,
+						"nodeName", nodeName)
+				} else {
+					klog.V(2).InfoS("No node name found for GPU key", "gpuKey", gpuKey)
 				}
 			}
 			klog.V(2).InfoS("Built GPU to node mapping", "mappings", gpuNodeMapping)
 		} else {
-			klog.ErrorS(err, "Failed to list GPU power measurements")
+			klog.V(1).InfoS("Failed to list GPU power measurements", "error", err)
 		}
+	} else {
+		klog.V(2).InfoS("No GPU metrics client available")
 	}
 
 	processedCount := 0
@@ -198,6 +210,12 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 
 			// For GPU pods, find GPU power measurements from DCGM on the same node
 			if isGPUPod && len(gpuPowers) > 0 {
+				klog.V(2).InfoS("Processing GPU pod for node attribution",
+					"pod", klog.KObj(pod),
+					"node", nodeName,
+					"gpuPowerCount", len(gpuPowers),
+					"cacheSize", len(gpuNodeMapping))
+
 				// Find GPU power measurements that belong to this pod's node
 				nodeMatchedGPUPower := 0.0
 				gpuKeysForNode := []string{}
