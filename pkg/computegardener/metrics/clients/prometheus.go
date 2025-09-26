@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
 
@@ -656,4 +658,134 @@ func (h *PodGPUMetricsHistory) CalculateTotalEnergy() float64 {
 	}
 
 	return totalEnergy
+}
+
+// QueryGPUInstanceLabels queries DCGM metrics to get a mapping of GPU UUIDs to node names
+func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, kubeClient kubernetes.Interface) (map[string]string, error) {
+	if !c.useDCGM {
+		return nil, fmt.Errorf("GPU instance label queries require DCGM metrics")
+	}
+
+	// Create a context with timeout
+	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
+	defer cancel()
+
+	// Query DCGM power metrics to get UUID to instance mapping
+	query := c.dcgmPowerMetric
+
+	// Execute the query
+	result, warnings, err := c.client.Query(queryCtx, query, time.Now())
+	if err != nil {
+		klog.V(1).InfoS("Error querying Prometheus for GPU instance labels",
+			"error", err,
+			"query", query)
+		return nil, fmt.Errorf("error querying Prometheus for GPU instance labels: %v", err)
+	}
+
+	// Log any warnings
+	if len(warnings) > 0 {
+		klog.V(2).InfoS("Warnings received from Prometheus query",
+			"warnings", warnings,
+			"query", query)
+	}
+
+	klog.V(2).InfoS("Prometheus query result for GPU instance labels",
+		"query", query,
+		"resultType", result.Type().String(),
+		"resultString", result.String())
+
+	// Process results to build UUID -> node mapping
+	uuidToNode := make(map[string]string)
+
+	if result.Type() == model.ValVector {
+		vector := result.(model.Vector)
+		klog.V(2).InfoS("Processing DCGM vector result for GPU mapping",
+			"sampleCount", len(vector))
+
+		for i, sample := range vector {
+			klog.V(3).InfoS("Processing DCGM sample",
+				"sampleIndex", i,
+				"metric", sample.Metric.String(),
+				"value", sample.Value)
+
+			// Extract UUID from the metric labels
+			uuid, hasUUID := sample.Metric["UUID"]
+
+			if !hasUUID {
+				klog.V(2).InfoS("Missing UUID label in DCGM metric",
+					"metric", sample.Metric.String(),
+					"availableLabels", func() []string {
+						labels := make([]string, 0, len(sample.Metric))
+						for k := range sample.Metric {
+							labels = append(labels, string(k))
+						}
+						return labels
+					}())
+				continue
+			}
+
+			// Use DCGM exporter pod to determine node (DCGM exporters run as DaemonSet)
+			podName, hasPod := sample.Metric["pod"]
+			namespace, hasNamespace := sample.Metric["namespace"]
+
+			if !hasPod || !hasNamespace {
+				klog.V(2).InfoS("Missing pod/namespace labels in DCGM metric - cannot determine node",
+					"UUID", uuid,
+					"metric", sample.Metric.String(),
+					"availableLabels", func() []string {
+						labels := make([]string, 0, len(sample.Metric))
+						for k := range sample.Metric {
+							labels = append(labels, string(k))
+						}
+						return labels
+					}())
+				continue
+			}
+
+			// Resolve DCGM exporter pod to node name
+			nodeName, err := c.resolvePodToNodeName(ctx, kubeClient, string(podName), string(namespace))
+			if err != nil {
+				klog.V(2).InfoS("Failed to resolve DCGM exporter pod to node name",
+					"UUID", uuid,
+					"pod", podName,
+					"namespace", namespace,
+					"error", err)
+				continue
+			}
+
+			uuidToNode[string(uuid)] = nodeName
+
+			klog.V(3).InfoS("Mapped GPU UUID to node via DCGM exporter pod",
+				"UUID", uuid,
+				"pod", podName,
+				"namespace", namespace,
+				"nodeName", nodeName)
+		}
+	}
+
+	klog.V(2).InfoS("Built GPU UUID to node mapping from DCGM metrics",
+		"mappingCount", len(uuidToNode),
+		"mappings", uuidToNode)
+
+	return uuidToNode, nil
+}
+
+
+// resolvePodToNodeName resolves a pod name and namespace to the node it's running on
+func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kubeClient kubernetes.Interface, podName, namespace string) (string, error) {
+	pod, err := kubeClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod %s/%s: %v", namespace, podName, err)
+	}
+
+	if pod.Spec.NodeName == "" {
+		return "", fmt.Errorf("pod %s/%s has no node assignment", namespace, podName)
+	}
+
+	klog.V(3).InfoS("Resolved pod to node name via Kubernetes API",
+		"pod", podName,
+		"namespace", namespace,
+		"nodeName", pod.Spec.NodeName)
+
+	return pod.Spec.NodeName, nil
 }
