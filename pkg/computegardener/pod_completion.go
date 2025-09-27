@@ -181,26 +181,28 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
 		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
 		if err == nil {
-			// Get the current/final carbon intensity
-			var finalIntensity float64
+			// Get the bind-time carbon intensity (when job started executing)
+			// Use the first metrics record which captures intensity when pod started running
+			var bindTimeIntensity float64
 			if len(metricsHistory.Records) > 0 {
-				finalIntensity = metricsHistory.Records[len(metricsHistory.Records)-1].CarbonIntensity
+				bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
 			} else if cs.carbonImpl != nil {
-				// If not in history, try to get current intensity
-				finalIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
+				// If not in history, try to get current intensity as fallback
+				bindTimeIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
 			}
 
-			if finalIntensity > 0 {
-				// Calculate true difference: (initial - final) * energy consumed
-				intensityDiff := initialIntensity - finalIntensity
+			if bindTimeIntensity > 0 {
+				// Calculate true scheduler effectiveness: (initial - bind-time) * energy consumed
+				// This compares when scheduler first heard vs when job actually started executing
+				intensityDiff := initialIntensity - bindTimeIntensity
 				// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
 				carbonSavingsGrams := intensityDiff * totalEnergyKWh
 
 				// Log regardless of whether savings are positive or negative
-				klog.V(2).InfoS("Calculated carbon savings/costs",
+				klog.V(2).InfoS("Calculated carbon savings from scheduling decision",
 					"pod", klog.KObj(pod),
 					"initialIntensity", initialIntensity,
-					"finalIntensity", finalIntensity,
+					"bindTimeIntensity", bindTimeIntensity,
 					"energyKWh", totalEnergyKWh,
 					"savingsGrams", carbonSavingsGrams,
 					"isPositive", intensityDiff > 0)
@@ -218,25 +220,27 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
 		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 		if err == nil {
-			// Get the current/final electricity rate
-			var finalRate float64
-			if len(metricsHistory.Records) > 0 && metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate > 0 {
-				finalRate = metricsHistory.Records[len(metricsHistory.Records)-1].ElectricityRate
+			// Get the bind-time electricity rate (when job started executing)
+			// Use the first metrics record which captures rate when pod started running
+			var bindTimeRate float64
+			if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
+				bindTimeRate = metricsHistory.Records[0].ElectricityRate
 			} else if cs.priceImpl != nil {
-				// If not in history, try to get current rate
-				finalRate = cs.priceImpl.GetCurrentRate(time.Now())
+				// If not in history, try to get current rate as fallback
+				bindTimeRate = cs.priceImpl.GetCurrentRate(time.Now())
 			}
 
-			if finalRate > 0 {
-				// Calculate cost difference: (initial - final) * energy consumed
-				rateDiff := initialRate - finalRate
+			if bindTimeRate > 0 {
+				// Calculate cost savings from scheduling decision: (initial - bind-time) * energy consumed
+				// This compares when scheduler first heard vs when job actually started executing
+				rateDiff := initialRate - bindTimeRate
 				costSavingsDollars := rateDiff * totalEnergyKWh
 
 				// Log regardless of whether savings are positive or negative
-				klog.V(2).InfoS("Calculated cost savings/costs",
+				klog.V(2).InfoS("Calculated cost savings from scheduling decision",
 					"pod", klog.KObj(pod),
 					"initialRate", initialRate,
-					"finalRate", finalRate,
+					"bindTimeRate", bindTimeRate,
 					"energyKWh", totalEnergyKWh,
 					"savingsDollars", costSavingsDollars,
 					"isPositive", rateDiff > 0)

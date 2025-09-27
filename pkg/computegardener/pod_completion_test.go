@@ -217,44 +217,9 @@ var basicMetricsTestCases = []MetricsTestCase{
 // Savings calculation test cases
 var savingsTestCases = []MetricsTestCase{
 	{
-		Name:      "Positive savings",
+		Name:      "Positive savings - scheduler delayed execution until better conditions",
 		PodUID:    "test-pod-uid-savings-positive",
 		PodName:   "test-pod-savings-positive",
-		Namespace: "default",
-		NodeName:  "test-node",
-		MetricsHistory: &metrics.PodMetricsHistory{
-			Records: []metrics.PodMetricsRecord{
-				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.18},
-				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 180, ElectricityRate: 0.15},
-				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.12},
-			},
-			Completed: false,
-		},
-		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200",
-			common.AnnotationInitialElectricityRate: "0.18",
-		},
-		// Total energy (calculated): ~0.016666 kWh
-		// Carbon intensity delta: 200 - 150 = 50 gCO2/kWh
-		// Expected carbon savings: (InitialCI - FinalCI) * Energy = 50 * 0.016666 = ~0.8333 gCO2
-		// Electricity rate delta: 0.18 - 0.12 = 0.06 $/kWh
-		// Expected cost savings: (InitialRate - FinalRate) * Energy = 0.06 * 0.016666 = ~0.001 $
-		ExpectedEnergyKWh:   0.016666, // Calculated using trapezoidal rule based on history
-		ExpectedCarbonGrams: 2.9583,   // Calculated using trapezoidal rule based on history
-		ExpectedSavings: map[string]float64{
-			"carbon": 0.8333, // (InitialCI - FinalCI) * Energy = (200 - 150) * 0.016666
-			"cost":   0.001,  // (InitialRate - FinalRate) * Energy = (0.18 - 0.12) * 0.016666
-		},
-		ExpectedEfficiency: map[string]float64{
-			"carbon_intensity_delta": 50.0,
-			"electricity_rate_delta": 0.06,
-		},
-		MarkCompleted: true,
-	},
-	{
-		Name:      "Negative savings",
-		PodUID:    "test-pod-uid-savings-negative",
-		PodName:   "test-pod-savings-negative",
 		Namespace: "default",
 		NodeName:  "test-node",
 		MetricsHistory: &metrics.PodMetricsHistory{
@@ -266,23 +231,58 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150",
-			common.AnnotationInitialElectricityRate: "0.12",
+			common.AnnotationInitialCarbonIntensity: "200", // Initial (when scheduler first heard)
+			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
 		},
-		// Total energy: 0.05 kWh (100W * 0.5h / 1000)
-		// Carbon intensity delta: 150 - 200 = -50 gCO2/kWh
-		// Expected carbon savings: (InitialCI - FinalCI) * Energy = (150 - 200) * 0.016666 = -0.8333 gCO2
-		// Electricity rate delta: 0.12 - 0.18 = -0.06 $/kWh
-		// Expected cost savings: (InitialRate - FinalRate) * Energy = -0.06 * 0.016666 = -0.001 $
+		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
+		// Carbon intensity delta: 200 - 150 = 50 gCO2/kWh (scheduler successfully waited for better conditions!)
+		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = 50 * 0.016666 = ~0.8333 gCO2
+		// Electricity rate delta: 0.18 - 0.12 = 0.06 $/kWh (scheduler successfully waited for better rates!)
+		// Expected cost savings: (InitialRate - BindTimeRate) * Energy = 0.06 * 0.016666 = ~0.001 $
 		ExpectedEnergyKWh:   0.016666, // Calculated using trapezoidal rule based on history
 		ExpectedCarbonGrams: 2.9583,   // Calculated using trapezoidal rule based on history
 		ExpectedSavings: map[string]float64{
-			"carbon": -0.8333,
-			"cost":   -0.001,
+			"carbon": 0.8333, // (InitialCI - BindTimeCI) * Energy = (200 - 150) * 0.016666
+			"cost":   0.001,  // (InitialRate - BindTimeRate) * Energy = (0.18 - 0.12) * 0.016666
 		},
 		ExpectedEfficiency: map[string]float64{
-			"carbon_intensity_delta": -50.0,
-			"electricity_rate_delta": -0.06,
+			"carbon_intensity_delta": 50.0, // Positive: scheduler successfully delayed for better conditions
+			"electricity_rate_delta": 0.06, // Positive: scheduler successfully delayed for better rates
+		},
+		MarkCompleted: true,
+	},
+	{
+		Name:      "Negative savings - scheduler delayed but conditions worsened by bind time",
+		PodUID:    "test-pod-uid-savings-negative",
+		PodName:   "test-pod-savings-negative",
+		Namespace: "default",
+		NodeName:  "test-node",
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
+				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 200, ElectricityRate: 0.18},
+				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 180, ElectricityRate: 0.15},
+				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.12},
+			},
+			Completed: false,
+		},
+		PodAnnotations: map[string]string{
+			common.AnnotationInitialCarbonIntensity: "150", // Initial (when scheduler first heard)
+			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
+		},
+		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
+		// Carbon intensity delta: 150 - 200 = -50 gCO2/kWh (scheduler delayed but conditions got worse by bind time!)
+		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = -50 * 0.016666 = ~-0.8333 gCO2
+		// Electricity rate delta: 0.12 - 0.18 = -0.06 $/kWh (scheduler delayed but rates got worse by bind time!)
+		// Expected cost savings: (InitialRate - BindTimeRate) * Energy = -0.06 * 0.016666 = ~-0.001 $
+		ExpectedEnergyKWh:   0.016666, // Calculated using trapezoidal rule based on history
+		ExpectedCarbonGrams: 2.9583,   // Calculated using trapezoidal rule based on history
+		ExpectedSavings: map[string]float64{
+			"carbon": -0.8333, // (InitialCI - BindTimeCI) * Energy = (150 - 200) * 0.016666
+			"cost":   -0.001,  // (InitialRate - BindTimeRate) * Energy = (0.12 - 0.18) * 0.016666
+		},
+		ExpectedEfficiency: map[string]float64{
+			"carbon_intensity_delta": -50.0, // Negative: conditions got worse by the time we bound
+			"electricity_rate_delta": -0.06, // Negative: rates got worse by the time we bound
 		},
 		MarkCompleted: true,
 	},
