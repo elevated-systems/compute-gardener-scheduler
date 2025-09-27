@@ -121,6 +121,17 @@ var (
 		[]string{"pod", "namespace"},
 	)
 
+	// JobGPUEnergyUsage tracks estimated GPU energy usage for jobs
+	JobGPUEnergyUsage = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "job_gpu_energy_usage_kwh",
+			Help:           "Estimated GPU energy usage in kWh for completed jobs",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace"},
+	)
+
 	// SchedulingEfficiencyMetrics tracks carbon/cost improvements
 	SchedulingEfficiencyMetrics = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
@@ -255,6 +266,7 @@ func init() {
 	legacyregistry.MustRegister(MetricsSamplesStored)
 	legacyregistry.MustRegister(MetricsCacheSize)
 	legacyregistry.MustRegister(JobEnergyUsage)
+	legacyregistry.MustRegister(JobGPUEnergyUsage)
 	legacyregistry.MustRegister(SchedulingEfficiencyMetrics)
 	legacyregistry.MustRegister(EstimatedSavings)
 	legacyregistry.MustRegister(ElectricityRateGauge)

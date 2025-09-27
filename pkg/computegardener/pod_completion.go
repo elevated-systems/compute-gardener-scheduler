@@ -134,7 +134,11 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	}
 
 	// Calculate energy and carbon emissions using our utility functions
+	// TODO: Consider refactoring energy calculations to store CPU/memory and GPU power
+	// directly in PodMetricsRecord instead of computing via subtraction, for cleaner
+	// separation of concerns and more efficient dashboard queries
 	totalEnergyKWh := metrics.CalculateTotalEnergy(metricsHistory.Records)
+	gpuEnergyKWh := metrics.CalculateGPUEnergy(metricsHistory.Records)
 	totalCarbonEmissions := metrics.CalculateTotalCarbonEmissions(metricsHistory.Records)
 
 	// Validate values before recording
@@ -172,6 +176,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 		"metricsCount", len(metricsHistory.Records))
 
 	metrics.JobEnergyUsage.WithLabelValues(podName, namespace).Set(totalEnergyKWh)
+	metrics.JobGPUEnergyUsage.WithLabelValues(podName, namespace).Set(gpuEnergyKWh)
 	metrics.JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
 
 	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
