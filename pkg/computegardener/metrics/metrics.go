@@ -137,10 +137,10 @@ var (
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "estimated_savings",
-			Help:           "Estimated savings from compute-gardener scheduling for the last completed pod (grams_co2 or dollars)",
+			Help:           "Estimated savings from compute-gardener scheduling per completed pod (grams_co2 or dollars)",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"type", "unit"}, // type: "carbon", "cost", unit: "grams_co2", "dollars"
+		[]string{"type", "unit", "pod", "namespace"}, // type: "carbon", "cost", unit: "grams_co2", "dollars"
 	)
 
 	// ElectricityRateGauge measures the current electricity rate

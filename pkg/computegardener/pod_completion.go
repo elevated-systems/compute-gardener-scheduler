@@ -208,7 +208,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", intensityDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2").Set(carbonSavingsGrams)
+				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
 
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
@@ -246,7 +246,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					"isPositive", rateDiff > 0)
 
 				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("cost", "dollars").Set(costSavingsDollars)
+				metrics.EstimatedSavings.WithLabelValues("cost", "dollars", podName, namespace).Set(costSavingsDollars)
 
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
