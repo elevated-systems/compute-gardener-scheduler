@@ -186,13 +186,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
 		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
 		if err == nil {
-			// Get the bind-time carbon intensity (when job started executing)
-			// Use the first metrics record which captures intensity when pod started running
+			// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
 			var bindTimeIntensity float64
-			if len(metricsHistory.Records) > 0 {
+			if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
+				bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
+			} else if len(metricsHistory.Records) > 0 {
+				// Fallback to first metrics record if bind-time annotation is missing (legacy)
 				bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
 			} else if cs.carbonImpl != nil {
-				// If not in history, try to get current intensity as fallback
+				// Final fallback: get current intensity
 				bindTimeIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
 			}
 
@@ -225,13 +227,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
 		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 		if err == nil {
-			// Get the bind-time electricity rate (when job started executing)
-			// Use the first metrics record which captures rate when pod started running
+			// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 			var bindTimeRate float64
-			if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
+			if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
+				bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
+			} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
+				// Fallback to first metrics record if bind-time annotation is missing (legacy)
 				bindTimeRate = metricsHistory.Records[0].ElectricityRate
 			} else if cs.priceImpl != nil {
-				// If not in history, try to get current rate as fallback
+				// Final fallback: get current rate
 				bindTimeRate = cs.priceImpl.GetCurrentRate(time.Now())
 			}
 
