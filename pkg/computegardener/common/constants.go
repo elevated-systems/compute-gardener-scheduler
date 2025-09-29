@@ -26,6 +26,8 @@ const (
 	// Carbon and cost tracking annotations
 	AnnotationInitialCarbonIntensity = AnnotationBase + "/initial-carbon-intensity"
 	AnnotationInitialElectricityRate = AnnotationBase + "/initial-electricity-rate"
+	AnnotationCarbonDelayed          = AnnotationBase + "/carbon-delayed"
+	AnnotationPriceDelayed           = AnnotationBase + "/price-delayed"
 
 	// Hardware efficiency annotations
 	AnnotationMaxPowerWatts   = AnnotationBase + "/max-power-watts"

@@ -502,6 +502,10 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 
 				// Mark this pod as counted so we don't count it again
 				cs.delayedPods[podUID] = true
+
+				// Mark pod as price-delayed for savings calculation
+				cs.markPodAsDelayed(ctx, pod, common.AnnotationPriceDelayed)
+
 				klog.V(2).InfoS("Recorded new price-based delay",
 					"pod", klog.KObj(pod),
 					"podUID", podUID)
@@ -788,6 +792,28 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 	}
 }
 
+// markPodAsDelayed adds an annotation to mark that a pod was delayed by our scheduler
+func (cs *ComputeGardenerScheduler) markPodAsDelayed(ctx context.Context, pod *v1.Pod, delayAnnotation string) {
+	podCopy := pod.DeepCopy()
+	if podCopy.Annotations == nil {
+		podCopy.Annotations = make(map[string]string)
+	}
+
+	// Mark the pod as delayed with a timestamp
+	podCopy.Annotations[delayAnnotation] = cs.clock.Now().Format(time.RFC3339)
+
+	// Update the pod annotation
+	if _, err := cs.handle.ClientSet().CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{}); err != nil {
+		klog.ErrorS(err, "Failed to mark pod as delayed",
+			"pod", klog.KObj(pod),
+			"annotation", delayAnnotation)
+	} else {
+		klog.V(2).InfoS("Marked pod as delayed by scheduler",
+			"pod", klog.KObj(pod),
+			"annotation", delayAnnotation)
+	}
+}
+
 // Close cleans up resources
 func (cs *ComputeGardenerScheduler) Close() error {
 	close(cs.stopCh)
@@ -884,11 +910,15 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 			"threshold", threshold,
 			"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
 
-		// Only count carbon delay once per pod
+		// Only count carbon delay once per pod and mark pod as carbon-delayed
 		podUID := string(pod.UID)
 		if !cs.delayedPods[podUID] {
 			metrics.CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
 			cs.delayedPods[podUID] = true
+
+			// Mark pod as carbon-delayed for savings calculation
+			cs.markPodAsDelayed(ctx, pod, common.AnnotationCarbonDelayed)
+
 			klog.V(2).InfoS("Recorded new carbon-based delay",
 				"pod", klog.KObj(pod),
 				"podUID", podUID)

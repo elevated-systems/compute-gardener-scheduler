@@ -233,6 +233,8 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "200", // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
+			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Pod was delayed by carbon constraints
+			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Pod was delayed by price constraints
 		},
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
 		// Carbon intensity delta: 200 - 150 = 50 gCO2/kWh (scheduler successfully waited for better conditions!)
@@ -268,6 +270,8 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "150", // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
+			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Pod was delayed by carbon constraints
+			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Pod was delayed by price constraints
 		},
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
 		// Carbon intensity delta: 150 - 200 = -50 gCO2/kWh (scheduler delayed but conditions got worse by bind time!)
@@ -283,6 +287,137 @@ var savingsTestCases = []MetricsTestCase{
 		ExpectedEfficiency: map[string]float64{
 			"carbon_intensity_delta": -50.0, // Negative: conditions got worse by the time we bound
 			"electricity_rate_delta": -0.06, // Negative: rates got worse by the time we bound
+		},
+		MarkCompleted: true,
+	},
+	{
+		Name:      "No savings - pod has initial annotations but was not delayed by scheduler",
+		PodUID:    "test-pod-uid-not-delayed",
+		PodName:   "test-pod-not-delayed",
+		Namespace: "default",
+		NodeName:  "test-node",
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
+				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 120, ElectricityRate: 0.10},
+				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 130, ElectricityRate: 0.11},
+				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 140, ElectricityRate: 0.12},
+			},
+			Completed: false,
+		},
+		PodAnnotations: map[string]string{
+			common.AnnotationInitialCarbonIntensity: "150", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.13", // Initial when first seen
+			// No delay annotations - pod was delayed by other constraints (GPU, etc.), not by our scheduler
+		},
+		// Should be no savings calculated since pod was not delayed by carbon/price constraints
+		ExpectedEnergyKWh:   0.016667,
+		ExpectedCarbonGrams: 2.167,
+		ExpectedSavings: map[string]float64{
+			// No savings should be recorded
+		},
+		ExpectedEfficiency: map[string]float64{
+			// No efficiency metrics should be recorded
+		},
+		MarkCompleted: true,
+	},
+	{
+		Name:      "Carbon savings only - pod delayed by carbon but not price",
+		PodUID:    "test-pod-uid-carbon-only",
+		PodName:   "test-pod-carbon-only",
+		Namespace: "default",
+		NodeName:  "test-node",
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
+				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 120, ElectricityRate: 0.10},
+				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 130, ElectricityRate: 0.11},
+				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 140, ElectricityRate: 0.12},
+			},
+			Completed: false,
+		},
+		PodAnnotations: map[string]string{
+			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
+			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Was delayed by carbon
+			// No price delay annotation - pricing wasn't the constraint
+			"bind-time-carbon-intensity": "120", // Bind-time intensity
+			"bind-time-electricity-rate": "0.10", // Bind-time rate
+		},
+		ExpectedEnergyKWh:   0.016667,
+		ExpectedCarbonGrams: 2.167,
+		ExpectedSavings: map[string]float64{
+			"carbon": 1.3333, // (200 - 120) * 0.016667 = carbon savings only
+			// No cost savings since pod wasn't price-delayed
+		},
+		ExpectedEfficiency: map[string]float64{
+			"carbon_intensity_delta": 80.0, // 200 - 120
+			// No electricity rate delta since pod wasn't price-delayed
+		},
+		MarkCompleted: true,
+	},
+	{
+		Name:      "Price savings only - pod delayed by price but not carbon",
+		PodUID:    "test-pod-uid-price-only",
+		PodName:   "test-pod-price-only",
+		Namespace: "default",
+		NodeName:  "test-node",
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
+				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 120, ElectricityRate: 0.08},
+				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 130, ElectricityRate: 0.09},
+				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 140, ElectricityRate: 0.10},
+			},
+			Completed: false,
+		},
+		PodAnnotations: map[string]string{
+			common.AnnotationInitialCarbonIntensity: "120", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.15", // Initial when first seen
+			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Was delayed by price
+			// No carbon delay annotation - carbon intensity wasn't the constraint
+			"bind-time-carbon-intensity": "120", // Bind-time intensity
+			"bind-time-electricity-rate": "0.08", // Bind-time rate
+		},
+		ExpectedEnergyKWh:   0.016667,
+		ExpectedCarbonGrams: 2.167,
+		ExpectedSavings: map[string]float64{
+			"cost": 0.0012, // (0.15 - 0.08) * 0.016667 = cost savings only
+			// No carbon savings since pod wasn't carbon-delayed
+		},
+		ExpectedEfficiency: map[string]float64{
+			"electricity_rate_delta": 0.07, // 0.15 - 0.08
+			// No carbon intensity delta since pod wasn't carbon-delayed
+		},
+		MarkCompleted: true,
+	},
+	{
+		Name:      "Bind-time annotation missing - fallback to Records[0]",
+		PodUID:    "test-pod-uid-fallback",
+		PodName:   "test-pod-fallback",
+		Namespace: "default",
+		NodeName:  "test-node",
+		MetricsHistory: &metrics.PodMetricsHistory{
+			Records: []metrics.PodMetricsRecord{
+				{Timestamp: time.Now().Add(-10 * time.Minute), PowerEstimate: 100, CarbonIntensity: 130, ElectricityRate: 0.09}, // This will be used as bind-time
+				{Timestamp: time.Now().Add(-5 * time.Minute), PowerEstimate: 100, CarbonIntensity: 140, ElectricityRate: 0.10},
+				{Timestamp: time.Now(), PowerEstimate: 100, CarbonIntensity: 150, ElectricityRate: 0.11},
+			},
+			Completed: false,
+		},
+		PodAnnotations: map[string]string{
+			common.AnnotationInitialCarbonIntensity: "180", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.12", // Initial when first seen
+			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Was delayed by carbon
+			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Was delayed by price
+			// No bind-time annotations - should fallback to Records[0]
+		},
+		ExpectedEnergyKWh:   0.016667,
+		ExpectedCarbonGrams: 2.333,
+		ExpectedSavings: map[string]float64{
+			"carbon": 0.8333, // (180 - 130) * 0.016667 using Records[0] fallback
+			"cost":   0.0005, // (0.12 - 0.09) * 0.016667 using Records[0] fallback
+		},
+		ExpectedEfficiency: map[string]float64{
+			"carbon_intensity_delta": 50.0, // 180 - 130
+			"electricity_rate_delta": 0.03, // 0.12 - 0.09
 		},
 		MarkCompleted: true,
 	},

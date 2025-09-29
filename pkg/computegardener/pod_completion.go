@@ -182,10 +182,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
 	// multiplied by actual energy used - requires all three values to be known
 
-	// Carbon difference calculation
+	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
-		initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
-		if err == nil {
+		// Only calculate carbon savings if this pod was delayed by carbon constraints
+		if _, wasCarbonDelayed := pod.Annotations[common.AnnotationCarbonDelayed]; !wasCarbonDelayed {
+			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
+				"pod", klog.KObj(pod))
+		} else {
+			initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
+			if err == nil {
 			// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
 			var bindTimeIntensity float64
 			if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
@@ -220,13 +225,19 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 			}
+			}
 		}
 	}
 
-	// Cost difference calculation
+	// Cost difference calculation - only if pod was actually delayed by price constraints
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
-		initialRate, err := strconv.ParseFloat(initialRateStr, 64)
-		if err == nil {
+		// Only calculate cost savings if this pod was delayed by price constraints
+		if _, wasPriceDelayed := pod.Annotations[common.AnnotationPriceDelayed]; !wasPriceDelayed {
+			klog.V(3).InfoS("Skipping cost savings calculation - pod was not price-delayed",
+				"pod", klog.KObj(pod))
+		} else {
+			initialRate, err := strconv.ParseFloat(initialRateStr, 64)
+			if err == nil {
 			// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 			var bindTimeRate float64
 			if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
@@ -259,6 +270,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 				// Record efficiency metrics
 				metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
+			}
 			}
 		}
 	}
