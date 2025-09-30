@@ -184,93 +184,103 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
-		// Only calculate carbon savings if this pod was delayed by carbon constraints
-		if _, wasCarbonDelayed := pod.Annotations[common.AnnotationCarbonDelayed]; !wasCarbonDelayed {
+		// Check if pod was delayed by carbon constraints using in-memory map
+		// TODO: This map is lost on scheduler restart, so we won't calculate savings for pods
+		// that were delayed before a restart and complete after. Consider persisting delay state
+		// to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
+		wasCarbonDelayed := cs.delayedPods != nil && cs.delayedPods[podUID]
+
+		if !wasCarbonDelayed {
 			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
 				"pod", klog.KObj(pod))
 		} else {
 			initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
 			if err == nil {
-			// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
-			var bindTimeIntensity float64
-			if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
-				bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
-			} else if len(metricsHistory.Records) > 0 {
-				// Fallback to first metrics record if bind-time annotation is missing (legacy)
-				bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
-			} else if cs.carbonImpl != nil {
-				// Final fallback: get current intensity
-				bindTimeIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
-			}
+				// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
+				var bindTimeIntensity float64
+				if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
+					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
+				} else if len(metricsHistory.Records) > 0 {
+					// Fallback to first metrics record if bind-time annotation is missing (legacy)
+					bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
+				} else if cs.carbonImpl != nil {
+					// Final fallback: get current intensity
+					bindTimeIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
+				}
 
-			if bindTimeIntensity > 0 {
-				// Calculate true scheduler effectiveness: (initial - bind-time) * energy consumed
-				// This compares when scheduler first heard vs when job actually started executing
-				intensityDiff := initialIntensity - bindTimeIntensity
-				// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
-				carbonSavingsGrams := intensityDiff * totalEnergyKWh
+				if bindTimeIntensity > 0 {
+					// Calculate true scheduler effectiveness: (initial - bind-time) * energy consumed
+					// This compares when scheduler first heard vs when job actually started executing
+					intensityDiff := initialIntensity - bindTimeIntensity
+					// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
+					carbonSavingsGrams := intensityDiff * totalEnergyKWh
 
-				// Log regardless of whether savings are positive or negative
-				klog.V(2).InfoS("Calculated carbon savings from scheduling decision",
-					"pod", klog.KObj(pod),
-					"initialIntensity", initialIntensity,
-					"bindTimeIntensity", bindTimeIntensity,
-					"energyKWh", totalEnergyKWh,
-					"savingsGrams", carbonSavingsGrams,
-					"isPositive", intensityDiff > 0)
+					// Log regardless of whether savings are positive or negative
+					klog.V(2).InfoS("Calculated carbon savings from scheduling decision",
+						"pod", klog.KObj(pod),
+						"initialIntensity", initialIntensity,
+						"bindTimeIntensity", bindTimeIntensity,
+						"energyKWh", totalEnergyKWh,
+						"savingsGrams", carbonSavingsGrams,
+						"isPositive", intensityDiff > 0)
 
-				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
+					// Record actual calculated savings or costs (even if negative)
+					metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
 
-				// Record efficiency metrics
-				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
-			}
+					// Record efficiency metrics
+					metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
+				}
 			}
 		}
 	}
 
 	// Cost difference calculation - only if pod was actually delayed by price constraints
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
-		// Only calculate cost savings if this pod was delayed by price constraints
-		if _, wasPriceDelayed := pod.Annotations[common.AnnotationPriceDelayed]; !wasPriceDelayed {
+		// Check if pod was delayed by price constraints using annotation
+		// TODO: Price delays are only tracked via annotation (not in delayedPods map which is
+		// carbon-specific). The annotation mechanism is unreliable - consider adding price delay
+		// tracking to in-memory state for consistency with carbon delay tracking.
+		_, wasPriceDelayed := pod.Annotations[common.AnnotationPriceDelayed]
+
+		if !wasPriceDelayed {
 			klog.V(3).InfoS("Skipping cost savings calculation - pod was not price-delayed",
 				"pod", klog.KObj(pod))
 		} else {
 			initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 			if err == nil {
-			// Get the bind-time electricity rate from annotation (captured when pod passed filter)
-			var bindTimeRate float64
-			if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
-				bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
-			} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
-				// Fallback to first metrics record if bind-time annotation is missing (legacy)
-				bindTimeRate = metricsHistory.Records[0].ElectricityRate
-			} else if cs.priceImpl != nil {
-				// Final fallback: get current rate
-				bindTimeRate = cs.priceImpl.GetCurrentRate(time.Now())
-			}
+				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
+				var bindTimeRate float64
+				if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
+					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
+				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
+					// Fallback to first metrics record if bind-time annotation is missing (legacy)
+					bindTimeRate = metricsHistory.Records[0].ElectricityRate
+				} else if cs.priceImpl != nil {
+					// Final fallback: get current rate
+					bindTimeRate = cs.priceImpl.GetCurrentRate(time.Now())
+				}
 
-			if bindTimeRate > 0 {
-				// Calculate cost savings from scheduling decision: (initial - bind-time) * energy consumed
-				// This compares when scheduler first heard vs when job actually started executing
-				rateDiff := initialRate - bindTimeRate
-				costSavingsDollars := rateDiff * totalEnergyKWh
+				if bindTimeRate > 0 {
+					// Calculate cost savings from scheduling decision: (initial - bind-time) * energy consumed
+					// This compares when scheduler first heard vs when job actually started executing
+					rateDiff := initialRate - bindTimeRate
+					costSavingsDollars := rateDiff * totalEnergyKWh
 
-				// Log regardless of whether savings are positive or negative
-				klog.V(2).InfoS("Calculated cost savings from scheduling decision",
-					"pod", klog.KObj(pod),
-					"initialRate", initialRate,
-					"bindTimeRate", bindTimeRate,
-					"energyKWh", totalEnergyKWh,
-					"savingsDollars", costSavingsDollars,
-					"isPositive", rateDiff > 0)
+					// Log regardless of whether savings are positive or negative
+					klog.V(2).InfoS("Calculated cost savings from scheduling decision",
+						"pod", klog.KObj(pod),
+						"initialRate", initialRate,
+						"bindTimeRate", bindTimeRate,
+						"energyKWh", totalEnergyKWh,
+						"savingsDollars", costSavingsDollars,
+						"isPositive", rateDiff > 0)
 
-				// Record actual calculated savings or costs (even if negative)
-				metrics.EstimatedSavings.WithLabelValues("cost", "dollars", podName, namespace).Set(costSavingsDollars)
+					// Record actual calculated savings or costs (even if negative)
+					metrics.EstimatedSavings.WithLabelValues("cost", "dollars", podName, namespace).Set(costSavingsDollars)
 
-				// Record efficiency metrics
-				metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
-			}
+					// Record efficiency metrics
+					metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
+				}
 			}
 		}
 	}
