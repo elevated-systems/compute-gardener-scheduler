@@ -88,12 +88,16 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
 
+	// Check if pod was carbon-delayed BEFORE removing from tracking map
+	wasCarbonDelayed := cs.delayedPods != nil && cs.delayedPods[podUID]
+
 	// Remove pod from our delay tracking map to clean up memory - only if map is initialized and used
 	if cs.delayedPods != nil {
 		delete(cs.delayedPods, podUID)
 		klog.V(2).InfoS("Removed pod from delay tracking map",
 			"pod", klog.KObj(pod),
-			"podUID", podUID)
+			"podUID", podUID,
+			"wasCarbonDelayed", wasCarbonDelayed)
 	}
 
 	klog.V(2).InfoS("Found metrics history for pod",
@@ -184,11 +188,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
-		// Check if pod was delayed by carbon constraints using in-memory map
-		// TODO: This map is lost on scheduler restart, so we won't calculate savings for pods
-		// that were delayed before a restart and complete after. Consider persisting delay state
-		// to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
-		wasCarbonDelayed := cs.delayedPods != nil && cs.delayedPods[podUID]
+		// wasCarbonDelayed was already captured above before removing from map
+		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
+		// for pods that were delayed before a restart and complete after. Consider persisting delay
+		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
 
 		if !wasCarbonDelayed {
 			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
