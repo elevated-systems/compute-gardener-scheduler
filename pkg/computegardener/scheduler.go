@@ -67,8 +67,9 @@ type ComputeGardenerScheduler struct {
 	startTime time.Time
 	stopCh    chan struct{}
 
-	// Metrics deduplication - track pods we've already counted for delay metrics
-	delayedPods map[string]bool // Map of pod UIDs to prevent double-counting of delays
+	// Delay tracking - track which pods were delayed and why (for metrics deduplication and savings calculation)
+	carbonDelayedPods map[string]bool // Pods delayed by carbon constraints
+	priceDelayedPods  map[string]bool // Pods delayed by price constraints
 }
 
 var (
@@ -255,7 +256,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		stopCh:    make(chan struct{}),
 
 		// Initialize delay tracking map
-		delayedPods: make(map[string]bool),
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 	}
 
 	// Start health check worker
@@ -496,15 +498,12 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 
 			// Record metrics for price-based delay - only count each pod once
 			podUID := string(pod.UID)
-			if !cs.delayedPods[podUID] {
+			if !cs.priceDelayedPods[podUID] {
 				// Increment the delay counter only for new pods
 				metrics.PriceBasedDelays.WithLabelValues(period).Inc()
 
-				// Mark this pod as counted so we don't count it again
-				cs.delayedPods[podUID] = true
-
-				// Mark pod as price-delayed for savings calculation
-				cs.markPodAsDelayed(ctx, pod, common.AnnotationPriceDelayed)
+				// Mark this pod as price-delayed
+				cs.priceDelayedPods[podUID] = true
 
 				klog.V(2).InfoS("Recorded new price-based delay",
 					"pod", klog.KObj(pod),
@@ -792,28 +791,6 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 	}
 }
 
-// markPodAsDelayed adds an annotation to mark that a pod was delayed by our scheduler
-func (cs *ComputeGardenerScheduler) markPodAsDelayed(ctx context.Context, pod *v1.Pod, delayAnnotation string) {
-	podCopy := pod.DeepCopy()
-	if podCopy.Annotations == nil {
-		podCopy.Annotations = make(map[string]string)
-	}
-
-	// Mark the pod as delayed with a timestamp
-	podCopy.Annotations[delayAnnotation] = cs.clock.Now().Format(time.RFC3339)
-
-	// Update the pod annotation
-	if _, err := cs.handle.ClientSet().CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{}); err != nil {
-		klog.ErrorS(err, "Failed to mark pod as delayed",
-			"pod", klog.KObj(pod),
-			"annotation", delayAnnotation)
-	} else {
-		klog.V(2).InfoS("Marked pod as delayed by scheduler",
-			"pod", klog.KObj(pod),
-			"annotation", delayAnnotation)
-	}
-}
-
 // Close cleans up resources
 func (cs *ComputeGardenerScheduler) Close() error {
 	close(cs.stopCh)
@@ -910,14 +887,11 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 			"threshold", threshold,
 			"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
 
-		// Only count carbon delay once per pod and mark pod as carbon-delayed
+		// Only count carbon delay once per pod
 		podUID := string(pod.UID)
-		if !cs.delayedPods[podUID] {
+		if !cs.carbonDelayedPods[podUID] {
 			metrics.CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-			cs.delayedPods[podUID] = true
-
-			// Mark pod as carbon-delayed for savings calculation
-			cs.markPodAsDelayed(ctx, pod, common.AnnotationCarbonDelayed)
+			cs.carbonDelayedPods[podUID] = true
 
 			klog.V(2).InfoS("Recorded new carbon-based delay",
 				"pod", klog.KObj(pod),

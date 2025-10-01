@@ -109,7 +109,8 @@ func setupTestSchedulerForCompletion(
 		carbonImpl:   carbonImpl,
 		priceImpl:    priceImpl,
 		clock:        testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
-		delayedPods:  make(map[string]bool),
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 	}
 }
 
@@ -151,6 +152,8 @@ type MetricsTestCase struct {
 	MetricsHistory      *metrics.PodMetricsHistory
 	PodAnnotations      map[string]string
 	OwnerReferences     []metav1.OwnerReference
+	WasCarbonDelayed    bool                        // Whether pod was delayed by carbon constraints
+	WasPriceDelayed     bool                        // Whether pod was delayed by price constraints
 	ExpectedEnergyKWh   float64
 	ExpectedCarbonGrams float64
 	ExpectedSavings     map[string]float64          // Type (carbon/cost) -> expected value
@@ -233,9 +236,9 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "200", // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
-			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Pod was delayed by carbon constraints
-			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Pod was delayed by price constraints
 		},
+		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
+		WasPriceDelayed:  true, // Pod was delayed by price constraints
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
 		// Carbon intensity delta: 200 - 150 = 50 gCO2/kWh (scheduler successfully waited for better conditions!)
 		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = 50 * 0.016666 = ~0.8333 gCO2
@@ -270,9 +273,9 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "150", // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
-			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Pod was delayed by carbon constraints
-			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Pod was delayed by price constraints
 		},
+		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
+		WasPriceDelayed:  true, // Pod was delayed by price constraints
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
 		// Carbon intensity delta: 150 - 200 = -50 gCO2/kWh (scheduler delayed but conditions got worse by bind time!)
 		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = -50 * 0.016666 = ~-0.8333 gCO2
@@ -337,11 +340,11 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
-			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Was delayed by carbon
-			// No price delay annotation - pricing wasn't the constraint
-			"bind-time-carbon-intensity": "120", // Bind-time intensity
-			"bind-time-electricity-rate": "0.10", // Bind-time rate
+			"bind-time-carbon-intensity":            "120",  // Bind-time intensity
+			"bind-time-electricity-rate":            "0.10", // Bind-time rate
 		},
+		WasCarbonDelayed: true,  // Was delayed by carbon
+		WasPriceDelayed:  false, // Pricing wasn't the constraint
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -369,13 +372,13 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "120", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity: "120",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.15", // Initial when first seen
-			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Was delayed by price
-			// No carbon delay annotation - carbon intensity wasn't the constraint
-			"bind-time-carbon-intensity": "120", // Bind-time intensity
-			"bind-time-electricity-rate": "0.08", // Bind-time rate
+			"bind-time-carbon-intensity":            "120",  // Bind-time intensity
+			"bind-time-electricity-rate":            "0.08", // Bind-time rate
 		},
+		WasCarbonDelayed: false, // Carbon intensity wasn't the constraint
+		WasPriceDelayed:  true,  // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -403,12 +406,12 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "180", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity: "180",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.12", // Initial when first seen
-			common.AnnotationCarbonDelayed:          "2024-09-29T10:00:00Z", // Was delayed by carbon
-			common.AnnotationPriceDelayed:           "2024-09-29T10:00:00Z", // Was delayed by price
 			// No bind-time annotations - should fallback to Records[0]
 		},
+		WasCarbonDelayed: true, // Was delayed by carbon
+		WasPriceDelayed:  true, // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.333,
 		ExpectedSavings: map[string]float64{
@@ -718,6 +721,14 @@ func TestBasicPodCompletionMetrics(t *testing.T) {
 				},
 			}
 
+			// Set up delay tracking based on test case
+			if tc.WasCarbonDelayed {
+				scheduler.carbonDelayedPods[tc.PodUID] = true
+			}
+			if tc.WasPriceDelayed {
+				scheduler.priceDelayedPods[tc.PodUID] = true
+			}
+
 			// Execute
 			scheduler.processPodCompletionMetrics(pod, tc.PodUID, tc.PodName, tc.Namespace, tc.NodeName)
 
@@ -770,6 +781,14 @@ func TestSavingsCalculation(t *testing.T) {
 				Spec: v1.PodSpec{
 					NodeName: tc.NodeName,
 				},
+			}
+
+			// Set up delay tracking based on test case
+			if tc.WasCarbonDelayed {
+				scheduler.carbonDelayedPods[tc.PodUID] = true
+			}
+			if tc.WasPriceDelayed {
+				scheduler.priceDelayedPods[tc.PodUID] = true
 			}
 
 			// Execute
@@ -931,6 +950,14 @@ func TestEdgeCases(t *testing.T) {
 				Spec: v1.PodSpec{
 					NodeName: tc.NodeName,
 				},
+			}
+
+			// Set up delay tracking based on test case
+			if tc.WasCarbonDelayed {
+				scheduler.carbonDelayedPods[tc.PodUID] = true
+			}
+			if tc.WasPriceDelayed {
+				scheduler.priceDelayedPods[tc.PodUID] = true
 			}
 
 			// Execute

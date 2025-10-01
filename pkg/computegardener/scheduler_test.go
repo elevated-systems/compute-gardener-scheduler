@@ -150,7 +150,8 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 		carbonImpl:  carbonImpl,
 		clock:       testingclock.NewFakeClock(mockTime),
 		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
-		delayedPods: make(map[string]bool),           // Initialize delayed pods map
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 	}
 }
 
@@ -647,7 +648,8 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 		carbonImpl:  testingmocks.NewMockCarbonWithError(),
 		clock:       testingclock.NewFakeClock(baseTime),
 		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
-		delayedPods: make(map[string]bool),           // Initialize delayed pods map
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 	}
 
 	// Test PreFilter first (should succeed)
@@ -1139,7 +1141,8 @@ func TestHealthCheck(t *testing.T) {
 				carbonImpl:  carbonImpl,
 				clock:       testingclock.NewFakeClock(baseTime),
 				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
-				delayedPods: make(map[string]bool),           // Initialize delayed pods map
+				carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 			}
 
 			// Test health check
@@ -1483,7 +1486,8 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
-		delayedPods:       make(map[string]bool),
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 	}
 }
 
@@ -1549,7 +1553,8 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
-		delayedPods:       make(map[string]bool),
+		carbonDelayedPods: make(map[string]bool),
+		priceDelayedPods:  make(map[string]bool),
 		handle:            handle,
 	}
 }

@@ -88,16 +88,24 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// Mark pod as completed in metrics store to prevent further collection
 	cs.metricsStore.MarkCompleted(podUID)
 
-	// Check if pod was carbon-delayed BEFORE removing from tracking map
-	wasCarbonDelayed := cs.delayedPods != nil && cs.delayedPods[podUID]
+	// Check if pod was delayed BEFORE removing from tracking maps
+	wasCarbonDelayed := cs.carbonDelayedPods != nil && cs.carbonDelayedPods[podUID]
+	wasPriceDelayed := cs.priceDelayedPods != nil && cs.priceDelayedPods[podUID]
 
-	// Remove pod from our delay tracking map to clean up memory - only if map is initialized and used
-	if cs.delayedPods != nil {
-		delete(cs.delayedPods, podUID)
-		klog.V(2).InfoS("Removed pod from delay tracking map",
+	// Remove pod from delay tracking maps to clean up memory
+	if cs.carbonDelayedPods != nil {
+		delete(cs.carbonDelayedPods, podUID)
+	}
+	if cs.priceDelayedPods != nil {
+		delete(cs.priceDelayedPods, podUID)
+	}
+
+	if wasCarbonDelayed || wasPriceDelayed {
+		klog.V(2).InfoS("Removed pod from delay tracking maps",
 			"pod", klog.KObj(pod),
 			"podUID", podUID,
-			"wasCarbonDelayed", wasCarbonDelayed)
+			"wasCarbonDelayed", wasCarbonDelayed,
+			"wasPriceDelayed", wasPriceDelayed)
 	}
 
 	klog.V(2).InfoS("Found metrics history for pod",
@@ -239,11 +247,10 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 	// Cost difference calculation - only if pod was actually delayed by price constraints
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
-		// Check if pod was delayed by price constraints using annotation
-		// TODO: Price delays are only tracked via annotation (not in delayedPods map which is
-		// carbon-specific). The annotation mechanism is unreliable - consider adding price delay
-		// tracking to in-memory state for consistency with carbon delay tracking.
-		_, wasPriceDelayed := pod.Annotations[common.AnnotationPriceDelayed]
+		// wasPriceDelayed was already captured above before removing from map
+		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
+		// for pods that were delayed before a restart and complete after. Consider persisting delay
+		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
 
 		if !wasPriceDelayed {
 			klog.V(3).InfoS("Skipping cost savings calculation - pod was not price-delayed",
