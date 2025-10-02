@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    app: ml-training
+    workload-type: batch
+  name: resnet50-pytorch-training-automation
+  namespace: compute-gardener-workloads
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app: ml-training
+        workload-type: batch
+      name: resnet50-pytorch-training-automation
+      namespace: compute-gardener-workloads
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          affinity: {}
+          containers:
+            - command:
+                - python
+                - /app/train.py
+              env:
+                - name: CUDA_VISIBLE_DEVICES
+                  value: "0"
+                - name: PYTORCH_CUDA_ALLOC_CONF
+                  value: max_split_size_mb:512
+              image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+              imagePullPolicy: IfNotPresent
+              name: pytorch-training
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 16Gi
+                  nvidia.com/gpu: "1"
+                requests:
+                  cpu: "1"
+                  memory: 8Gi
+                  nvidia.com/gpu: "1"
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              volumeMounts:
+                - mountPath: /app
+                  name: training-script
+                - mountPath: /output
+                  name: model-output
+                - mountPath: /dev/shm
+                  name: dshm
+          restartPolicy: Never
+          runtimeClassName: nvidia
+          schedulerName: compute-gardener-scheduler
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+          tolerations:
+            - effect: NoSchedule
+              key: nvidia.com/gpu
+              operator: Exists
+          volumes:
+            - name: training-script
+              persistentVolumeClaim:
+                claimName: pytorch-training-pvc
+            - emptyDir: {}
+              name: model-output
+            - emptyDir:
+                medium: Memory
+                sizeLimit: 2Gi
+              name: dshm
+      ttlSecondsAfterFinished: 3600
+  schedule: 55 3 * * *
+  successfulJobsHistoryLimit: 3
+  suspend: false
