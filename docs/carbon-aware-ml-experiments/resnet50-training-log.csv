@@ -1,5 +1,5 @@
 datetime,job name,est. job energy kWh (incl GPU),est. GPU energy,est. CPU/mem energy,initial carbon intensity,start carbon intensity,carbon savings (gCO2eq),savings %,carbon emitted (gCO2eq),actual execution time,delay (hrs),notes
-9/22/2025 3:55:00,resnet50-pytorch-training-automation-29314735-c78t9,0.479,,,306,183,58.917,40.18428968,87.7,9/26/2025 8:02:00,4.116666667,
+9/22/2025 3:55:00,resnet50-pytorch-training-automation-29314735,0.479,,,306,183,58.917,40.18428968,87.7,9/26/2025 8:02:00,4.116666667,
 9/22/2025 10:19:00,resnet50-pytorch-training-morning-29315119,0.477,,,137,137,0,0,63.9,9/26/2025 10:19:00,0,
 9/22/2025 17:41:00,resnet50-pytorch-training-last-thing-29315561,0.479,,,115,115,0,0,81.7,9/26/2025 17:41:00,0,
 9/22/2025 23:12:00,resnet50-pytorch-training-midnight-29315892,0.475,,,270,174,45.6,35.54169914,82.7,9/27/2025 8:01:00,8.816666667,
