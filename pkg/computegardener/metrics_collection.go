@@ -93,6 +93,10 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			"rate", currentRate,
 			"period", period,
 			"isPeak", isPeak)
+	} else {
+		// Set placeholder value when pricing is not enabled to prevent dashboard "no data" errors
+		metrics.ElectricityRateGauge.WithLabelValues("tou", "off-peak").Set(0)
+		klog.V(2).InfoS("Set electricity rate gauge to 0 (pricing not enabled)")
 	}
 
 	// Get metrics for all pods
