@@ -438,11 +438,11 @@
               },
               {
                 "color": "yellow",
-                "value": 150
+                "value": null
               },
               {
                 "color": "red",
-                "value": 250
+                "value": 200
               }
             ]
           }
@@ -1250,9 +1250,33 @@
           },
           "editorMode": "code",
           "expr": "compute_gardener_scheduler_job_energy_usage_kwh > 0",
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - energy_usage",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Total Energy",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "compute_gardener_scheduler_job_gpu_energy_usage_kwh > 0",
+          "hide": false,
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - GPU Energy",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(compute_gardener_scheduler_job_energy_usage_kwh - compute_gardener_scheduler_job_gpu_energy_usage_kwh) > 0",
+          "hide": false,
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - CPU/Memory Energy (for Kepler comparison)",
+          "range": true,
+          "refId": "C"
         },
         {
           "datasource": {
@@ -1264,7 +1288,7 @@
           "hide": false,
           "legendFormat": "{{exported_namespace}}/{{exported_pod}} - carbon_emissions",
           "range": true,
-          "refId": "B"
+          "refId": "D"
         }
       ],
       "title": "Completed Jobs Energy Usage and Emissions",
@@ -1407,7 +1431,7 @@
           },
           "editorMode": "code",
           "expr": "sum by (exported_namespace) (compute_gardener_scheduler_job_energy_usage_kwh > 0)",
-          "legendFormat": "{{exported_namespace}} - energy_usage",
+          "legendFormat": "{{exported_namespace}} - Total Energy",
           "range": true,
           "refId": "A"
         },
