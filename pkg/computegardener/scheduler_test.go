@@ -691,11 +691,11 @@ func TestRecordInitialMetrics(t *testing.T) {
 		carbonIntensity float64
 		pricingEnabled  bool
 		electricityRate float64
-		expectCarbon    bool
-		expectRate      bool
+		testCarbon      bool // Test carbon metric recording
+		testPrice       bool // Test price metric recording
 	}{
 		{
-			name: "record both carbon and pricing",
+			name: "record carbon metric when delayed",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
@@ -705,13 +705,11 @@ func TestRecordInitialMetrics(t *testing.T) {
 			},
 			carbonEnabled:   true,
 			carbonIntensity: 150.0,
-			pricingEnabled:  true,
-			electricityRate: 0.12,
-			expectCarbon:    true,
-			expectRate:      true,
+			testCarbon:      true,
+			testPrice:       false,
 		},
 		{
-			name: "carbon only",
+			name: "record price metric when delayed",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-pod",
@@ -719,28 +717,10 @@ func TestRecordInitialMetrics(t *testing.T) {
 					Annotations: map[string]string{},
 				},
 			},
-			carbonEnabled:   true,
-			carbonIntensity: 150.0,
-			pricingEnabled:  false,
-			electricityRate: 0.0,
-			expectCarbon:    true,
-			expectRate:      false,
-		},
-		{
-			name: "pricing only",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "test-pod",
-					Namespace:   "default",
-					Annotations: map[string]string{},
-				},
-			},
-			carbonEnabled:   false,
-			carbonIntensity: 0.0,
 			pricingEnabled:  true,
 			electricityRate: 0.12,
-			expectCarbon:    false,
-			expectRate:      true,
+			testCarbon:      false,
+			testPrice:       true,
 		},
 		{
 			name: "pod with opt-out should not get annotations",
@@ -755,29 +735,40 @@ func TestRecordInitialMetrics(t *testing.T) {
 			},
 			carbonEnabled:   true,
 			carbonIntensity: 150.0,
-			pricingEnabled:  true,
-			electricityRate: 0.12,
-			expectCarbon:    false,
-			expectRate:      false,
+			testCarbon:      true,
+			testPrice:       false,
 		},
 		{
-			name: "pod with existing annotations should not be changed",
+			name: "pod with existing carbon annotation should not be changed",
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
 						common.AnnotationInitialCarbonIntensity: "200.0",
-						common.AnnotationInitialElectricityRate: "0.15",
 					},
 				},
 			},
 			carbonEnabled:   true,
 			carbonIntensity: 150.0,
+			testCarbon:      true,
+			testPrice:       false,
+		},
+		{
+			name: "pod with existing rate annotation should not be changed",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						common.AnnotationInitialElectricityRate: "0.15",
+					},
+				},
+			},
 			pricingEnabled:  true,
 			electricityRate: 0.12,
-			expectCarbon:    false,
-			expectRate:      false,
+			testCarbon:      false,
+			testPrice:       true,
 		},
 	}
 
@@ -824,8 +815,13 @@ func TestRecordInitialMetrics(t *testing.T) {
 			// Create scheduler with appropriate mocks
 			scheduler := newTestScheduler(cfg, tt.carbonIntensity, tt.electricityRate, baseTime)
 
-			// Call the function under test
-			scheduler.recordInitialMetrics(context.Background(), tt.pod)
+			// Call the function under test - now split into separate functions
+			if tt.testCarbon {
+				scheduler.recordInitialCarbonMetric(context.Background(), tt.pod)
+			}
+			if tt.testPrice {
+				scheduler.recordInitialPriceMetric(context.Background(), tt.pod)
+			}
 
 			// Verify annotations - in a real test we would check the actual values
 			// Since we're using mocks, we can't actually verify the pod was updated
@@ -1355,8 +1351,9 @@ func TestRecordInitialMetricsUpdateFailure(t *testing.T) {
 		},
 	}
 
-	// Call recordInitialMetrics and check for no panic/error
-	scheduler.recordInitialMetrics(context.Background(), pod)
+	// Call recordInitialCarbonMetric and recordInitialPriceMetric and check for no panic/error
+	scheduler.recordInitialCarbonMetric(context.Background(), pod)
+	scheduler.recordInitialPriceMetric(context.Background(), pod)
 }
 
 // TestPreFilterWithCarbonFailure tests that a pod can still be scheduled when carbon api fails
