@@ -30,10 +30,12 @@ spec:
             - -m
             - vllm.entrypoints.openai.api_server
             - --model
-            - Qwen/Qwen2.5-Coder-3B-Instruct
+            - Qwen/Qwen2.5-Coder-7B-Instruct
             - --enable-lora
+            - --max-lora-rank
+            - "32"
             - --lora-modules
-            - qwen-lora=/mnt/models/qwen2.5-coder-3b-lora_20251012_142203 # Update with your actual timestamp
+            - qwen-lora=/mnt/models/qwen2.5-coder-7b-r32-a128-lr1e-04-d10_20251028_130855 # Update with preferred model
             - --host
             - "0.0.0.0"
             - --port
@@ -42,11 +44,11 @@ spec:
             - "0.9"
           resources:
             limits:
-              nvidia.com/gpu: 1
+              nvidia.com/gpu: "1"
               cpu: "8"
               memory: "32Gi"
             requests:
-              nvidia.com/gpu: 1
+              nvidia.com/gpu: "1"
               cpu: "4"
               memory: "24Gi"
           volumeMounts:
@@ -68,7 +70,7 @@ spec:
       volumes:
         - name: model-storage
           persistentVolumeClaim:
-            claimName: llm-finetuned-models
+            claimName: llm-finetuned-models-rwx
       nodeSelector:
         nvidia.com/gpu.present: "true"
       tolerations:

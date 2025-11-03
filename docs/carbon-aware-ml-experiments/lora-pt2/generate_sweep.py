@@ -312,23 +312,22 @@ def generate_sweep(
             {'r': 16, 'alpha': 32, 'lr': 1e-4, 'dropout': 0.15},  # vary dropout more
             {'r': 16, 'alpha': 64, 'lr': 5e-5, 'dropout': 0.1},   # combined promising
 
-            # Tier 2: r=32 promising directions (8 experiments)
+            # Tier 2: r=32 promising directions (4 experiments)
             {'r': 32, 'alpha': 32, 'lr': 1e-4, 'dropout': 0.1},   # step up from baseline
-            {'r': 32, 'alpha': 64, 'lr': 1e-4, 'dropout': 0.1},   # vary alpha
-            {'r': 32, 'alpha': 128, 'lr': 1e-4, 'dropout': 0.1},  # vary alpha more
-            {'r': 32, 'alpha': 64, 'lr': 5e-5, 'dropout': 0.1},   # conservative lr
-            {'r': 32, 'alpha': 64, 'lr': 1e-5, 'dropout': 0.1},   # very conservative
             {'r': 32, 'alpha': 64, 'lr': 1e-4, 'dropout': 0.05},  # lower dropout
+            {'r': 32, 'alpha': 64, 'lr': 1e-4, 'dropout': 0.1},   # vary alpha
+            {'r': 32, 'alpha': 64, 'lr': 5e-5, 'dropout': 0.1},   # conservative lr
+            
+            # Tier 3: r=32 aggressive/experimental (9 experiments)
+            # Note: r=64 causes OOM on 24GB VRAM, so Tier 3 uses r=32 with more experimental settings
+            {'r': 32, 'alpha': 128, 'lr': 1e-4, 'dropout': 0.1},  # vary alpha more
+            {'r': 32, 'alpha': 64, 'lr': 1e-5, 'dropout': 0.1},   # very conservative lr
             {'r': 32, 'alpha': 64, 'lr': 1e-4, 'dropout': 0.15},  # higher dropout
             {'r': 32, 'alpha': 128, 'lr': 5e-5, 'dropout': 0.1},  # aggressive + conservative
-
-            # Tier 3: r=32 aggressive/experimental (6 experiments)
-            # Note: r=64 causes OOM on 24GB VRAM, so Tier 3 uses r=32 with more experimental settings
             {'r': 32, 'alpha': 128, 'lr': 1e-4, 'dropout': 0.05}, # high alpha + low dropout
             {'r': 32, 'alpha': 128, 'lr': 1e-4, 'dropout': 0.15}, # high alpha + high dropout
             {'r': 32, 'alpha': 32, 'lr': 1e-4, 'dropout': 0.15},  # baseline alpha + high dropout
             {'r': 32, 'alpha': 128, 'lr': 1e-5, 'dropout': 0.1},  # very conservative lr + high alpha
-            {'r': 32, 'alpha': 64, 'lr': 1e-4, 'dropout': 0.15},  # moderate + high regularization
             {'r': 32, 'alpha': 32, 'lr': 5e-5, 'dropout': 0.15},  # conservative combo
         ]
 
@@ -449,7 +448,7 @@ def main():
     parser.add_argument(
         '--core-subset',
         action='store_true',
-        help='Use curated core subset (22 experiments) with OFAT exploration from baseline'
+        help='Use curated core subset (21 experiments) with OFAT exploration from baseline'
     )
     
     args = parser.parse_args()
