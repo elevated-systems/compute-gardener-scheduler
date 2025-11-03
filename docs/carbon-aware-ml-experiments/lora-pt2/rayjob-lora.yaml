@@ -156,7 +156,7 @@ spec:
                   sizeLimit: 4Gi
               - name: model-storage
                 persistentVolumeClaim:
-                  claimName: llm-finetuned-models
+                  claimName: llm-finetuned-models-rwx
 
             # Node selection for GPU
             nodeSelector:
