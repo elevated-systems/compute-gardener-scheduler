@@ -1,0 +1,191 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: llm-lora-finetune
+  namespace: ray-jobs
+  annotations:
+    compute-gardener.io/job-type: "llm-finetuning"
+    compute-gardener.io/technique: "lora"
+spec:
+  # Job configuration
+  # Upgrade only transformers and peft for Qwen2.5 support
+  entrypoint: python /app/train_lora.py
+
+  # Shutdown the cluster after job finishes
+  shutdownAfterJobFinishes: true
+
+  # Clean up cluster quickly after job completes
+  clusterSelector: {}
+
+  # Embedded Ray cluster specification
+  rayClusterSpec:
+    rayVersion: "2.30.0"
+
+    # Enable autoscaling to shut down workers when idle
+    enableInTreeAutoscaling: true
+
+    # Head node configuration
+    headGroupSpec:
+      serviceType: ClusterIP
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+        num-cpus: "0" # Head node for coordination only
+      template:
+        metadata:
+          annotations:
+            # Compute Gardener annotations for head node
+            # Head node is less critical, can wait longer
+            compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "300.0"
+        spec:
+          # Use Compute Gardener scheduler
+          schedulerName: compute-gardener-scheduler
+
+          # Use NVIDIA runtime for GPU access
+          runtimeClassName: nvidia
+
+          containers:
+            - name: ray-head
+              image: dmasselink/ray-ml-modern:2.30.0
+              #imagePullPolicy: Always
+              ports:
+                - containerPort: 6379
+                  name: gcs
+                - containerPort: 8265
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+                - containerPort: 8000
+                  name: serve
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: "8Gi"
+                requests:
+                  cpu: "2"
+                  memory: "4Gi"
+              env:
+                - name: RAY_LOG_LEVEL
+                  value: "INFO"
+              volumeMounts:
+                - name: training-script
+                  mountPath: /app
+                - name: ray-logs
+                  mountPath: /tmp/ray
+
+          volumes:
+            - name: training-script
+              configMap:
+                name: llm-finetuning-script
+                defaultMode: 0755
+            - name: ray-logs
+              emptyDir: {}
+
+    # Worker node configuration (GPU nodes)
+    workerGroupSpecs:
+      - replicas: 1
+        minReplicas: 0
+        maxReplicas: 1
+        groupName: gpu-worker
+        rayStartParams:
+          num-gpus: "1"
+        template:
+          metadata:
+            annotations:
+              # More flexible scheduling for GPU workers
+              # These are expensive resources, so we're willing to wait
+              compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "300.0"
+          spec:
+            # Use Compute Gardener scheduler
+            schedulerName: compute-gardener-scheduler
+
+            # NVIDIA runtime for GPU access
+            runtimeClassName: nvidia
+
+            # Set proper permissions for PVC access
+            securityContext:
+              fsGroup: 1000
+              runAsUser: 1000
+              runAsGroup: 1000
+
+            containers:
+              - name: ray-worker
+                image: dmasselink/ray-ml-modern:2.30.0
+                #imagePullPolicy: Always
+                resources:
+                  limits:
+                    nvidia.com/gpu: 1
+                    cpu: "8"
+                    memory: "32Gi"
+                  requests:
+                    nvidia.com/gpu: 1
+                    cpu: "4"
+                    memory: "24Gi"
+                env:
+                  - name: RAY_LOG_LEVEL
+                    value: "INFO"
+                  - name: NVIDIA_VISIBLE_DEVICES
+                    value: "all"
+                  - name: NVIDIA_DRIVER_CAPABILITIES
+                    value: "compute,utility"
+                  - name: TRANSFORMERS_CACHE
+                    value: "/tmp/transformers_cache"
+                  - name: HF_HOME
+                    value: "/tmp/hf_home"
+                  - name: HF_MODULES_CACHE
+                    value: "/tmp/transformers_cache/modules"
+                volumeMounts:
+                  - name: training-script
+                    mountPath: /app
+                  - name: ray-logs
+                    mountPath: /tmp/ray
+                  - name: dshm
+                    mountPath: /dev/shm
+                  - name: model-storage
+                    mountPath: /mnt/models
+
+            volumes:
+              - name: training-script
+                configMap:
+                  name: llm-finetuning-script
+                  defaultMode: 0755
+              - name: ray-logs
+                emptyDir: {}
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 4Gi
+              - name: model-storage
+                persistentVolumeClaim:
+                  claimName: llm-finetuned-models-rwx
+
+            # Node selection for GPU
+            nodeSelector:
+              nvidia.com/gpu.present: "true"
+
+            # Tolerate GPU node taints
+            tolerations:
+              - key: nvidia.com/gpu
+                operator: Exists
+                effect: NoSchedule
+
+  # Job submission configuration (automatically uses default scheduler as intended)
+  submitterPodTemplate:
+    spec:
+      containers:
+        - name: job-submitter
+          image: dmasselink/ray-ml-modern:2.30.0
+          #imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+      restartPolicy: Never
+
+  # TTL for automatic cleanup
+  ttlSecondsAfterFinished: 36000 # Clean up after 10 hours
+
+  # Job timeout
+  activeDeadlineSeconds: 86400 # 24 hour maximum
