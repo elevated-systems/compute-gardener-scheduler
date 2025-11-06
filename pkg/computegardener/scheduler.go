@@ -768,7 +768,7 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 		currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 		if err == nil && currentIntensity > 0 {
 			// Store bind-time intensity - we'll use this in pod completion for accurate calculation
-			podCopy.Annotations["bind-time-carbon-intensity"] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
+			podCopy.Annotations[common.AnnotationBindTimeCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
 			needsUpdate = true
 			klog.V(2).InfoS("Recorded bind-time carbon intensity",
 				"pod", klog.KObj(pod),
@@ -780,7 +780,7 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 	if hasInitialRate && cs.config.Pricing.Enabled && cs.priceImpl != nil {
 		currentRate := cs.priceImpl.GetCurrentRate(cs.clock.Now())
 		if currentRate > 0 {
-			podCopy.Annotations["bind-time-electricity-rate"] = strconv.FormatFloat(currentRate, 'f', 4, 64)
+			podCopy.Annotations[common.AnnotationBindTimeElectricityRate] = strconv.FormatFloat(currentRate, 'f', 4, 64)
 			needsUpdate = true
 			klog.V(2).InfoS("Recorded bind-time electricity rate",
 				"pod", klog.KObj(pod),
@@ -908,8 +908,11 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 		// Mark pod as currently carbon-delayed
 		cs.carbonDelayedPods[podUID] = true
 
-		// Always update the annotation on carbon delay (captures latest rising edge)
-		cs.recordInitialCarbonMetric(ctx, pod)
+		// Only record initial carbon metric on the FIRST delay (rising edge)
+		// This ensures we capture the true initial intensity when delay first occurred
+		if !wasDelayed {
+			cs.recordInitialCarbonMetric(ctx, pod)
+		}
 
 		return nil, framework.NewStatus(framework.Unschedulable, msg)
 	}

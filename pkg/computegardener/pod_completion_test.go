@@ -338,10 +338,10 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
-			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
-			"bind-time-carbon-intensity":            "120",  // Bind-time intensity
-			"bind-time-electricity-rate":            "0.10", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity:  "200", // Initial when first seen
+			common.AnnotationInitialElectricityRate:  "0.10", // Initial when first seen
+			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
+			common.AnnotationBindTimeElectricityRate: "0.10", // Bind-time rate
 		},
 		WasCarbonDelayed: true,  // Was delayed by carbon
 		WasPriceDelayed:  false, // Pricing wasn't the constraint
@@ -372,10 +372,10 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "120",  // Initial when first seen
-			common.AnnotationInitialElectricityRate: "0.15", // Initial when first seen
-			"bind-time-carbon-intensity":            "120",  // Bind-time intensity
-			"bind-time-electricity-rate":            "0.08", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity:  "120",  // Initial when first seen
+			common.AnnotationInitialElectricityRate:  "0.15", // Initial when first seen
+			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
+			common.AnnotationBindTimeElectricityRate: "0.08", // Bind-time rate
 		},
 		WasCarbonDelayed: false, // Carbon intensity wasn't the constraint
 		WasPriceDelayed:  true,  // Was delayed by price

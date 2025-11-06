@@ -195,21 +195,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// multiplied by actual energy used - requires all three values to be known
 
 	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
+	// The presence of the initial-carbon-intensity annotation indicates the pod was delayed
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
-		// wasCarbonDelayed was already captured above before removing from map
-		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
-		// for pods that were delayed before a restart and complete after. Consider persisting delay
-		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
-
-		if !wasCarbonDelayed {
-			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
-				"pod", klog.KObj(pod))
-		} else {
+		// Use annotation presence as source of truth for whether pod was delayed
+		if initialIntensityStr != "" {
 			initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
 			if err == nil {
 				// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
 				var bindTimeIntensity float64
-				if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
+				if bindTimeStr, hasBindTime := pod.Annotations[common.AnnotationBindTimeCarbonIntensity]; hasBindTime {
 					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
 				} else if len(metricsHistory.Records) > 0 {
 					// Fallback to first metrics record if bind-time annotation is missing (legacy)
@@ -246,21 +240,16 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	}
 
 	// Cost difference calculation - only if pod was actually delayed by price constraints
+	// The presence of the initial-electricity-rate annotation indicates the pod was delayed
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
-		// wasPriceDelayed was already captured above before removing from map
-		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
-		// for pods that were delayed before a restart and complete after. Consider persisting delay
-		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
-
-		if !wasPriceDelayed {
-			klog.V(3).InfoS("Skipping cost savings calculation - pod was not price-delayed",
-				"pod", klog.KObj(pod))
-		} else {
+		// Use annotation presence as source of truth for whether pod was delayed
+		// This is more reliable than in-memory state which may be false if pod passed threshold before binding
+		if initialRateStr != "" {
 			initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 			if err == nil {
 				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 				var bindTimeRate float64
-				if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
+				if bindTimeRateStr, hasBindTime := pod.Annotations[common.AnnotationBindTimeElectricityRate]; hasBindTime {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
 					// Fallback to first metrics record if bind-time annotation is missing (legacy)
