@@ -160,6 +160,8 @@ Key metrics available:
 - `compute_gardener_scheduler_carbon_intensity`: Current carbon intensity
 - `compute_gardener_scheduler_electricity_rate`: Current electricity rate
 - `compute_gardener_scheduler_carbon_delay_total`: Scheduling delays due to carbon
+- `compute_gardener_scheduler_estimated_savings`: Carbon/cost savings from scheduling decisions
+- `compute_gardener_scheduler_job_carbon_emissions_grams`: Actual carbon emissions during execution
 
 **Energy Budget**
 - `compute_gardener_scheduler_energy_budget_usage_percent`: Budget usage percentage
@@ -167,6 +169,8 @@ Key metrics available:
 
 **Hardware**
 - `compute_gardener_scheduler_node_power_estimate_watts`: Power consumption
+
+For a detailed explanation of how carbon emissions and savings are calculated, see the [Carbon Calculations Documentation](./docs/carbon-calculations.md).
 
 
 ### Namespace-Level Energy Policies

@@ -191,8 +191,12 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	metrics.JobGPUEnergyUsage.WithLabelValues(podName, namespace).Set(gpuEnergyKWh)
 	metrics.JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
 
-	// Calculate true carbon and cost differences based on the delta between initial and final intensity/rate
-	// multiplied by actual energy used - requires all three values to be known
+	// Calculate scheduler effectiveness based on the delta between initial and bind-time intensity/rate
+	// multiplied by actual energy used. This measures the benefit of delaying the job.
+	//
+	// NOTE: We do NOT use end-of-execution intensity for savings calculations, as it's meaningless
+	// for measuring scheduler effectiveness. Savings = (initial_intensity - bind_intensity) × energy.
+	// Actual carbon emissions during execution use time-series intensity data (see CalculateTotalCarbonEmissions).
 
 	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
 	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
@@ -209,19 +213,25 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			if err == nil {
 				// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
 				var bindTimeIntensity float64
-				if bindTimeStr, hasBindTime := pod.Annotations["bind-time-carbon-intensity"]; hasBindTime {
+				var hasBindTime bool
+
+				if bindTimeStr, ok := pod.Annotations["bind-time-carbon-intensity"]; ok {
 					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
-				} else if len(metricsHistory.Records) > 0 {
+					hasBindTime = bindTimeIntensity > 0
+				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].CarbonIntensity > 0 {
 					// Fallback to first metrics record if bind-time annotation is missing (legacy)
+					// This represents the intensity when the pod started executing
 					bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
-				} else if cs.carbonImpl != nil {
-					// Final fallback: get current intensity
-					bindTimeIntensity, _ = cs.carbonImpl.GetCurrentIntensity(context.Background())
+					hasBindTime = true
+					klog.V(2).InfoS("Using first metrics record for bind-time intensity (legacy fallback)",
+						"pod", klog.KObj(pod),
+						"intensity", bindTimeIntensity)
 				}
 
-				if bindTimeIntensity > 0 {
-					// Calculate true scheduler effectiveness: (initial - bind-time) * energy consumed
-					// This compares when scheduler first heard vs when job actually started executing
+				if hasBindTime {
+					// Calculate scheduler effectiveness: (initial - bind-time) * energy consumed
+					// This compares the intensity when first delayed vs when job actually started executing.
+					// If the job was seen at 150 gCO2 and started at 150 gCO2, savings = 0 (correct).
 					intensityDiff := initialIntensity - bindTimeIntensity
 					// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
 					carbonSavingsGrams := intensityDiff * totalEnergyKWh
@@ -240,6 +250,11 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 					// Record efficiency metrics
 					metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
+				} else {
+					klog.ErrorS(nil, "Cannot calculate carbon savings - no bind-time intensity available",
+						"pod", klog.KObj(pod),
+						"initialIntensity", initialIntensity,
+						"note", "Bind-time annotation missing and no metrics records available")
 				}
 			}
 		}
@@ -260,19 +275,25 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			if err == nil {
 				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 				var bindTimeRate float64
-				if bindTimeRateStr, hasBindTime := pod.Annotations["bind-time-electricity-rate"]; hasBindTime {
+				var hasBindTime bool
+
+				if bindTimeRateStr, ok := pod.Annotations["bind-time-electricity-rate"]; ok {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
+					hasBindTime = bindTimeRate > 0
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
 					// Fallback to first metrics record if bind-time annotation is missing (legacy)
+					// This represents the rate when the pod started executing
 					bindTimeRate = metricsHistory.Records[0].ElectricityRate
-				} else if cs.priceImpl != nil {
-					// Final fallback: get current rate
-					bindTimeRate = cs.priceImpl.GetCurrentRate(time.Now())
+					hasBindTime = true
+					klog.V(2).InfoS("Using first metrics record for bind-time rate (legacy fallback)",
+						"pod", klog.KObj(pod),
+						"rate", bindTimeRate)
 				}
 
-				if bindTimeRate > 0 {
+				if hasBindTime {
 					// Calculate cost savings from scheduling decision: (initial - bind-time) * energy consumed
-					// This compares when scheduler first heard vs when job actually started executing
+					// This compares the rate when first delayed vs when job actually started executing.
+					// If the job was seen at $0.25/kWh and started at $0.25/kWh, savings = 0 (correct).
 					rateDiff := initialRate - bindTimeRate
 					costSavingsDollars := rateDiff * totalEnergyKWh
 
@@ -290,6 +311,11 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 					// Record efficiency metrics
 					metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
+				} else {
+					klog.ErrorS(nil, "Cannot calculate cost savings - no bind-time rate available",
+						"pod", klog.KObj(pod),
+						"initialRate", initialRate,
+						"note", "Bind-time annotation missing and no metrics records available")
 				}
 			}
 		}
