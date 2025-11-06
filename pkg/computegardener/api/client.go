@@ -28,7 +28,10 @@ type Client struct {
 // ElectricityData represents the response from the API
 type ElectricityData struct {
 	CarbonIntensity float64   `json:"carbonIntensity"`
-	Timestamp       time.Time `json:"timestamp"`
+	Timestamp       time.Time `json:"datetime"`
+	IsEstimated     bool      `json:"isEstimated"`
+	// DataStatus can be "real" or "estimated" - provides alternative status field
+	DataStatus string `json:"dataStatus,omitempty"`
 }
 
 // ClientOption allows customizing the client
