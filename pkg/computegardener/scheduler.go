@@ -19,10 +19,10 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 )
 
@@ -473,15 +473,14 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 		klog.ErrorS(err, "Failed to apply namespace energy budget", "pod", klog.KObj(pod))
 	}
 
-	// Record initial carbon intensity and electricity rate for savings calculation
-	// This must happen in PreFilter to capture the true initial values when pod first enters scheduling
-	cs.recordInitialMetrics(ctx, pod)
-
 	// Check pricing constraints if enabled
 	if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
 		klog.V(3).InfoS("Checking price constraints in PreFilter",
 			"pod", klog.KObj(pod),
 			"enabled", cs.config.Pricing.Enabled)
+
+		podUID := string(pod.UID)
+		wasDelayed := cs.priceDelayedPods[podUID]
 
 		if status := cs.priceImpl.CheckPriceConstraints(pod, cs.clock.Now()); !status.IsSuccess() {
 			klog.V(2).InfoS("Price constraints check failed in PreFilter",
@@ -496,26 +495,33 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 			}
 			metrics.ElectricityRateGauge.WithLabelValues("tou", period).Set(rate)
 
-			// Record metrics for price-based delay - only count each pod once
-			podUID := string(pod.UID)
-			if !cs.priceDelayedPods[podUID] {
-				// Increment the delay counter only for new pods
+			// Detect rising edge: pod was NOT delayed, now IS delayed
+			if !wasDelayed {
 				metrics.PriceBasedDelays.WithLabelValues(period).Inc()
-
-				// Mark this pod as price-delayed
-				cs.priceDelayedPods[podUID] = true
-
-				klog.V(2).InfoS("Recorded new price-based delay",
+				klog.V(2).InfoS("Detected rising edge of price-based delay",
 					"pod", klog.KObj(pod),
-					"podUID", podUID)
-			} else {
-				klog.V(3).InfoS("Skipping duplicate price-based delay count",
-					"pod", klog.KObj(pod),
-					"podUID", podUID)
+					"podUID", podUID,
+					"rate", rate,
+					"period", period)
 			}
+
+			// Mark pod as currently price-delayed
+			cs.priceDelayedPods[podUID] = true
+
+			// Always update the annotation on price delay (captures latest rising edge)
+			cs.recordInitialPriceMetric(ctx, pod)
 
 			return nil, status
 		}
+
+		// Price constraints passed - mark pod as NOT currently price-delayed
+		// This allows us to detect future rising edges
+		if wasDelayed {
+			klog.V(2).InfoS("Price constraints now satisfied, clearing delay state",
+				"pod", klog.KObj(pod),
+				"podUID", podUID)
+		}
+		cs.priceDelayedPods[podUID] = false
 	}
 
 	// Check carbon intensity constraints if enabled
@@ -878,6 +884,9 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 	// Update metrics regardless of threshold check result
 	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
 
+	podUID := string(pod.UID)
+	wasDelayed := cs.carbonDelayedPods[podUID]
+
 	if currentIntensity > threshold {
 		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",
 			currentIntensity, threshold)
@@ -887,41 +896,56 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 			"threshold", threshold,
 			"usingPodSpecificThreshold", threshold != cs.config.Carbon.IntensityThreshold)
 
-		// Only count carbon delay once per pod
-		podUID := string(pod.UID)
-		if !cs.carbonDelayedPods[podUID] {
+		// Detect rising edge: pod was NOT delayed, now IS delayed
+		if !wasDelayed {
 			metrics.CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
-			cs.carbonDelayedPods[podUID] = true
-
-			klog.V(2).InfoS("Recorded new carbon-based delay",
+			klog.V(2).InfoS("Detected rising edge of carbon-based delay",
 				"pod", klog.KObj(pod),
-				"podUID", podUID)
-		} else {
-			klog.V(3).InfoS("Skipping duplicate carbon-based delay count",
-				"pod", klog.KObj(pod),
-				"podUID", podUID)
+				"podUID", podUID,
+				"currentIntensity", currentIntensity)
 		}
+
+		// Mark pod as currently carbon-delayed
+		cs.carbonDelayedPods[podUID] = true
+
+		// Always update the annotation on carbon delay (captures latest rising edge)
+		cs.recordInitialCarbonMetric(ctx, pod)
+
 		return nil, framework.NewStatus(framework.Unschedulable, msg)
 	}
+
+	// Carbon intensity is below threshold - mark pod as NOT currently carbon-delayed
+	// This allows us to detect future rising edges
+	if wasDelayed {
+		klog.V(2).InfoS("Carbon intensity now below threshold, clearing delay state",
+			"pod", klog.KObj(pod),
+			"podUID", podUID,
+			"currentIntensity", currentIntensity,
+			"threshold", threshold)
+	}
+	cs.carbonDelayedPods[podUID] = false
 
 	return nil, framework.NewStatus(framework.Success, "")
 }
 
-// recordInitialMetrics records the initial carbon intensity and electricity rate
-// at the time of scheduling to enable savings calculations later.
-// This function will add the annotations only if they don't already exist.
-func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, pod *v1.Pod) {
+// recordInitialCarbonMetric records the carbon intensity at the time of a carbon-based delay.
+// This is called on every rising edge of carbon delay to capture the most recent baseline
+// for accurate savings calculations. Always overwrites any existing annotation.
+func (cs *ComputeGardenerScheduler) recordInitialCarbonMetric(ctx context.Context, pod *v1.Pod) {
 	// Don't modify the pod if it's opted out of compute gardener scheduling
 	if cs.isOptedOut(pod) {
 		return
 	}
 
-	// Skip if the pod already has both annotations - check them together to reduce log spam
-	if _, hasCarbon := pod.Annotations[common.AnnotationInitialCarbonIntensity]; hasCarbon {
-		if _, hasElectricity := pod.Annotations[common.AnnotationInitialElectricityRate]; hasElectricity {
-			// Pod already has both annotations, no need to update
-			return
-		}
+	// Only proceed if carbon is enabled
+	if !cs.config.Carbon.Enabled || cs.carbonImpl == nil {
+		return
+	}
+
+	// Get current carbon intensity
+	currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+	if err != nil || currentIntensity <= 0 {
+		return
 	}
 
 	// Create a client to update the pod
@@ -933,43 +957,80 @@ func (cs *ComputeGardenerScheduler) recordInitialMetrics(ctx context.Context, po
 		podCopy.Annotations = make(map[string]string)
 	}
 
-	// Flag to track if we need to update the pod
-	needsUpdate := false
+	// Check if we're updating an existing annotation
+	oldValue := podCopy.Annotations[common.AnnotationInitialCarbonIntensity]
+	podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
 
-	// Record current carbon intensity if enabled and not already present
-	if _, hasCarbon := podCopy.Annotations[common.AnnotationInitialCarbonIntensity]; !hasCarbon &&
-		cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-		if err == nil && currentIntensity > 0 {
-			podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
-			needsUpdate = true
-		}
-	}
-
-	// Record current electricity rate if enabled and not already present
-	if _, hasRate := podCopy.Annotations[common.AnnotationInitialElectricityRate]; !hasRate &&
-		cs.config.Pricing.Enabled && cs.priceImpl != nil {
-		currentRate := cs.priceImpl.GetCurrentRate(time.Now())
-		if currentRate > 0 {
-			podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
-			needsUpdate = true
-		}
-	}
-
-	// Only update the pod if we need to add at least one annotation
-	if needsUpdate {
-		// Attempt to update the pod - if it fails, it will be tried again next cycle
-		_, err := clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
-		if err == nil {
-			klog.V(2).InfoS("Updated pod with initial metrics annotations",
+	// Attempt to update the pod
+	_, err = clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
+	if err == nil {
+		if oldValue != "" {
+			klog.V(2).InfoS("Updated pod carbon intensity annotation (rising edge)",
 				"pod", klog.KObj(pod),
-				"carbonIntensity", podCopy.Annotations[common.AnnotationInitialCarbonIntensity],
-				"electricityRate", podCopy.Annotations[common.AnnotationInitialElectricityRate])
+				"oldIntensity", oldValue,
+				"newIntensity", currentIntensity)
 		} else {
-			klog.V(3).InfoS("Failed to update pod with metrics annotations, will try again next cycle",
+			klog.V(2).InfoS("Set initial pod carbon intensity annotation",
 				"pod", klog.KObj(pod),
-				"error", err)
+				"carbonIntensity", currentIntensity)
 		}
+	} else {
+		klog.V(3).InfoS("Failed to update pod with carbon intensity annotation",
+			"pod", klog.KObj(pod),
+			"error", err)
+	}
+}
+
+// recordInitialPriceMetric records the electricity rate at the time of a price-based delay.
+// This is called on every rising edge of price delay to capture the most recent baseline
+// for accurate cost savings calculations. Always overwrites any existing annotation.
+func (cs *ComputeGardenerScheduler) recordInitialPriceMetric(ctx context.Context, pod *v1.Pod) {
+	// Don't modify the pod if it's opted out of compute gardener scheduling
+	if cs.isOptedOut(pod) {
+		return
+	}
+
+	// Only proceed if pricing is enabled
+	if !cs.config.Pricing.Enabled || cs.priceImpl == nil {
+		return
+	}
+
+	// Get current electricity rate
+	currentRate := cs.priceImpl.GetCurrentRate(cs.clock.Now())
+	if currentRate <= 0 {
+		return
+	}
+
+	// Create a client to update the pod
+	clientset := cs.handle.ClientSet()
+
+	// Make a copy of the pod to modify
+	podCopy := pod.DeepCopy()
+	if podCopy.Annotations == nil {
+		podCopy.Annotations = make(map[string]string)
+	}
+
+	// Check if we're updating an existing annotation
+	oldValue := podCopy.Annotations[common.AnnotationInitialElectricityRate]
+	podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
+
+	// Attempt to update the pod
+	_, err := clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
+	if err == nil {
+		if oldValue != "" {
+			klog.V(2).InfoS("Updated pod electricity rate annotation (rising edge)",
+				"pod", klog.KObj(pod),
+				"oldRate", oldValue,
+				"newRate", currentRate)
+		} else {
+			klog.V(2).InfoS("Set initial pod electricity rate annotation",
+				"pod", klog.KObj(pod),
+				"electricityRate", currentRate)
+		}
+	} else {
+		klog.V(3).InfoS("Failed to update pod with electricity rate annotation",
+			"pod", klog.KObj(pod),
+			"error", err)
 	}
 }
 
