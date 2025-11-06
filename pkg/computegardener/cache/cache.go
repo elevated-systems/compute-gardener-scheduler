@@ -8,14 +8,13 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// Cache provides thread-safe caching of electricity data with TTL
+// Cache provides thread-safe caching of electricity data with expiration
 type Cache struct {
-	data    map[string]*cacheEntry
-	mutex   sync.RWMutex
-	ttl     time.Duration
-	maxAge  time.Duration
-	stopCh  chan struct{}
-	metrics *metrics
+	data       map[string]*cacheEntry
+	mutex      sync.RWMutex
+	expiration time.Duration // How long data is considered valid
+	stopCh     chan struct{}
+	metrics    *metrics
 }
 
 type cacheEntry struct {
@@ -30,24 +29,19 @@ type metrics struct {
 	mutex  sync.RWMutex
 }
 
-// New creates a new cache instance
-func New(ttl time.Duration, maxAge time.Duration) *Cache {
-	// Ensure TTL and maxAge are positive
-	if ttl <= 0 {
-		ttl = time.Minute // Default to 1 minute if not set
-	}
-	if maxAge <= 0 {
-		maxAge = time.Hour // Default to 1 hour if not set
+// New creates a new cache instance with a single expiration threshold
+// expiration defines how long cached data is considered valid for scheduling decisions
+func New(expiration time.Duration, _ time.Duration) *Cache {
+	// Ensure expiration is positive, default to 30 minutes if not set
+	if expiration <= 0 {
+		expiration = 30 * time.Minute
 	}
 
 	c := &Cache{
-		data: make(map[string]*cacheEntry),
-		// For cache freshness purposes at get time.
-		ttl: ttl,
-		// Age to clean-up unaccessed items.
-		maxAge:  maxAge,
-		stopCh:  make(chan struct{}),
-		metrics: &metrics{},
+		data:       make(map[string]*cacheEntry),
+		expiration: expiration,
+		stopCh:     make(chan struct{}),
+		metrics:    &metrics{},
 	}
 
 	// Start cleanup goroutine
@@ -56,7 +50,7 @@ func New(ttl time.Duration, maxAge time.Duration) *Cache {
 	return c
 }
 
-// Get retrieves data from cache if valid
+// Get retrieves data from cache if it's still within the expiration window
 func (c *Cache) Get(region string) (*api.ElectricityData, bool) {
 	c.mutex.RLock()
 	entry, exists := c.data[region]
@@ -68,8 +62,12 @@ func (c *Cache) Get(region string) (*api.ElectricityData, bool) {
 	}
 
 	age := time.Since(entry.timestamp)
-	if age > c.ttl {
+	if age > c.expiration {
 		c.recordMiss()
+		klog.V(3).InfoS("Cache data expired",
+			"region", region,
+			"age", age.String(),
+			"expiration", c.expiration.String())
 		return nil, false
 	}
 
@@ -78,6 +76,11 @@ func (c *Cache) Get(region string) (*api.ElectricityData, bool) {
 	entry.hits++
 	c.recordHit()
 	c.mutex.Unlock()
+
+	klog.V(3).InfoS("Cache hit",
+		"region", region,
+		"age", age.String(),
+		"carbonIntensity", entry.data.CarbonIntensity)
 
 	return entry.data, true
 }
@@ -118,17 +121,10 @@ func (c *Cache) recordMiss() {
 	c.metrics.mutex.Unlock()
 }
 
-// ensurePositiveDuration makes sure a duration is positive
-func ensurePositiveDuration(d time.Duration) time.Duration {
-	if d <= 0 {
-		return time.Minute // Default to 1 minute if duration is not positive
-	}
-	return d
-}
-
 // cleanup periodically removes expired entries
 func (c *Cache) cleanup() {
-	ticker := time.NewTicker(ensurePositiveDuration(c.ttl))
+	// Run cleanup at the expiration interval
+	ticker := time.NewTicker(c.expiration)
 	defer ticker.Stop()
 
 	for {
@@ -148,7 +144,8 @@ func (c *Cache) removeExpired() {
 	now := time.Now()
 	for region, entry := range c.data {
 		age := now.Sub(entry.timestamp)
-		if age > c.maxAge {
+		// Remove entries older than 2x expiration to keep memory clean
+		if age > 2*c.expiration {
 			delete(c.data, region)
 			klog.V(4).InfoS("Removed expired cache entry",
 				"region", region,

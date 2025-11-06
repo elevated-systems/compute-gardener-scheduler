@@ -85,7 +85,7 @@ func NewClient(apiCfg config.ElectricityMapsAPIConfig, cacheCfg config.APICacheC
 func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*ElectricityData, error) {
 	// First check the cache if available
 	if c.cache != nil {
-		if data, fresh := c.cache.Get(region); fresh {
+		if data, valid := c.cache.Get(region); valid {
 			klog.V(2).InfoS("Using cached carbon intensity data",
 				"region", region,
 				"intensity", data.CarbonIntensity)
@@ -93,7 +93,7 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 		}
 	}
 
-	// Cache miss or no cache configured, fetch from API
+	// Cache miss/expired or no cache configured, fetch from API
 	var lastErr error
 	for attempt := 0; attempt <= c.cacheConfig.MaxRetries; attempt++ {
 		select {
@@ -131,6 +131,7 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 			}
 		}
 	}
+
 	return nil, fmt.Errorf("all retries failed: %v", lastErr)
 }
 

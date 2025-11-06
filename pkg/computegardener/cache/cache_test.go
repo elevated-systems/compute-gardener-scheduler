@@ -8,30 +8,24 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	// Test with provided durations
-	c := New(5*time.Minute, 1*time.Hour)
+	// Test with provided duration
+	c := New(5*time.Minute, 0)
 	if c == nil {
 		t.Fatal("New() returned nil")
 	}
-	if c.ttl != 5*time.Minute {
-		t.Errorf("Expected ttl to be 5m, got %v", c.ttl)
-	}
-	if c.maxAge != 1*time.Hour {
-		t.Errorf("Expected maxAge to be 1h, got %v", c.maxAge)
+	if c.expiration != 5*time.Minute {
+		t.Errorf("Expected expiration to be 5m, got %v", c.expiration)
 	}
 
-	// Test with zero durations (should use defaults)
+	// Test with zero duration (should use default of 30m)
 	c = New(0, 0)
-	if c.ttl != time.Minute {
-		t.Errorf("Expected default ttl to be 1m, got %v", c.ttl)
-	}
-	if c.maxAge != time.Hour {
-		t.Errorf("Expected default maxAge to be 1h, got %v", c.maxAge)
+	if c.expiration != 30*time.Minute {
+		t.Errorf("Expected default expiration to be 30m, got %v", c.expiration)
 	}
 }
 
 func TestSetGet(t *testing.T) {
-	c := New(5*time.Minute, 1*time.Hour)
+	c := New(5*time.Minute, 0)
 
 	// Initial state: cache is empty
 	if c.Size() != 0 {
@@ -82,12 +76,12 @@ func TestSetGet(t *testing.T) {
 }
 
 func TestCacheTTL(t *testing.T) {
-	// Use a reasonable TTL
-	ttl := 5 * time.Minute
-	c := New(ttl, 1*time.Hour)
+	// Use a reasonable expiration duration
+	expiration := 5 * time.Minute
+	c := New(expiration, 0)
 
 	// 1. Initial cache entry with a specific timestamp
-	pastTime := time.Now().Add(-6 * time.Minute) // Timestamp older than TTL
+	pastTime := time.Now().Add(-6 * time.Minute) // Timestamp older than expiration
 
 	// Create the entry manually to simulate expired entry
 	c.mutex.Lock()
@@ -133,7 +127,7 @@ func TestCacheTTL(t *testing.T) {
 }
 
 func TestClear(t *testing.T) {
-	c := New(5*time.Minute, 1*time.Hour)
+	c := New(5*time.Minute, 0)
 
 	// Set some test data
 	c.Set("region1", &api.ElectricityData{CarbonIntensity: 100})
@@ -157,7 +151,7 @@ func TestClear(t *testing.T) {
 }
 
 func TestGetRegions(t *testing.T) {
-	c := New(5*time.Minute, 1*time.Hour)
+	c := New(5*time.Minute, 0)
 
 	// Set some test data
 	c.Set("region1", &api.ElectricityData{CarbonIntensity: 100})
@@ -181,9 +175,9 @@ func TestGetRegions(t *testing.T) {
 }
 
 func TestRemoveExpired(t *testing.T) {
-	// Create cache with specific maxAge
-	maxAge := 20 * time.Millisecond // Use a very short maxAge for testing
-	c := New(10*time.Millisecond, maxAge)
+	// Create cache with specific expiration
+	expiration := 10 * time.Millisecond
+	c := New(expiration, 0)
 
 	// Set entries through the normal API to ensure consistency
 	pastEntry := &api.ElectricityData{
@@ -194,11 +188,12 @@ func TestRemoveExpired(t *testing.T) {
 
 	// Manually backdating the timestamp of the first entry to simulate an old entry
 	// Note: In a real application, entries naturally age over time
+	// Cleanup removes entries older than 2x expiration
 	now := time.Now()
 	c.mutex.Lock()
 	if entry, exists := c.data["expired-region"]; exists {
-		// Set timestamp to well past maxAge
-		entry.timestamp = now.Add(-maxAge * 2)
+		// Set timestamp to well past 2x expiration
+		entry.timestamp = now.Add(-expiration * 3)
 	}
 	c.mutex.Unlock()
 
@@ -240,29 +235,8 @@ func TestRemoveExpired(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	c := New(5*time.Minute, 1*time.Hour)
+	c := New(5*time.Minute, 0)
 
 	// Just ensure Close() doesn't panic
 	c.Close()
-}
-
-func TestEnsurePositiveDuration(t *testing.T) {
-	// Test with positive duration
-	positiveDuration := 5 * time.Minute
-	result := ensurePositiveDuration(positiveDuration)
-	if result != positiveDuration {
-		t.Errorf("Expected %v, got %v for positive duration", positiveDuration, result)
-	}
-
-	// Test with zero duration
-	result = ensurePositiveDuration(0)
-	if result != time.Minute {
-		t.Errorf("Expected 1m, got %v for zero duration", result)
-	}
-
-	// Test with negative duration
-	result = ensurePositiveDuration(-5 * time.Minute)
-	if result != time.Minute {
-		t.Errorf("Expected 1m, got %v for negative duration", result)
-	}
 }

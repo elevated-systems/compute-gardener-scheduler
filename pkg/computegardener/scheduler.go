@@ -876,12 +876,16 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 	// Check carbon intensity
 	currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 	if err != nil {
-		klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
-			"pod", klog.KObj(pod))
+		// Cannot get carbon intensity data (API failed and no valid cached data)
+		// Allow pod to prevent indefinite blocking, but log prominently
+		klog.InfoS("NO RECENT CARBON DATA - Carbon API unavailable and cache expired, allowing pod to schedule",
+			"pod", klog.KObj(pod),
+			"error", err,
+			"region", cs.config.Carbon.APIConfig.Region)
 		return nil, framework.NewStatus(framework.Success, "")
 	}
 
-	// Update metrics regardless of threshold check result
+	// Update metrics with current carbon intensity
 	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
 
 	podUID := string(pod.UID)
