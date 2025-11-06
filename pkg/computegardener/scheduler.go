@@ -882,17 +882,8 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 	}
 	currentIntensity := intensityData.Value
 
-	// Determine data status label for metrics
-	dataStatus := "real"
-	if intensityData.IsEstimated {
-		dataStatus = "estimated"
-	}
-	if intensityData.DataStatus != "" {
-		dataStatus = intensityData.DataStatus
-	}
-
 	// Update metrics regardless of threshold check result
-	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, dataStatus).Set(currentIntensity)
+	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, intensityData.DataStatus).Set(currentIntensity)
 
 	podUID := string(pod.UID)
 	wasDelayed := cs.carbonDelayedPods[podUID]
@@ -1168,23 +1159,13 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 			klog.ErrorS(err, "Failed to refresh carbon intensity cache",
 				"region", region)
 		} else {
-			// Determine data status label for metrics
-			dataStatus := "real"
-			if intensityData.IsEstimated {
-				dataStatus = "estimated"
-			}
-			if intensityData.DataStatus != "" {
-				dataStatus = intensityData.DataStatus
-			}
-
 			klog.V(2).InfoS("Successfully refreshed carbon intensity cache",
 				"region", region,
 				"intensity", intensityData.Value,
-				"isEstimated", intensityData.IsEstimated,
-				"dataStatus", dataStatus)
+				"dataStatus", intensityData.DataStatus)
 
 			// Update metrics
-			metrics.CarbonIntensityGauge.WithLabelValues(region, dataStatus).Set(intensityData.Value)
+			metrics.CarbonIntensityGauge.WithLabelValues(region, intensityData.DataStatus).Set(intensityData.Value)
 		}
 	}
 }

@@ -20,9 +20,9 @@ import (
 // Supports both simple fixed values and function overrides for more complex scenarios
 type MockCarbonImplementation struct {
 	// Simple mode fields
-	intensity   float64
-	errorMode   bool
-	isEstimated bool
+	intensity  float64
+	errorMode  bool
+	dataStatus string // "real" or "estimated"
 
 	// Advanced mode function overrides (when set, these take precedence)
 	GetCurrentIntensityFunc           func(ctx context.Context) (float64, error)
@@ -32,12 +32,12 @@ type MockCarbonImplementation struct {
 
 // NewMockCarbon creates a new mock carbon implementation with fixed intensity
 func NewMockCarbon(intensity float64) carbon.Implementation {
-	return &MockCarbonImplementation{intensity: intensity, errorMode: false, isEstimated: false}
+	return &MockCarbonImplementation{intensity: intensity, errorMode: false, dataStatus: "real"}
 }
 
 // NewMockCarbonWithError creates a new mock carbon implementation that returns errors
 func NewMockCarbonWithError() carbon.Implementation {
-	return &MockCarbonImplementation{intensity: 0, errorMode: true, isEstimated: false}
+	return &MockCarbonImplementation{intensity: 0, errorMode: true, dataStatus: "real"}
 }
 
 func (m *MockCarbonImplementation) GetCurrentIntensity(ctx context.Context) (float64, error) {
@@ -64,15 +64,15 @@ func (m *MockCarbonImplementation) GetCurrentIntensityWithStatus(ctx context.Con
 		return nil, fmt.Errorf("carbon API error (mock)")
 	}
 
-	dataStatus := "real"
-	if m.isEstimated {
-		dataStatus = "estimated"
+	// Use dataStatus field if set, otherwise default to "real"
+	status := m.dataStatus
+	if status == "" {
+		status = "real"
 	}
 
 	return &carbon.IntensityData{
-		Value:       m.intensity,
-		IsEstimated: m.isEstimated,
-		DataStatus:  dataStatus,
+		Value:      m.intensity,
+		DataStatus: status,
 	}, nil
 }
 

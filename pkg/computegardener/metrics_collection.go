@@ -61,29 +61,18 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 
 	// Get carbon intensity with data quality information
 	carbonIntensity := 0.0
-	carbonIntensityIsEst := false
+	carbonDataStatus := "unknown"
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
 		if intensityData, err := cs.carbonImpl.GetCurrentIntensityWithStatus(ctx); err == nil {
 			carbonIntensity = intensityData.Value
-			carbonIntensityIsEst = intensityData.IsEstimated
-
-			// Determine data status label for metrics
-			dataStatus := "real"
-			if intensityData.IsEstimated {
-				dataStatus = "estimated"
-			}
-			// If DataStatus field is set, prefer it over IsEstimated
-			if intensityData.DataStatus != "" {
-				dataStatus = intensityData.DataStatus
-			}
+			carbonDataStatus = intensityData.DataStatus
 
 			// Also update the carbon intensity gauge here so we're not dependent on pods to trigger
-			metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, dataStatus).Set(intensityData.Value)
+			metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, carbonDataStatus).Set(intensityData.Value)
 			klog.V(2).InfoS("Updated carbon intensity gauge from metrics collector",
 				"region", cs.config.Carbon.APIConfig.Region,
 				"intensity", intensityData.Value,
-				"isEstimated", intensityData.IsEstimated,
-				"dataStatus", dataStatus)
+				"dataStatus", carbonDataStatus)
 		} else {
 			klog.ErrorS(err, "Failed to get carbon intensity")
 		}
@@ -290,7 +279,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			pod,
 			gpuPower,
 			carbonIntensity,
-			carbonIntensityIsEst,
+			carbonDataStatus,
 			cs.calculatePodPower,
 		)
 

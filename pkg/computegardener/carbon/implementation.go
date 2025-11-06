@@ -13,9 +13,13 @@ import (
 
 // IntensityData contains carbon intensity along with data quality information
 type IntensityData struct {
-	Value       float64
-	IsEstimated bool
-	DataStatus  string
+	Value      float64
+	DataStatus string // "real" or "estimated"
+}
+
+// IsEstimated returns true if the data is estimated (helper for boolean checks)
+func (i *IntensityData) IsEstimated() bool {
+	return i.DataStatus == "estimated"
 }
 
 // Implementation defines the interface for carbon-aware scheduling
@@ -65,9 +69,8 @@ func (c *carbonImpl) GetCurrentIntensityWithStatus(ctx context.Context) (*Intens
 	}
 
 	return &IntensityData{
-		Value:       data.CarbonIntensity,
-		IsEstimated: data.IsEstimated,
-		DataStatus:  data.DataStatus,
+		Value:      data.CarbonIntensity,
+		DataStatus: data.GetDataStatus(),
 	}, nil
 }
 

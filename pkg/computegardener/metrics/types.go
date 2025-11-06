@@ -44,7 +44,7 @@ func CalculatePodMetrics(
 	pod *corev1.Pod,
 	gpuPowerWatts float64,
 	carbonIntensity float64,
-	carbonIntensityIsEst bool,
+	carbonDataStatus string,
 	calculatePower func(nodeName string, cpu, memory, gpu float64) float64,
 ) PodMetricsRecord {
 	// Sum CPU and memory usage across all containers
@@ -66,27 +66,27 @@ func CalculatePodMetrics(
 	// Return a record with all the fields including 0 for ElectricityRate
 	// ElectricityRate will be set in the metrics collector if available
 	return PodMetricsRecord{
-		Timestamp:            podMetrics.Timestamp.Time,
-		CPU:                  totalCPU,
-		Memory:               totalMemory,
-		GPUPowerWatts:        gpuPowerWatts,
-		PowerEstimate:        estimatedPower,
-		CarbonIntensity:      carbonIntensity,
-		CarbonIntensityIsEst: carbonIntensityIsEst,
-		ElectricityRate:      0, // Will be set later if available
+		Timestamp:        podMetrics.Timestamp.Time,
+		CPU:              totalCPU,
+		Memory:           totalMemory,
+		GPUPowerWatts:    gpuPowerWatts,
+		PowerEstimate:    estimatedPower,
+		CarbonIntensity:  carbonIntensity,
+		CarbonDataStatus: carbonDataStatus,
+		ElectricityRate:  0, // Will be set later if available
 	}
 }
 
 // PodMetricsRecord represents a point-in-time measurement of pod resource usage
 type PodMetricsRecord struct {
-	Timestamp              time.Time
-	CPU                    float64 // CPU usage in cores
-	Memory                 float64 // Memory usage in bytes
-	GPUPowerWatts          float64 // GPU power in Watts
-	PowerEstimate          float64 // Estimated power at this point across all hw in Watts
-	CarbonIntensity        float64 // Carbon intensity at this point in gCO2eq/kWh
-	CarbonIntensityIsEst   bool    // Whether the carbon intensity is estimated or real
-	ElectricityRate        float64 // Electricity rate at this point in $/kWh
+	Timestamp        time.Time
+	CPU              float64 // CPU usage in cores
+	Memory           float64 // Memory usage in bytes
+	GPUPowerWatts    float64 // GPU power in Watts
+	PowerEstimate    float64 // Estimated power at this point across all hw in Watts
+	CarbonIntensity  float64 // Carbon intensity at this point in gCO2eq/kWh
+	CarbonDataStatus string  // Carbon data quality: "real" or "estimated"
+	ElectricityRate  float64 // Electricity rate at this point in $/kWh
 }
 
 // PodMetricsHistory stores a time series of pod metrics
