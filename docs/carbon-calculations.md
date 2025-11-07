@@ -124,10 +124,21 @@ Where:
 
 ### When Calculated
 
-Only calculated if:
-1. Pod was **actually delayed** by carbon constraints (tracked in `carbonDelayedPods` map)
-2. Initial and bind timestamps are available
-3. Prometheus has historical carbon intensity data for the delay period
+Savings are calculated if the pod was **actually delayed** by carbon constraints (tracked in `carbonDelayedPods` map).
+
+Two calculation methods with automatic fallback:
+
+**Method 1: "timeseries" (preferred)**
+- Requires: Prometheus configured with historical carbon intensity data
+- Uses: Time-series counterfactual with historical intensity from delay period
+- Precision: High (accounts for intensity variations during both periods)
+
+**Method 2: "simple" (fallback)**
+- Used when: Prometheus unavailable, historical data incomplete, or query fails
+- Uses: `(initial_intensity - bind_intensity) × total_energy`
+- Precision: Lower (rough estimate, assumes constant intensity)
+
+The `method` label on the `estimated_savings` metric indicates which calculation was used, allowing dashboards to distinguish high-precision vs rough estimates.
 
 ### Example with Time-Series Data
 
@@ -332,13 +343,22 @@ Annotations:
 **Scheduler Effectiveness Metrics**
 ```promql
 # Carbon savings (can be positive or negative)
-compute_gardener_scheduler_estimated_savings{type="carbon",unit="grams_co2"}
+# Filter by method to distinguish precision levels:
+compute_gardener_scheduler_estimated_savings{type="carbon",unit="grams_co2",method="timeseries"}  # High precision
+compute_gardener_scheduler_estimated_savings{type="carbon",unit="grams_co2",method="simple"}      # Rough estimate
+compute_gardener_scheduler_estimated_savings{type="carbon",unit="grams_co2"}                       # All methods
 
 # Cost savings (can be positive or negative)
-compute_gardener_scheduler_estimated_savings{type="cost",unit="dollars"}
+compute_gardener_scheduler_estimated_savings{type="cost",unit="dollars",method="simple"}  # Currently always simple
 
 # Intensity difference (initial - bind)
 compute_gardener_scheduler_scheduling_efficiency{metric="carbon_intensity_delta"}
+
+# Example dashboard query - only high-precision savings:
+sum(compute_gardener_scheduler_estimated_savings{type="carbon",method="timeseries"})
+
+# Example dashboard query - all savings with method breakdown:
+sum by (method) (compute_gardener_scheduler_estimated_savings{type="carbon"})
 ```
 
 **Actual Usage Metrics**

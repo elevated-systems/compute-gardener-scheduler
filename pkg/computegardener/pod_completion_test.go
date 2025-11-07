@@ -816,8 +816,8 @@ func TestSavingsCalculation(t *testing.T) {
 					}
 
 					if unit != "" {
-						// Access the specific metric instance using labels
-						metricInstance := metrics.EstimatedSavings.WithLabelValues(savingsType, unit, tc.PodName, tc.Namespace)
+						// Access the specific metric instance using labels (including method="simple" since test has no Prometheus)
+						metricInstance := metrics.EstimatedSavings.WithLabelValues(savingsType, unit, "simple", tc.PodName, tc.Namespace)
 						// Use k8s testutil to get value from GaugeMetric
 						actualValue, err := k8smetrictesutil.GetGaugeMetricValue(metricInstance)
 						assert.NoError(t, err, "Error getting EstimatedSavings value for %s/%s", savingsType, unit)

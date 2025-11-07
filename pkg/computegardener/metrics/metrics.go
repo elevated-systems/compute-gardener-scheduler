@@ -144,6 +144,9 @@ var (
 	)
 
 	// EstimatedSavings tracks carbon and cost savings for completed pods (can be negative)
+	// The 'method' label indicates calculation methodology:
+	//   - "timeseries": High-precision counterfactual using historical Prometheus data
+	//   - "simple": Rough estimate using (initial - bind) × energy when Prometheus unavailable
 	EstimatedSavings = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
@@ -151,7 +154,7 @@ var (
 			Help:           "Estimated savings from compute-gardener scheduling per completed pod (grams_co2 or dollars)",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"type", "unit", "pod", "namespace"}, // type: "carbon", "cost", unit: "grams_co2", "dollars"
+		[]string{"type", "unit", "method", "pod", "namespace"}, // method: "timeseries", "simple"
 	)
 
 	// ElectricityRateGauge measures the current electricity rate

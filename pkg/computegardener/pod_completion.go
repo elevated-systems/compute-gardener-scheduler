@@ -209,7 +209,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
 				"pod", klog.KObj(pod))
 		} else {
-			// Calculate counterfactual emissions using historical carbon intensity
+			// Try time-series counterfactual first (best precision)
 			counterfactualEmissions := cs.calculateCounterfactualCarbonEmissions(
 				context.Background(),
 				pod,
@@ -217,30 +217,70 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				initialTimestampStr,
 			)
 
+			var carbonSavingsGrams float64
+			var method string
+
 			if counterfactualEmissions > 0 {
+				// Success! Use high-precision time-series method
+				method = "timeseries"
+
 				// Record counterfactual emissions metric
 				metrics.JobCounterfactualCarbonEmissions.WithLabelValues(podName, namespace).Set(counterfactualEmissions)
 
 				// Calculate savings: counterfactual - actual
-				// Positive = saved carbon, Negative = used more carbon (scheduler made it worse)
-				carbonSavingsGrams := counterfactualEmissions - totalCarbonEmissions
+				carbonSavingsGrams = counterfactualEmissions - totalCarbonEmissions
 
 				klog.V(2).InfoS("Calculated carbon savings using time-series counterfactual analysis",
 					"pod", klog.KObj(pod),
+					"method", method,
 					"actualEmissions", totalCarbonEmissions,
 					"counterfactualEmissions", counterfactualEmissions,
 					"savingsGrams", carbonSavingsGrams,
 					"isPositive", carbonSavingsGrams > 0)
-
-				// Record savings metric
-				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
-
-				// Record efficiency metric (counterfactual - actual for comparison)
-				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_emissions_delta", podName).Set(carbonSavingsGrams)
 			} else {
-				klog.V(2).InfoS("Could not calculate counterfactual emissions, skipping savings calculation",
-					"pod", klog.KObj(pod))
+				// Fallback to simple calculation if Prometheus unavailable or data incomplete
+				method = "simple"
+
+				// Get initial and bind intensities for simple calculation
+				initialIntensity, err := strconv.ParseFloat(pod.Annotations[common.AnnotationInitialCarbonIntensity], 64)
+				if err != nil {
+					klog.ErrorS(err, "Failed to parse initial carbon intensity for fallback calculation",
+						"pod", klog.KObj(pod))
+					return // Can't calculate without initial intensity
+				}
+
+				var bindTimeIntensity float64
+				if bindTimeStr, ok := pod.Annotations[common.AnnotationBindCarbonIntensity]; ok {
+					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
+				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].CarbonIntensity > 0 {
+					bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
+				}
+
+				if bindTimeIntensity > 0 {
+					// Simple calculation: (initial - bind) × total_energy
+					intensityDiff := initialIntensity - bindTimeIntensity
+					carbonSavingsGrams = intensityDiff * totalEnergyKWh
+
+					klog.V(2).InfoS("Calculated carbon savings using simple fallback method (Prometheus unavailable)",
+						"pod", klog.KObj(pod),
+						"method", method,
+						"initialIntensity", initialIntensity,
+						"bindTimeIntensity", bindTimeIntensity,
+						"energyKWh", totalEnergyKWh,
+						"savingsGrams", carbonSavingsGrams,
+						"note", "Rough estimate - historical data unavailable")
+				} else {
+					klog.ErrorS(nil, "Cannot calculate carbon savings - no bind-time intensity available",
+						"pod", klog.KObj(pod))
+					return // Can't calculate at all
+				}
 			}
+
+			// Record savings metric with method label
+			metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", method, podName, namespace).Set(carbonSavingsGrams)
+
+			// Record efficiency metric
+			metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_emissions_delta", podName).Set(carbonSavingsGrams)
 		}
 	}
 
@@ -278,12 +318,14 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 					// Calculate cost savings from scheduling decision: (initial - bind-time) * energy consumed
 					// This compares the rate when first delayed vs when job actually started executing.
 					// If the job was seen at $0.25/kWh and started at $0.25/kWh, savings = 0 (correct).
+					// Note: Currently uses "simple" method as we don't track electricity rate time-series in Prometheus
 					rateDiff := initialRate - bindTimeRate
 					costSavingsDollars := rateDiff * totalEnergyKWh
 
 					// Log regardless of whether savings are positive or negative
 					klog.V(2).InfoS("Calculated cost savings from scheduling decision",
 						"pod", klog.KObj(pod),
+						"method", "simple",
 						"initialRate", initialRate,
 						"bindTimeRate", bindTimeRate,
 						"energyKWh", totalEnergyKWh,
@@ -291,7 +333,8 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 						"isPositive", rateDiff > 0)
 
 					// Record actual calculated savings or costs (even if negative)
-					metrics.EstimatedSavings.WithLabelValues("cost", "dollars", podName, namespace).Set(costSavingsDollars)
+					// Always uses "simple" method for now (no time-series electricity rate tracking yet)
+					metrics.EstimatedSavings.WithLabelValues("cost", "dollars", "simple", podName, namespace).Set(costSavingsDollars)
 
 					// Record efficiency metrics
 					metrics.SchedulingEfficiencyMetrics.WithLabelValues("electricity_rate_delta", podName).Set(rateDiff)
