@@ -90,54 +90,93 @@ Pod Completes ───────────────→ Calculate savings
 
 ### Purpose
 
-Measures the carbon reduction (or increase) attributable to the scheduler's decision to delay the pod.
+Measures the carbon reduction (or increase) attributable to the scheduler's decision to delay the pod using a time-series counterfactual analysis.
+
+### Methodology
+
+The scheduler calculates savings by comparing two scenarios with equal precision:
+
+1. **Actual Emissions**: What actually happened (calculated from time-series data)
+2. **Counterfactual Emissions**: What would have happened if the job ran during the delay period
+
+Both use the same power profile (since the job's computation is intrinsic) but different carbon intensity time-series.
 
 ### Formula
 
 ```
-Carbon Savings (gCO2) = (Initial Intensity - Bind-Time Intensity) × Total Energy (kWh)
+Counterfactual Emissions (gCO2) = ∑ [Energy_interval × Historical_Intensity_interval]
+Actual Emissions (gCO2)         = ∑ [Energy_interval × Execution_Intensity_interval]
+Carbon Savings (gCO2)           = Counterfactual - Actual
 ```
+
+Where:
+- `Energy_interval` = Same power profile for both (trapezoid integration)
+- `Historical_Intensity_interval` = Carbon intensity from Prometheus during [initial_time, initial_time + execution_duration]
+- `Execution_Intensity_interval` = Carbon intensity during actual execution
 
 ### When Calculated
 
-Only calculated if the pod was **actually delayed** by carbon constraints. This is tracked in memory via `carbonDelayedPods` map.
+Only calculated if:
+1. Pod was **actually delayed** by carbon constraints (tracked in `carbonDelayedPods` map)
+2. Initial and bind timestamps are available
+3. Prometheus has historical carbon intensity data for the delay period
 
-### Example
-
-```
-Initial Intensity:   350 gCO2/kWh (when pod was delayed)
-Bind-Time Intensity: 200 gCO2/kWh (when pod started)
-Total Energy Used:   2.5 kWh
-
-Carbon Savings = (350 - 200) × 2.5 = 375 gCO2 saved
-```
-
-### Special Case: No Delay Benefit
-
-If a job is seen at 150 gCO2/kWh and begins running at 150 gCO2/kWh (whether immediately or later at the same intensity):
+### Example with Time-Series Data
 
 ```
-Initial Intensity:   150 gCO2/kWh
-Bind-Time Intensity: 150 gCO2/kWh
-Total Energy Used:   2.5 kWh
+Job delayed at 10:00 AM, ran at 11:30 AM, finished at 1:00 PM (90 min execution)
 
-Carbon Savings = (150 - 150) × 2.5 = 0 gCO2
+Actual Emissions (11:30 AM - 1:00 PM):
+  Power: 250W, 300W, 280W, 260W... (from metrics)
+  Intensity: 250, 245, 260, 255... gCO2/kWh (from Prometheus)
+  Actual = ∫(power × intensity) dt = 410 gCO2
+
+Counterfactual Emissions (10:00 AM - 11:30 AM with same power):
+  Power: 250W, 300W, 280W, 260W... (same as actual)
+  Intensity: 450, 440, 430, 420... gCO2/kWh (historical from Prometheus)
+  Counterfactual = ∫(power × historical_intensity) dt = 620 gCO2
+
+Savings = 620 - 410 = 210 gCO2 saved
 ```
 
-This is correct! The scheduler provided no benefit, even if the intensity changed during execution.
+### Key Advantages Over Simple Methodology
+
+**Old approach** (before this enhancement):
+```
+Savings = (initial_intensity - bind_intensity) × total_energy
+        = (450 - 250) × 2.5 = 500 gCO2  ← Crude estimate
+```
+
+**New approach** (time-series counterfactual):
+```
+Savings = counterfactual_emissions - actual_emissions
+        = 620 - 410 = 210 gCO2  ← Accounts for intensity variations
+```
+
+The new approach:
+- Uses the same granular methodology for both actual and counterfactual
+- Accounts for grid intensity variations during both periods
+- Provides justified precision by using real historical data
+- Avoids false precision from mixing methodologies
 
 ### Implementation
 
-See `processPodCompletionMetrics()` in `pkg/computegardener/pod_completion.go:194-261`
+See:
+- `processPodCompletionMetrics()` in `pkg/computegardener/pod_completion.go:194-245`
+- `calculateCounterfactualCarbonEmissions()` in `pkg/computegardener/pod_completion.go:458-624`
 
 ```go
-// Calculate scheduler effectiveness
-intensityDiff := initialIntensity - bindTimeIntensity
-carbonSavingsGrams := intensityDiff * totalEnergyKWh
+// Query historical intensity from Prometheus for delay period
+historicalIntensity := QueryHistoricalCarbonIntensity(initialTime, counterfactualEnd)
 
-// Record the metric
-metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).
-    Set(carbonSavingsGrams)
+// Calculate counterfactual emissions using same power profile
+for each interval in execution:
+    energy_interval = trapezoid_integration(power)
+    historical_intensity_avg = match_historical_intensity(interval)
+    counterfactual += energy_interval × historical_intensity_avg
+
+// Calculate savings
+savings = counterfactual - actual_emissions
 ```
 
 ## Actual Carbon Emissions Calculation
@@ -299,8 +338,11 @@ compute_gardener_scheduler_scheduling_efficiency{metric="carbon_intensity_delta"
 # Total energy consumed
 compute_gardener_scheduler_job_energy_usage_kwh
 
-# Total carbon emissions (using time-series data)
+# Total carbon emissions (actual, using time-series data)
 compute_gardener_scheduler_job_carbon_emissions_grams
+
+# Counterfactual carbon emissions (what would have happened)
+compute_gardener_scheduler_job_counterfactual_carbon_emissions_grams
 
 # GPU-specific energy
 compute_gardener_scheduler_job_gpu_energy_usage_kwh

@@ -61,6 +61,7 @@ type ComputeGardenerScheduler struct {
 	// Metrics clients and components
 	coreMetricsClient clients.CoreMetricsClient
 	gpuMetricsClient  clients.GPUMetricsClient
+	prometheusClient  *clients.PrometheusMetricsClient // Direct Prometheus access for historical queries
 	metricsStore      metrics.PodMetricsStorage
 
 	// Scheduler state
@@ -152,6 +153,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	// Setup metrics clients - if metrics server is not available, they'll be nil
 	var coreMetricsClient clients.CoreMetricsClient
 	var gpuMetricsClient clients.GPUMetricsClient
+	var prometheusClient *clients.PrometheusMetricsClient
 	var metricsStore metrics.PodMetricsStorage
 
 	// Setup downsampling strategy based on config
@@ -229,6 +231,8 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 					"utilMetric", promClient.GetDCGMUtilMetric())
 
 				gpuMetricsClient = promClient
+				// Also store the concrete type for historical queries
+				prometheusClient = promClient
 			}
 		} else {
 			// Initialize a null GPU metrics client as fallback
@@ -250,6 +254,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		// Metrics components
 		coreMetricsClient: coreMetricsClient,
 		gpuMetricsClient:  gpuMetricsClient,
+		prometheusClient:  prometheusClient,
 		metricsStore:      metricsStore,
 
 		startTime: time.Now(),
@@ -767,12 +772,15 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 	if hasInitialCarbon && cs.config.Carbon.Enabled && cs.carbonImpl != nil {
 		currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
 		if err == nil && currentIntensity > 0 {
-			// Store bind-time intensity - we'll use this in pod completion for accurate calculation
-			podCopy.Annotations["bind-time-carbon-intensity"] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
+			bindTime := cs.clock.Now()
+			// Store bind-time intensity and timestamp - we'll use these for counterfactual calculation
+			podCopy.Annotations[common.AnnotationBindCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
+			podCopy.Annotations[common.AnnotationBindTimestamp] = bindTime.Format(time.RFC3339)
 			needsUpdate = true
 			klog.V(2).InfoS("Recorded bind-time carbon intensity",
 				"pod", klog.KObj(pod),
-				"bindTimeIntensity", currentIntensity)
+				"bindTimeIntensity", currentIntensity,
+				"bindTimestamp", bindTime)
 		}
 	}
 
@@ -780,7 +788,7 @@ func (cs *ComputeGardenerScheduler) recordBindTimeMetrics(ctx context.Context, p
 	if hasInitialRate && cs.config.Pricing.Enabled && cs.priceImpl != nil {
 		currentRate := cs.priceImpl.GetCurrentRate(cs.clock.Now())
 		if currentRate > 0 {
-			podCopy.Annotations["bind-time-electricity-rate"] = strconv.FormatFloat(currentRate, 'f', 4, 64)
+			podCopy.Annotations[common.AnnotationBindElectricityRate] = strconv.FormatFloat(currentRate, 'f', 4, 64)
 			needsUpdate = true
 			klog.V(2).InfoS("Recorded bind-time electricity rate",
 				"pod", klog.KObj(pod),
@@ -961,6 +969,10 @@ func (cs *ComputeGardenerScheduler) recordInitialCarbonMetric(ctx context.Contex
 	oldValue := podCopy.Annotations[common.AnnotationInitialCarbonIntensity]
 	podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
 
+	// Also record the timestamp for counterfactual emissions calculation
+	initialTime := cs.clock.Now()
+	podCopy.Annotations[common.AnnotationInitialTimestamp] = initialTime.Format(time.RFC3339)
+
 	// Attempt to update the pod
 	_, err = clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
 	if err == nil {
@@ -968,11 +980,13 @@ func (cs *ComputeGardenerScheduler) recordInitialCarbonMetric(ctx context.Contex
 			klog.V(2).InfoS("Updated pod carbon intensity annotation (rising edge)",
 				"pod", klog.KObj(pod),
 				"oldIntensity", oldValue,
-				"newIntensity", currentIntensity)
+				"newIntensity", currentIntensity,
+				"timestamp", initialTime)
 		} else {
 			klog.V(2).InfoS("Set initial pod carbon intensity annotation",
 				"pod", klog.KObj(pod),
-				"carbonIntensity", currentIntensity)
+				"carbonIntensity", currentIntensity,
+				"timestamp", initialTime)
 		}
 	} else {
 		klog.V(3).InfoS("Failed to update pod with carbon intensity annotation",

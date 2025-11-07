@@ -192,7 +192,18 @@ var (
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "job_carbon_emissions_grams",
-			Help:           "Estimated carbon emissions in gCO2eq for completed jobs",
+			Help:           "Estimated carbon emissions in gCO2eq for completed jobs (actual emissions during execution)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace"},
+	)
+
+	// JobCounterfactualCarbonEmissions tracks what emissions would have been without carbon-aware scheduling
+	JobCounterfactualCarbonEmissions = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "job_counterfactual_carbon_emissions_grams",
+			Help:           "Estimated carbon emissions in gCO2eq if job had run during initial delay period (counterfactual scenario)",
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"pod", "namespace"},
@@ -273,6 +284,7 @@ func init() {
 	legacyregistry.MustRegister(PriceBasedDelays)
 	legacyregistry.MustRegister(CarbonBasedDelays)
 	legacyregistry.MustRegister(JobCarbonEmissions)
+	legacyregistry.MustRegister(JobCounterfactualCarbonEmissions)
 	legacyregistry.MustRegister(NodePUE)
 	legacyregistry.MustRegister(PowerFilteredNodes)
 	legacyregistry.MustRegister(NodeEfficiency)

@@ -191,15 +191,15 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	metrics.JobGPUEnergyUsage.WithLabelValues(podName, namespace).Set(gpuEnergyKWh)
 	metrics.JobCarbonEmissions.WithLabelValues(podName, namespace).Set(totalCarbonEmissions)
 
-	// Calculate scheduler effectiveness based on the delta between initial and bind-time intensity/rate
-	// multiplied by actual energy used. This measures the benefit of delaying the job.
+	// Calculate scheduler effectiveness using time-series counterfactual analysis.
+	// This compares actual emissions (what happened) with counterfactual emissions
+	// (what would have happened if the job ran during the delay period).
 	//
-	// NOTE: We do NOT use end-of-execution intensity for savings calculations, as it's meaningless
-	// for measuring scheduler effectiveness. Savings = (initial_intensity - bind_intensity) × energy.
-	// Actual carbon emissions during execution use time-series intensity data (see CalculateTotalCarbonEmissions).
+	// We use the same power profile for both scenarios (since the job's computation is intrinsic)
+	// but apply historical carbon intensity from the delayed period to estimate counterfactual emissions.
 
-	// Carbon difference calculation - only if pod was actually delayed by carbon constraints
-	if initialIntensityStr, ok := pod.Annotations[common.AnnotationInitialCarbonIntensity]; ok {
+	// Carbon savings calculation - only if pod was actually delayed by carbon constraints
+	if initialTimestampStr, ok := pod.Annotations[common.AnnotationInitialTimestamp]; ok {
 		// wasCarbonDelayed was already captured above before removing from map
 		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
 		// for pods that were delayed before a restart and complete after. Consider persisting delay
@@ -209,53 +209,37 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
 				"pod", klog.KObj(pod))
 		} else {
-			initialIntensity, err := strconv.ParseFloat(initialIntensityStr, 64)
-			if err == nil {
-				// Get the bind-time carbon intensity from annotation (captured when pod passed filter)
-				var bindTimeIntensity float64
-				var hasBindTime bool
+			// Calculate counterfactual emissions using historical carbon intensity
+			counterfactualEmissions := cs.calculateCounterfactualCarbonEmissions(
+				context.Background(),
+				pod,
+				metricsHistory.Records,
+				initialTimestampStr,
+			)
 
-				if bindTimeStr, ok := pod.Annotations["bind-time-carbon-intensity"]; ok {
-					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
-					hasBindTime = bindTimeIntensity > 0
-				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].CarbonIntensity > 0 {
-					// Fallback to first metrics record if bind-time annotation is missing (legacy)
-					// This represents the intensity when the pod started executing
-					bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
-					hasBindTime = true
-					klog.V(2).InfoS("Using first metrics record for bind-time intensity (legacy fallback)",
-						"pod", klog.KObj(pod),
-						"intensity", bindTimeIntensity)
-				}
+			if counterfactualEmissions > 0 {
+				// Record counterfactual emissions metric
+				metrics.JobCounterfactualCarbonEmissions.WithLabelValues(podName, namespace).Set(counterfactualEmissions)
 
-				if hasBindTime {
-					// Calculate scheduler effectiveness: (initial - bind-time) * energy consumed
-					// This compares the intensity when first delayed vs when job actually started executing.
-					// If the job was seen at 150 gCO2 and started at 150 gCO2, savings = 0 (correct).
-					intensityDiff := initialIntensity - bindTimeIntensity
-					// Intensity is gCO2/kWh, Energy is kWh, result is gCO2
-					carbonSavingsGrams := intensityDiff * totalEnergyKWh
+				// Calculate savings: counterfactual - actual
+				// Positive = saved carbon, Negative = used more carbon (scheduler made it worse)
+				carbonSavingsGrams := counterfactualEmissions - totalCarbonEmissions
 
-					// Log regardless of whether savings are positive or negative
-					klog.V(2).InfoS("Calculated carbon savings from scheduling decision",
-						"pod", klog.KObj(pod),
-						"initialIntensity", initialIntensity,
-						"bindTimeIntensity", bindTimeIntensity,
-						"energyKWh", totalEnergyKWh,
-						"savingsGrams", carbonSavingsGrams,
-						"isPositive", intensityDiff > 0)
+				klog.V(2).InfoS("Calculated carbon savings using time-series counterfactual analysis",
+					"pod", klog.KObj(pod),
+					"actualEmissions", totalCarbonEmissions,
+					"counterfactualEmissions", counterfactualEmissions,
+					"savingsGrams", carbonSavingsGrams,
+					"isPositive", carbonSavingsGrams > 0)
 
-					// Record actual calculated savings or costs (even if negative)
-					metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
+				// Record savings metric
+				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", podName, namespace).Set(carbonSavingsGrams)
 
-					// Record efficiency metrics
-					metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
-				} else {
-					klog.ErrorS(nil, "Cannot calculate carbon savings - no bind-time intensity available",
-						"pod", klog.KObj(pod),
-						"initialIntensity", initialIntensity,
-						"note", "Bind-time annotation missing and no metrics records available")
-				}
+				// Record efficiency metric (counterfactual - actual for comparison)
+				metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_emissions_delta", podName).Set(carbonSavingsGrams)
+			} else {
+				klog.V(2).InfoS("Could not calculate counterfactual emissions, skipping savings calculation",
+					"pod", klog.KObj(pod))
 			}
 		}
 	}
@@ -277,7 +261,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				var bindTimeRate float64
 				var hasBindTime bool
 
-				if bindTimeRateStr, ok := pod.Annotations["bind-time-electricity-rate"]; ok {
+				if bindTimeRateStr, ok := pod.Annotations[common.AnnotationBindElectricityRate]; ok {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
 					hasBindTime = bindTimeRate > 0
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
@@ -469,4 +453,172 @@ func (cs *ComputeGardenerScheduler) handleEnergyBudgetAction(pod *v1.Pod, action
 			"pod", klog.KObj(pod),
 			"action", action)
 	}
+}
+
+// calculateCounterfactualCarbonEmissions calculates what emissions would have been
+// if the job had run during the initial delay period instead of when it actually executed.
+//
+// This uses the actual power profile (from metrics records) but applies historical carbon
+// intensity from Prometheus for the period when the pod was delayed. The methodology:
+//
+// 1. Query Prometheus for historical carbon intensity during [initial_time, bind_time]
+// 2. Match historical intensity with execution power profile in lock-step
+// 3. Calculate emissions using same trapezoid integration as actual emissions
+//
+// This provides a time-series based counterfactual that accounts for grid intensity
+// variations, giving a more accurate estimate than simple multiplication.
+func (cs *ComputeGardenerScheduler) calculateCounterfactualCarbonEmissions(
+	ctx context.Context,
+	pod *v1.Pod,
+	executionRecords []metrics.PodMetricsRecord,
+	initialTimestampStr string,
+) float64 {
+	// Check if we have Prometheus client for historical queries
+	if cs.prometheusClient == nil {
+		klog.V(2).InfoS("No Prometheus client available, cannot calculate counterfactual emissions",
+			"pod", klog.KObj(pod))
+		return 0
+	}
+
+	// Parse initial timestamp
+	initialTime, err := time.Parse(time.RFC3339, initialTimestampStr)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse initial timestamp",
+			"pod", klog.KObj(pod),
+			"timestamp", initialTimestampStr)
+		return 0
+	}
+
+	// Parse bind timestamp
+	bindTimestampStr, ok := pod.Annotations[common.AnnotationBindTimestamp]
+	if !ok {
+		// Fallback to first execution record timestamp if bind timestamp not available
+		if len(executionRecords) > 0 {
+			bindTimestampStr = executionRecords[0].Timestamp.Format(time.RFC3339)
+			klog.V(2).InfoS("Using first execution record for bind time (legacy fallback)",
+				"pod", klog.KObj(pod))
+		} else {
+			klog.ErrorS(nil, "No bind timestamp or execution records available",
+				"pod", klog.KObj(pod))
+			return 0
+		}
+	}
+
+	bindTime, err := time.Parse(time.RFC3339, bindTimestampStr)
+	if err != nil {
+		klog.ErrorS(err, "Failed to parse bind timestamp",
+			"pod", klog.KObj(pod),
+			"timestamp", bindTimestampStr)
+		return 0
+	}
+
+	// Determine execution duration from metrics records
+	if len(executionRecords) < 2 {
+		klog.V(2).InfoS("Insufficient metrics records for counterfactual calculation",
+			"pod", klog.KObj(pod),
+			"recordCount", len(executionRecords))
+		return 0
+	}
+
+	executionDuration := executionRecords[len(executionRecords)-1].Timestamp.Sub(executionRecords[0].Timestamp)
+	counterfactualEnd := initialTime.Add(executionDuration)
+
+	// Determine step size from execution records (use median interval)
+	step := 15 * time.Second // Default
+	if len(executionRecords) > 1 {
+		step = executionRecords[1].Timestamp.Sub(executionRecords[0].Timestamp)
+	}
+
+	// Get carbon configuration region
+	if cs.config == nil || !cs.config.Carbon.Enabled {
+		klog.V(2).InfoS("Carbon awareness not enabled, cannot query historical intensity",
+			"pod", klog.KObj(pod))
+		return 0
+	}
+	region := cs.config.Carbon.APIConfig.Region
+
+	klog.V(2).InfoS("Querying historical carbon intensity for counterfactual calculation",
+		"pod", klog.KObj(pod),
+		"region", region,
+		"initialTime", initialTime,
+		"counterfactualEnd", counterfactualEnd,
+		"executionDuration", executionDuration,
+		"step", step)
+
+	// Query historical carbon intensity from Prometheus
+	historicalIntensity, err := cs.prometheusClient.QueryHistoricalCarbonIntensity(
+		ctx,
+		region,
+		initialTime,
+		counterfactualEnd,
+		step,
+	)
+
+	if err != nil {
+		klog.ErrorS(err, "Failed to query historical carbon intensity",
+			"pod", klog.KObj(pod),
+			"region", region)
+		return 0
+	}
+
+	if len(historicalIntensity) == 0 {
+		klog.V(2).InfoS("No historical carbon intensity data available",
+			"pod", klog.KObj(pod),
+			"region", region)
+		return 0
+	}
+
+	klog.V(2).InfoS("Retrieved historical carbon intensity data",
+		"pod", klog.KObj(pod),
+		"dataPoints", len(historicalIntensity),
+		"executionRecords", len(executionRecords))
+
+	// Match historical intensity with execution power profile
+	// We iterate through execution records and find corresponding historical intensity
+	// using forward-fill for missing data points
+	totalCounterfactualEmissions := 0.0
+	historicalIdx := 0
+
+	for i := 1; i < len(executionRecords); i++ {
+		current := executionRecords[i]
+		previous := executionRecords[i-1]
+
+		// Calculate time offset from execution start
+		offsetFromStart := current.Timestamp.Sub(executionRecords[0].Timestamp)
+		// Map to counterfactual timeline
+		counterfactualTime := initialTime.Add(offsetFromStart)
+
+		// Find matching historical intensity (or use forward-fill)
+		var historicalIntensityCurrent, historicalIntensityPrevious float64
+
+		// Find closest historical intensity for current timestamp
+		for historicalIdx < len(historicalIntensity)-1 &&
+			historicalIntensity[historicalIdx+1].Timestamp.Before(counterfactualTime) {
+			historicalIdx++
+		}
+		historicalIntensityCurrent = historicalIntensity[historicalIdx].Intensity
+
+		// Use same index for previous (forward-fill if needed)
+		historicalIntensityPrevious = historicalIntensity[historicalIdx].Intensity
+		if historicalIdx > 0 {
+			historicalIntensityPrevious = historicalIntensity[historicalIdx-1].Intensity
+		}
+
+		// Calculate energy for this interval using trapezoid rule
+		deltaHours := current.Timestamp.Sub(previous.Timestamp).Hours()
+		avgPower := (current.PowerEstimate + previous.PowerEstimate) / 2
+		intervalEnergy := (avgPower * deltaHours) / 1000 // kWh
+
+		// Calculate counterfactual emissions using historical intensity
+		avgHistoricalIntensity := (historicalIntensityCurrent + historicalIntensityPrevious) / 2
+		intervalCounterfactualEmissions := intervalEnergy * avgHistoricalIntensity
+
+		totalCounterfactualEmissions += intervalCounterfactualEmissions
+	}
+
+	klog.V(2).InfoS("Calculated counterfactual emissions",
+		"pod", klog.KObj(pod),
+		"counterfactualEmissions", totalCounterfactualEmissions)
+
+	return totalCounterfactualEmissions
 }

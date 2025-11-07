@@ -770,7 +770,6 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 	return uuidToNode, nil
 }
 
-
 // resolvePodToNodeName resolves a pod name and namespace to the node it's running on
 func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kubeClient kubernetes.Interface, podName, namespace string) (string, error) {
 	pod, err := kubeClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
@@ -788,4 +787,103 @@ func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kube
 		"nodeName", pod.Spec.NodeName)
 
 	return pod.Spec.NodeName, nil
+}
+
+// CarbonIntensityPoint represents a single carbon intensity measurement at a point in time
+type CarbonIntensityPoint struct {
+	Timestamp time.Time
+	Intensity float64 // gCO2/kWh
+}
+
+// QueryHistoricalCarbonIntensity queries Prometheus for carbon intensity values over a time range.
+// This is used for counterfactual emissions calculations to determine what emissions would have been
+// if a job had run during the delayed period instead of when it actually executed.
+//
+// The method queries the compute_gardener_scheduler_carbon_intensity metric over the specified
+// time range and returns a time-series of intensity values that can be matched with execution timestamps.
+//
+// Parameters:
+//   - ctx: Context for the query
+//   - region: The carbon intensity region to query for
+//   - startTime: Start of the time range to query
+//   - endTime: End of the time range to query
+//   - step: Time step between data points (e.g., 15 seconds)
+//
+// Returns:
+//   - []CarbonIntensityPoint: Time-series of carbon intensity measurements
+//   - error: Error if the query fails
+func (c *PrometheusMetricsClient) QueryHistoricalCarbonIntensity(
+	ctx context.Context,
+	region string,
+	startTime, endTime time.Time,
+	step time.Duration,
+) ([]CarbonIntensityPoint, error) {
+	// Build Prometheus query for carbon intensity
+	query := fmt.Sprintf(`compute_gardener_scheduler_carbon_intensity{region="%s"}`, region)
+
+	klog.V(2).InfoS("Querying historical carbon intensity from Prometheus",
+		"region", region,
+		"startTime", startTime,
+		"endTime", endTime,
+		"step", step,
+		"query", query)
+
+	// Create context with timeout
+	queryCtx, cancel := context.WithTimeout(ctx, c.queryTimeout)
+	defer cancel()
+
+	// Execute range query
+	result, warnings, err := c.client.QueryRange(
+		queryCtx,
+		query,
+		v1.Range{
+			Start: startTime,
+			End:   endTime,
+			Step:  step,
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error querying Prometheus for historical carbon intensity: %v", err)
+	}
+
+	// Log any warnings
+	if len(warnings) > 0 {
+		klog.V(2).InfoS("Warnings received from Prometheus carbon intensity range query",
+			"warnings", warnings,
+			"query", query)
+	}
+
+	// Process results
+	if result.Type() != model.ValMatrix {
+		return nil, fmt.Errorf("unexpected result type: %v", result.Type())
+	}
+
+	matrix := result.(model.Matrix)
+	if len(matrix) == 0 {
+		klog.V(2).InfoS("No historical carbon intensity data found in Prometheus",
+			"region", region,
+			"startTime", startTime,
+			"endTime", endTime)
+		return nil, fmt.Errorf("no carbon intensity data found for region %s in time range", region)
+	}
+
+	// Extract time-series data
+	series := matrix[0] // Should only be one series for a specific region
+	points := make([]CarbonIntensityPoint, len(series.Values))
+
+	for i, value := range series.Values {
+		points[i] = CarbonIntensityPoint{
+			Timestamp: time.Unix(int64(value.Timestamp)/1000, (int64(value.Timestamp)%1000)*1000000),
+			Intensity: float64(value.Value),
+		}
+	}
+
+	klog.V(2).InfoS("Retrieved historical carbon intensity data",
+		"region", region,
+		"dataPoints", len(points),
+		"firstTimestamp", points[0].Timestamp,
+		"lastTimestamp", points[len(points)-1].Timestamp)
+
+	return points, nil
 }
