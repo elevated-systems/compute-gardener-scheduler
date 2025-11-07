@@ -30,10 +30,10 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 	testingmocks "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/testing"
 )
@@ -142,14 +142,14 @@ func newTestScheduler(cfg *config.Config, carbonIntensity float64, rate float64,
 	}
 
 	return &ComputeGardenerScheduler{
-		handle:      &mockHandle{},
-		config:      cfg,
-		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-		cache:       cache,
-		priceImpl:   testingmocks.NewMockPricingWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
-		carbonImpl:  carbonImpl,
-		clock:       testingclock.NewFakeClock(mockTime),
-		startTime:   mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		handle:            &mockHandle{},
+		config:            cfg,
+		apiClient:         api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+		cache:             cache,
+		priceImpl:         testingmocks.NewMockPricingWithPeakStatus(rate, rate > 0.15), // Set peak time if rate exceeds threshold
+		carbonImpl:        carbonImpl,
+		clock:             testingclock.NewFakeClock(mockTime),
+		startTime:         mockTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 		carbonDelayedPods: make(map[string]bool),
 		priceDelayedPods:  make(map[string]bool),
 	}
@@ -640,14 +640,14 @@ func TestCarbonAPIErrorHandling(t *testing.T) {
 	// Create scheduler with error-prone carbon implementation
 	cache := schedulercache.New(time.Minute, time.Hour)
 	scheduler := &ComputeGardenerScheduler{
-		handle:      &mockHandle{},
-		config:      cfg,
-		apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-		cache:       cache,
-		priceImpl:   testingmocks.NewMockPricing(0.1),
-		carbonImpl:  testingmocks.NewMockCarbonWithError(),
-		clock:       testingclock.NewFakeClock(baseTime),
-		startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+		handle:            &mockHandle{},
+		config:            cfg,
+		apiClient:         api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+		cache:             cache,
+		priceImpl:         testingmocks.NewMockPricing(0.1),
+		carbonImpl:        testingmocks.NewMockCarbonWithError(),
+		clock:             testingclock.NewFakeClock(baseTime),
+		startTime:         baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 		carbonDelayedPods: make(map[string]bool),
 		priceDelayedPods:  make(map[string]bool),
 	}
@@ -1129,16 +1129,16 @@ func TestHealthCheck(t *testing.T) {
 
 			// Create scheduler
 			scheduler := &ComputeGardenerScheduler{
-				handle:      &mockHandle{},
-				config:      cfg,
-				apiClient:   api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
-				cache:       cache,
-				priceImpl:   testingmocks.NewMockPricing(0.1),
-				carbonImpl:  carbonImpl,
-				clock:       testingclock.NewFakeClock(baseTime),
-				startTime:   baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
+				handle:            &mockHandle{},
+				config:            cfg,
+				apiClient:         api.NewClient(cfg.Carbon.APIConfig, cfg.Cache),
+				cache:             cache,
+				priceImpl:         testingmocks.NewMockPricing(0.1),
+				carbonImpl:        carbonImpl,
+				clock:             testingclock.NewFakeClock(baseTime),
+				startTime:         baseTime.Add(-10 * time.Minute), // Simulate scheduler running for 10 minutes
 				carbonDelayedPods: make(map[string]bool),
-		priceDelayedPods:  make(map[string]bool),
+				priceDelayedPods:  make(map[string]bool),
 			}
 
 			// Test health check
@@ -1479,7 +1479,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 		cache:             dataCache,
 		apiClient:         &api.Client{},
 		coreMetricsClient: metricsClient,
-		gpuMetricsClient:  gpuClient,
+		prometheusClient:  gpuClient,
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
@@ -1546,7 +1546,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 		cache:             dataCache,
 		apiClient:         &api.Client{},
 		coreMetricsClient: metricsClient,
-		gpuMetricsClient:  gpuClient,
+		prometheusClient:  gpuClient,
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),

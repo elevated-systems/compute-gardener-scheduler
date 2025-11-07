@@ -108,11 +108,11 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 	// Get GPU power measurements for all pods if GPU metrics client is configured
 	gpuPowers := make(map[string]float64)
 	gpuNodeMapping := make(map[string]string) // GPU key -> node name mapping
-	if cs.gpuMetricsClient != nil {
+	if cs.prometheusClient != nil {
 		klog.V(2).InfoS("GPU metrics client available, fetching power measurements",
-			"clientType", fmt.Sprintf("%T", cs.gpuMetricsClient))
+			"clientType", fmt.Sprintf("%T", cs.prometheusClient))
 
-		if powers, err := cs.gpuMetricsClient.ListPodsGPUPower(ctx); err == nil {
+		if powers, err := cs.prometheusClient.ListPodsGPUPower(ctx); err == nil {
 			klog.V(2).InfoS("Retrieved GPU power measurements", "count", len(powers), "values", powers)
 			gpuPowers = powers
 
@@ -667,12 +667,12 @@ func (cs *ComputeGardenerScheduler) calculatePodPower(nodeName string, cpu, memo
 // getNodeCPUFrequency attempts to get the current CPU frequency for a node from Prometheus
 func (cs *ComputeGardenerScheduler) getNodeCPUFrequency(nodeName string) (float64, error) {
 	// Check if we have Prometheus client available
-	if cs.gpuMetricsClient == nil {
+	if cs.prometheusClient == nil {
 		return 0, fmt.Errorf("prometheus client not available")
 	}
 
 	// Get the Prometheus client from the GPU metrics client (which is a PrometheusMetricsClient)
-	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
+	promClient, ok := cs.prometheusClient.(*clients.PrometheusMetricsClient)
 	if !ok {
 		return 0, fmt.Errorf("prometheus client not available (wrong client type)")
 	}
@@ -792,11 +792,11 @@ func (cs *ComputeGardenerScheduler) getNodeForGPUKey(gpuKey string) string {
 	klog.V(2).InfoS("Extracted GPU UUID from key", "gpuKey", gpuKey, "gpuUUID", gpuUUID)
 
 	// Check if we have a Prometheus client
-	promClient, ok := cs.gpuMetricsClient.(*clients.PrometheusMetricsClient)
+	promClient, ok := cs.prometheusClient.(*clients.PrometheusMetricsClient)
 	if !ok || promClient == nil {
 		klog.V(2).InfoS("Cannot determine node for GPU: Prometheus client not available",
 			"gpuKey", gpuKey,
-			"clientType", fmt.Sprintf("%T", cs.gpuMetricsClient))
+			"clientType", fmt.Sprintf("%T", cs.prometheusClient))
 		return ""
 	}
 

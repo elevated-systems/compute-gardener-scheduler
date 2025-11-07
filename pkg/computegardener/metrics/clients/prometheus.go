@@ -792,7 +792,7 @@ func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kube
 // CarbonIntensityPoint represents a single carbon intensity measurement at a point in time
 type CarbonIntensityPoint struct {
 	Timestamp time.Time
-	Intensity float64 // gCO2/kWh
+	Intensity float64 // gCO2eq/kWh
 }
 
 // QueryHistoricalCarbonIntensity queries Prometheus for carbon intensity values over a time range.

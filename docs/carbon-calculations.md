@@ -25,7 +25,7 @@ These are calculated differently and serve different purposes.
 
 ### Three Key Time Points
 
-The scheduler tracks carbon intensity (gCO2/kWh) at three important moments:
+The scheduler tracks carbon intensity (gCO2eq/kWh) at three important moments:
 
 1. **Initial Intensity** - When the pod is FIRST delayed due to exceeding the carbon threshold
    - Stored in annotation: `compute-gardener-scheduler.kubernetes.io/initial-carbon-intensity`
@@ -44,9 +44,9 @@ The scheduler tracks carbon intensity (gCO2/kWh) at three important moments:
 **The carbon intensity at pod completion is meaningless for scheduler savings calculations.**
 
 Consider this scenario:
-- Pod seen at 350 gCO2/kWh, delayed
-- Pod scheduled at 200 gCO2/kWh (intensity improved)
-- Pod completes 30 minutes later at 180 gCO2/kWh
+- Pod seen at 350 gCO2eq/kWh, delayed
+- Pod scheduled at 200 gCO2eq/kWh (intensity improved)
+- Pod completes 30 minutes later at 180 gCO2eq/kWh
 
 The scheduler's contribution was delaying until intensity dropped from 350 → 200. The further drop to 180 during execution is not attributable to the scheduling decision.
 
@@ -57,6 +57,14 @@ Using end-of-execution intensity would incorrectly credit the scheduler with sav
 ### Data Source
 
 Carbon intensity data comes from the [Electricity Maps API](https://api-portal.electricitymaps.com/), which provides real-time grid carbon intensity (gCO2eq/kWh) for different regions.
+
+**Data Flow:**
+1. **Real-time collection**: Scheduler queries Electricity Maps API every ~15s during pod execution
+2. **Storage in pod records**: Each `PodMetricsRecord` stores the current intensity
+3. **Export to Prometheus**: Scheduler writes intensity as `compute_gardener_scheduler_carbon_intensity` gauge metric
+4. **Historical retrieval**: For counterfactual analysis, scheduler queries **its own Prometheus metric** to get historical intensity from the delay period
+
+This means Prometheus has been storing the carbon intensity time-series all along - we just now use it for counterfactual calculations!
 
 ### Collection Points
 
@@ -128,12 +136,12 @@ Job delayed at 10:00 AM, ran at 11:30 AM, finished at 1:00 PM (90 min execution)
 
 Actual Emissions (11:30 AM - 1:00 PM):
   Power: 250W, 300W, 280W, 260W... (from metrics)
-  Intensity: 250, 245, 260, 255... gCO2/kWh (from Prometheus)
+  Intensity: 250, 245, 260, 255... gCO2eq/kWh (from Prometheus)
   Actual = ∫(power × intensity) dt = 410 gCO2
 
 Counterfactual Emissions (10:00 AM - 11:30 AM with same power):
   Power: 250W, 300W, 280W, 260W... (same as actual)
-  Intensity: 450, 440, 430, 420... gCO2/kWh (historical from Prometheus)
+  Intensity: 450, 440, 430, 420... gCO2eq/kWh (historical from Prometheus)
   Counterfactual = ∫(power × historical_intensity) dt = 620 gCO2
 
 Savings = 620 - 410 = 210 gCO2 saved
@@ -250,15 +258,15 @@ for i := 1; i < len(records); i++ {
 
 ```
 Timeline:
-10:00 AM - Pod created, intensity = 450 gCO2/kWh
-           Threshold = 300 gCO2/kWh
+10:00 AM - Pod created, intensity = 450 gCO2eq/kWh
+           Threshold = 300 gCO2eq/kWh
            Pod DELAYED (initial-carbon-intensity = 450)
 
-11:30 AM - Intensity drops to 250 gCO2/kWh
+11:30 AM - Intensity drops to 250 gCO2eq/kWh
            Pod SCHEDULED (bind-time-carbon-intensity = 250)
 
 11:30 AM - 1:00 PM - Pod executes
-           Time-series intensities: 250, 245, 260, 255 gCO2/kWh
+           Time-series intensities: 250, 245, 260, 255 gCO2eq/kWh
            Total energy: 3.2 kWh
 
 Results:
@@ -271,16 +279,16 @@ Results:
 
 ```
 Timeline:
-10:00 AM - Pod created, intensity = 350 gCO2/kWh
-           Threshold = 300 gCO2/kWh
+10:00 AM - Pod created, intensity = 350 gCO2eq/kWh
+           Threshold = 300 gCO2eq/kWh
            Pod DELAYED (initial-carbon-intensity = 350)
 
-10:30 AM - Intensity still 350 gCO2/kWh
+10:30 AM - Intensity still 350 gCO2eq/kWh
            Max delay reached, pod SCHEDULED anyway
            (bind-time-carbon-intensity = 350)
 
 10:30 AM - 11:00 AM - Pod executes
-           Time-series intensities: 350, 340, 330 gCO2/kWh
+           Time-series intensities: 350, 340, 330 gCO2eq/kWh
            Total energy: 1.5 kWh
 
 Results:
@@ -292,12 +300,12 @@ Results:
 
 ```
 Timeline:
-2:00 PM - Pod created, intensity = 200 gCO2/kWh
-          Threshold = 300 gCO2/kWh
+2:00 PM - Pod created, intensity = 200 gCO2eq/kWh
+          Threshold = 300 gCO2eq/kWh
           Pod immediately SCHEDULED (no delay, no initial annotation)
 
 2:00 PM - 3:00 PM - Pod executes
-          Time-series intensities: 200, 210, 220, 215 gCO2/kWh
+          Time-series intensities: 200, 210, 220, 215 gCO2eq/kWh
           Total energy: 2.0 kWh
 
 Results:

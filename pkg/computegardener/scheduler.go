@@ -60,8 +60,7 @@ type ComputeGardenerScheduler struct {
 
 	// Metrics clients and components
 	coreMetricsClient clients.CoreMetricsClient
-	gpuMetricsClient  clients.GPUMetricsClient
-	prometheusClient  *clients.PrometheusMetricsClient // Direct Prometheus access for historical queries
+	prometheusClient  *clients.PrometheusMetricsClient // Prometheus client for GPU metrics and historical queries
 	metricsStore      metrics.PodMetricsStorage
 
 	// Scheduler state
@@ -152,7 +151,6 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 	// Setup metrics clients - if metrics server is not available, they'll be nil
 	var coreMetricsClient clients.CoreMetricsClient
-	var gpuMetricsClient clients.GPUMetricsClient
 	var prometheusClient *clients.PrometheusMetricsClient
 	var metricsStore metrics.PodMetricsStorage
 
@@ -199,15 +197,15 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 			klog.ErrorS(err, "Failed to initialize metrics-server client, energy metrics will be limited")
 		}
 
-		// Initialize GPU metrics client - use Prometheus if configured, otherwise use null client
+		// Initialize Prometheus metrics client - used for GPU metrics and historical carbon intensity queries
 		if cfg.Metrics.Prometheus != nil && cfg.Metrics.Prometheus.URL != "" {
-			klog.InfoS("Initializing Prometheus GPU metrics client",
+			klog.InfoS("Initializing Prometheus metrics client",
 				"url", cfg.Metrics.Prometheus.URL)
 
 			promClient, err := clients.NewPrometheusMetricsClient(cfg.Metrics.Prometheus.URL)
 			if err != nil {
-				klog.ErrorS(err, "Failed to initialize Prometheus GPU metrics client, falling back to null implementation")
-				gpuMetricsClient = clients.NewNullGPUMetricsClient()
+				klog.ErrorS(err, "Failed to initialize Prometheus metrics client")
+				prometheusClient = nil
 			} else {
 				// Configure DCGM metrics if settings are provided
 				if cfg.Metrics.Prometheus.DCGMPowerMetric != "" {
@@ -225,19 +223,16 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 				}
 				promClient.SetUseDCGM(useDCGM)
 
-				klog.InfoS("Prometheus GPU metrics client configured with DCGM",
+				klog.InfoS("Prometheus metrics client configured",
 					"useDCGM", useDCGM,
 					"powerMetric", promClient.GetDCGMPowerMetric(),
 					"utilMetric", promClient.GetDCGMUtilMetric())
 
-				gpuMetricsClient = promClient
-				// Also store the concrete type for historical queries
 				prometheusClient = promClient
 			}
 		} else {
-			// Initialize a null GPU metrics client as fallback
-			klog.V(2).InfoS("No Prometheus URL configured, using null GPU metrics client")
-			gpuMetricsClient = clients.NewNullGPUMetricsClient()
+			klog.V(2).InfoS("No Prometheus URL configured, Prometheus features disabled")
+			prometheusClient = nil
 		}
 	}
 
@@ -253,7 +248,6 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 
 		// Metrics components
 		coreMetricsClient: coreMetricsClient,
-		gpuMetricsClient:  gpuMetricsClient,
 		prometheusClient:  prometheusClient,
 		metricsStore:      metricsStore,
 

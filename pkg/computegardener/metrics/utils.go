@@ -138,7 +138,7 @@ func CalculateAverageGPUPower(records []PodMetricsRecord) float64 {
 //
 // IMPORTANT: This function uses time-series carbon intensity data collected throughout
 // the pod's execution, NOT a fixed intensity value. Each PodMetricsRecord contains the
-// carbon intensity (gCO2/kWh) at that moment, which may vary significantly during long-running
+// carbon intensity (gCO2eq/kWh) at that moment, which may vary significantly during long-running
 // jobs. This provides an accurate estimate of actual carbon consumed over time.
 //
 // For scheduler savings calculations (measuring the benefit of delaying), see
