@@ -28,7 +28,7 @@ source "${TEMP_DIR}/setup-envtest"
 # get the args to pass to go test
 ARGS=("$@")
 
-go test "${ARGS[@]}" \
+go test ${ARGS[@]+"${ARGS[@]}"} \
   github.com/elevated-systems/compute-gardener-scheduler/cmd/... \
   github.com/elevated-systems/compute-gardener-scheduler/pkg/... \
   github.com/elevated-systems/compute-gardener-scheduler/apis/...
