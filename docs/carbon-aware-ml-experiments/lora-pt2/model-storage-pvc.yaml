@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-finetuned-models-rwx
+  namespace: ray-jobs
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn # Adjust if your storage class has a different name
+  resources:
+    requests:
+      storage: 40Gi # LoRA adapters + tokenizer are small but full model cache can be large
