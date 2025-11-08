@@ -25,10 +25,26 @@ type Client struct {
 	cache       CacheInterface // Added cache interface
 }
 
-// ElectricityData represents the response from the API
+// ElectricityData represents the response from the Electricity Maps API
+// Note: Both IsEstimated and DataStatus fields are kept to match the API response format.
+// The EM API provides both for client convenience (boolean for simple checks, string for flexibility).
+// Internally, we use DataStatus as the canonical field.
 type ElectricityData struct {
 	CarbonIntensity float64   `json:"carbonIntensity"`
-	Timestamp       time.Time `json:"timestamp"`
+	Timestamp       time.Time `json:"datetime"`
+	IsEstimated     bool      `json:"isEstimated"`
+	DataStatus      string    `json:"dataStatus,omitempty"` // "real" or "estimated"
+}
+
+// GetDataStatus returns the canonical data status string, deriving from IsEstimated if DataStatus is empty
+func (e *ElectricityData) GetDataStatus() string {
+	if e.DataStatus != "" {
+		return e.DataStatus
+	}
+	if e.IsEstimated {
+		return "estimated"
+	}
+	return "real"
 }
 
 // ClientOption allows customizing the client

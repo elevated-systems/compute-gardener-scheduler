@@ -873,16 +873,17 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 		}
 	}
 
-	// Check carbon intensity
-	currentIntensity, err := cs.carbonImpl.GetCurrentIntensity(ctx)
+	// Check carbon intensity with data quality information
+	intensityData, err := cs.carbonImpl.GetCurrentIntensityWithStatus(ctx)
 	if err != nil {
 		klog.ErrorS(err, "Failed to get carbon intensity in PreFilter, allowing pod",
 			"pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.Success, "")
 	}
+	currentIntensity := intensityData.Value
 
 	// Update metrics regardless of threshold check result
-	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(currentIntensity)
+	metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, intensityData.DataStatus).Set(currentIntensity)
 
 	podUID := string(pod.UID)
 	wasDelayed := cs.carbonDelayedPods[podUID]
@@ -1151,8 +1152,8 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 		// Create a context with timeout for the API request
 		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 
-		// Force refresh by calling GetCurrentIntensity which will update the cache
-		intensity, err := cs.carbonImpl.GetCurrentIntensity(requestCtx)
+		// Force refresh by calling GetCurrentIntensityWithStatus which will update the cache
+		intensityData, err := cs.carbonImpl.GetCurrentIntensityWithStatus(requestCtx)
 
 		// Always cancel the context after use to prevent leaks
 		cancel()
@@ -1163,10 +1164,11 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 		} else {
 			klog.V(2).InfoS("Successfully refreshed carbon intensity cache",
 				"region", region,
-				"intensity", intensity)
+				"intensity", intensityData.Value,
+				"dataStatus", intensityData.DataStatus)
 
 			// Update metrics
-			metrics.CarbonIntensityGauge.WithLabelValues(region).Set(intensity)
+			metrics.CarbonIntensityGauge.WithLabelValues(region, intensityData.DataStatus).Set(intensityData.Value)
 		}
 	}
 }

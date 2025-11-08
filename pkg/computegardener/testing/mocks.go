@@ -20,22 +20,24 @@ import (
 // Supports both simple fixed values and function overrides for more complex scenarios
 type MockCarbonImplementation struct {
 	// Simple mode fields
-	intensity float64
-	errorMode bool
+	intensity  float64
+	errorMode  bool
+	dataStatus string // "real" or "estimated"
 
 	// Advanced mode function overrides (when set, these take precedence)
-	GetCurrentIntensityFunc       func(ctx context.Context) (float64, error)
-	CheckIntensityConstraintsFunc func(ctx context.Context, threshold float64) *framework.Status
+	GetCurrentIntensityFunc           func(ctx context.Context) (float64, error)
+	GetCurrentIntensityWithStatusFunc func(ctx context.Context) (*carbon.IntensityData, error)
+	CheckIntensityConstraintsFunc     func(ctx context.Context, threshold float64) *framework.Status
 }
 
 // NewMockCarbon creates a new mock carbon implementation with fixed intensity
 func NewMockCarbon(intensity float64) carbon.Implementation {
-	return &MockCarbonImplementation{intensity: intensity, errorMode: false}
+	return &MockCarbonImplementation{intensity: intensity, errorMode: false, dataStatus: "real"}
 }
 
 // NewMockCarbonWithError creates a new mock carbon implementation that returns errors
 func NewMockCarbonWithError() carbon.Implementation {
-	return &MockCarbonImplementation{intensity: 0, errorMode: true}
+	return &MockCarbonImplementation{intensity: 0, errorMode: true, dataStatus: "real"}
 }
 
 func (m *MockCarbonImplementation) GetCurrentIntensity(ctx context.Context) (float64, error) {
@@ -49,6 +51,29 @@ func (m *MockCarbonImplementation) GetCurrentIntensity(ctx context.Context) (flo
 		return 0, fmt.Errorf("carbon API error (mock)")
 	}
 	return m.intensity, nil
+}
+
+func (m *MockCarbonImplementation) GetCurrentIntensityWithStatus(ctx context.Context) (*carbon.IntensityData, error) {
+	// Function override takes precedence
+	if m.GetCurrentIntensityWithStatusFunc != nil {
+		return m.GetCurrentIntensityWithStatusFunc(ctx)
+	}
+
+	// Simple mode behavior
+	if m.errorMode {
+		return nil, fmt.Errorf("carbon API error (mock)")
+	}
+
+	// Use dataStatus field if set, otherwise default to "real"
+	status := m.dataStatus
+	if status == "" {
+		status = "real"
+	}
+
+	return &carbon.IntensityData{
+		Value:      m.intensity,
+		DataStatus: status,
+	}, nil
 }
 
 func (m *MockCarbonImplementation) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {

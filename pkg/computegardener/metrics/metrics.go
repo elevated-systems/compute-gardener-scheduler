@@ -19,7 +19,7 @@ var (
 			Help:           "Current carbon intensity (gCO2eq/kWh) for a given region",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"region"},
+		[]string{"region", "data_status"},
 	)
 
 	// PodSchedulingLatency measures the latency of pod scheduling attempts
