@@ -547,7 +547,7 @@ func (cs *ComputeGardenerScheduler) calculateCounterfactualCarbonEmissions(
 		}
 	}
 
-	bindTime, err := time.Parse(time.RFC3339, bindTimestampStr)
+	_, err = time.Parse(time.RFC3339, bindTimestampStr)
 	if err != nil {
 		klog.ErrorS(err, "Failed to parse bind timestamp",
 			"pod", klog.KObj(pod),
