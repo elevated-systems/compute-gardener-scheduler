@@ -83,9 +83,35 @@ func (c *Cache) Get(region string) (*api.ElectricityData, bool) {
 }
 
 // Set stores data in cache
+// Important: This method prefers real data over estimated data to avoid the "flutter" issue
+// where estimated values change to real values. Once we have real data, we don't overwrite
+// it with estimated data unless the real data is older.
 func (c *Cache) Set(region string, data *api.ElectricityData) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
+	newDataStatus := data.GetDataStatus()
+
+	// Check if we already have data for this region
+	if existing, exists := c.data[region]; exists {
+		existingDataStatus := existing.data.GetDataStatus()
+
+		// If new data is estimated but we already have real data, don't overwrite
+		// unless the existing data is stale (older than the new data by more than an hour)
+		if newDataStatus == "estimated" && existingDataStatus == "real" {
+			dataAge := data.Timestamp.Sub(existing.data.Timestamp)
+			if dataAge < time.Hour {
+				klog.V(3).InfoS("Skipping estimated data update - already have real data",
+					"region", region,
+					"existingTimestamp", existing.data.Timestamp,
+					"existingStatus", existingDataStatus,
+					"newTimestamp", data.Timestamp,
+					"newStatus", newDataStatus,
+					"dataAge", dataAge)
+				return
+			}
+		}
+	}
 
 	c.data[region] = &cacheEntry{
 		data:      data,
@@ -96,7 +122,8 @@ func (c *Cache) Set(region string, data *api.ElectricityData) {
 	klog.V(4).InfoS("Cached electricity data",
 		"region", region,
 		"carbonIntensity", data.CarbonIntensity,
-		"timestamp", data.Timestamp)
+		"timestamp", data.Timestamp,
+		"dataStatus", newDataStatus)
 }
 
 // GetMetrics returns cache performance metrics

@@ -285,23 +285,16 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	}
 
 	// Cost difference calculation - only if pod was actually delayed by price constraints
+	// The presence of the initial-electricity-rate annotation indicates the pod was delayed
 	if initialRateStr, ok := pod.Annotations[common.AnnotationInitialElectricityRate]; ok {
-		// wasPriceDelayed was already captured above before removing from map
-		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
-		// for pods that were delayed before a restart and complete after. Consider persisting delay
-		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
-
-		if !wasPriceDelayed {
-			klog.V(3).InfoS("Skipping cost savings calculation - pod was not price-delayed",
-				"pod", klog.KObj(pod))
-		} else {
+		// Use annotation presence as source of truth for whether pod was delayed
+		// This is more reliable than in-memory state which may be false if pod passed threshold before binding
+		if initialRateStr != "" {
 			initialRate, err := strconv.ParseFloat(initialRateStr, 64)
 			if err == nil {
 				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 				var bindTimeRate float64
-				var hasBindTime bool
-
-				if bindTimeRateStr, ok := pod.Annotations[common.AnnotationBindElectricityRate]; ok {
+				if bindTimeRateStr, hasBindTime := pod.Annotations[common.AnnotationBindTimeElectricityRate]; hasBindTime {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
 					hasBindTime = bindTimeRate > 0
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {

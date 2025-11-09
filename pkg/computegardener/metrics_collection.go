@@ -58,16 +58,20 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		return
 	}
 
-	// Get carbon intensity
+	// Get carbon intensity with data quality information
 	carbonIntensity := 0.0
+	carbonDataStatus := "unknown"
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		if intensity, err := cs.carbonImpl.GetCurrentIntensity(ctx); err == nil {
-			carbonIntensity = intensity
+		if intensityData, err := cs.carbonImpl.GetCurrentIntensityWithStatus(ctx); err == nil {
+			carbonIntensity = intensityData.Value
+			carbonDataStatus = intensityData.DataStatus
+
 			// Also update the carbon intensity gauge here so we're not dependent on pods to trigger
-			metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region).Set(intensity)
+			metrics.CarbonIntensityGauge.WithLabelValues(cs.config.Carbon.APIConfig.Region, carbonDataStatus).Set(intensityData.Value)
 			klog.V(2).InfoS("Updated carbon intensity gauge from metrics collector",
 				"region", cs.config.Carbon.APIConfig.Region,
-				"intensity", intensity)
+				"intensity", intensityData.Value,
+				"dataStatus", carbonDataStatus)
 		} else {
 			klog.ErrorS(err, "Failed to get carbon intensity")
 		}
@@ -92,6 +96,10 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			"rate", currentRate,
 			"period", period,
 			"isPeak", isPeak)
+	} else {
+		// Set placeholder value when pricing is not enabled to prevent dashboard "no data" errors
+		metrics.ElectricityRateGauge.WithLabelValues("tou", "off-peak").Set(0)
+		klog.V(2).InfoS("Set electricity rate gauge to 0 (pricing not enabled)")
 	}
 
 	// Get metrics for all pods
@@ -274,6 +282,7 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 			pod,
 			gpuPower,
 			carbonIntensity,
+			carbonDataStatus,
 			cs.calculatePodPower,
 		)
 
