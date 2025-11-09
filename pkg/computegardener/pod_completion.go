@@ -269,6 +269,9 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 						"energyKWh", totalEnergyKWh,
 						"savingsGrams", carbonSavingsGrams,
 						"note", "Rough estimate - historical data unavailable")
+
+					// Record efficiency metric (intensity delta, not emissions delta)
+					metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 				} else {
 					klog.ErrorS(nil, "Cannot calculate carbon savings - no bind-time intensity available",
 						"pod", klog.KObj(pod))
@@ -278,9 +281,6 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 
 			// Record savings metric with method label
 			metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", method, podName, namespace).Set(carbonSavingsGrams)
-
-			// Record efficiency metric
-			metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_emissions_delta", podName).Set(carbonSavingsGrams)
 		}
 	}
 
@@ -295,7 +295,7 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 				var bindTimeRate float64
 				var hasBindTime bool
-				if bindTimeRateStr, hasBindTime := pod.Annotations[common.AnnotationBindElectricityRate]; hasBindTime {
+				if bindTimeRateStr, ok := pod.Annotations[common.AnnotationBindElectricityRate]; ok {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
 					hasBindTime = bindTimeRate > 0
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {

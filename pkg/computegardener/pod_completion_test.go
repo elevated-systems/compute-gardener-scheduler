@@ -236,6 +236,9 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "200",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "150",  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.12", // Bind-time (first metrics record)
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
 		WasPriceDelayed:  true, // Pod was delayed by price constraints
@@ -273,6 +276,9 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "150",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "200",  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.18", // Bind-time (first metrics record)
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
 		WasPriceDelayed:  true, // Pod was delayed by price constraints
@@ -338,10 +344,11 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity:  "200", // Initial when first seen
-			common.AnnotationInitialElectricityRate:  "0.10", // Initial when first seen
-			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
-			common.AnnotationBindTimeElectricityRate: "0.10", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
+			common.AnnotationBindCarbonIntensity:    "120",  // Bind-time intensity
+			common.AnnotationBindElectricityRate:    "0.10", // Bind-time rate
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 		},
 		WasCarbonDelayed:    true,  // Was delayed by carbon
 		WasPriceDelayed:     false, // Pricing wasn't the constraint
@@ -372,10 +379,11 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity:  "120",  // Initial when first seen
-			common.AnnotationInitialElectricityRate:  "0.15", // Initial when first seen
-			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
-			common.AnnotationBindTimeElectricityRate: "0.08", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity: "120",  // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.15", // Initial when first seen
+			common.AnnotationBindCarbonIntensity:    "120",  // Bind-time intensity
+			common.AnnotationBindElectricityRate:    "0.08", // Bind-time rate
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 		},
 		WasCarbonDelayed:    false, // Carbon intensity wasn't the constraint
 		WasPriceDelayed:     true,  // Was delayed by price
@@ -408,6 +416,7 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "180",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.12", // Initial when first seen
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 			// No bind-time annotations - should fallback to Records[0]
 		},
 		WasCarbonDelayed:    true, // Was delayed by carbon

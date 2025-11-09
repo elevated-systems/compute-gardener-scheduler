@@ -1443,7 +1443,7 @@ func TestPreFilterWithPricingFailure(t *testing.T) {
 // --- Helper Functions ---
 // newTestSchedulerWithMetricsClient creates a new test scheduler
 // with a custom metrics client and all the other defaults
-func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients.CoreMetricsClient, gpuClient clients.GPUMetricsClient, electricityRate float64, baseTime time.Time) *ComputeGardenerScheduler {
+func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients.CoreMetricsClient, promClient *clients.PrometheusMetricsClient, electricityRate float64, baseTime time.Time) *ComputeGardenerScheduler {
 	// Use default if not specified
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -1455,10 +1455,6 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
 			},
 		}
-	}
-
-	if gpuClient == nil {
-		gpuClient = clients.NewNullGPUMetricsClient()
 	}
 
 	// Initialize hardware profiler if hardware profiles are configured
@@ -1479,7 +1475,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 		cache:             dataCache,
 		apiClient:         &api.Client{},
 		coreMetricsClient: metricsClient,
-		prometheusClient:  gpuClient,
+		prometheusClient:  promClient,
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
@@ -1490,7 +1486,7 @@ func newTestSchedulerWithMetricsClient(cfg *config.Config, metricsClient clients
 
 // newTestSchedulerWithCustomClients creates a new test scheduler
 // with a custom metrics client, carbon, pricing implementations, and clientset.
-func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients.CoreMetricsClient, gpuClient clients.GPUMetricsClient, carbonImpl carbon.Implementation, priceImpl price.Implementation, electricityRate float64, baseTime time.Time, kubeClient *fake.Clientset) *ComputeGardenerScheduler {
+func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients.CoreMetricsClient, promClient *clients.PrometheusMetricsClient, carbonImpl carbon.Implementation, priceImpl price.Implementation, electricityRate float64, baseTime time.Time, kubeClient *fake.Clientset) *ComputeGardenerScheduler {
 	// Use default if not specified
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -1502,10 +1498,6 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 				return &metricsv1beta1.PodMetrics{}, nil // Empty metrics by default
 			},
 		}
-	}
-
-	if gpuClient == nil {
-		gpuClient = clients.NewNullGPUMetricsClient()
 	}
 
 	if carbonImpl == nil {
@@ -1546,7 +1538,7 @@ func newTestSchedulerWithCustomClients(cfg *config.Config, metricsClient clients
 		cache:             dataCache,
 		apiClient:         &api.Client{},
 		coreMetricsClient: metricsClient,
-		prometheusClient:  gpuClient,
+		prometheusClient:  promClient,
 		hardwareProfiler:  hardwareProfiler,
 		clock:             testingclock.NewFakeClock(baseTime),
 		stopCh:            make(chan struct{}),
