@@ -134,7 +134,15 @@ func CalculateAverageGPUPower(records []PodMetricsRecord) float64 {
 }
 
 // CalculateTotalCarbonEmissions calculates the total carbon emissions in gCO2eq
-// using the trapezoid rule for numerical integration
+// using the trapezoid rule for numerical integration.
+//
+// IMPORTANT: This function uses time-series carbon intensity data collected throughout
+// the pod's execution, NOT a fixed intensity value. Each PodMetricsRecord contains the
+// carbon intensity (gCO2eq/kWh) at that moment, which may vary significantly during long-running
+// jobs. This provides an accurate estimate of actual carbon consumed over time.
+//
+// For scheduler savings calculations (measuring the benefit of delaying), see
+// processPodCompletionMetrics in pod_completion.go, which uses initial vs bind-time intensity.
 func CalculateTotalCarbonEmissions(records []PodMetricsRecord) float64 {
 	if len(records) < 2 {
 		return 0
@@ -143,6 +151,7 @@ func CalculateTotalCarbonEmissions(records []PodMetricsRecord) float64 {
 	totalCarbonEmissions := 0.0
 
 	// Integrate over the time series using trapezoid rule
+	// This accounts for varying carbon intensity throughout execution
 	for i := 1; i < len(records); i++ {
 		current := records[i]
 		previous := records[i-1]
@@ -157,6 +166,7 @@ func CalculateTotalCarbonEmissions(records []PodMetricsRecord) float64 {
 		intervalEnergy := (avgPower * deltaHours) / 1000
 
 		// Average carbon intensity during this interval (gCO2eq/kWh)
+		// Using the actual intensity values from Prometheus/carbon API at each timestamp
 		avgCarbonIntensity := (current.CarbonIntensity + previous.CarbonIntensity) / 2
 
 		// Carbon emissions for this interval (gCO2eq)
@@ -188,4 +198,3 @@ func ConvertGPUHistoryToStandardFormat(h *clients.PodGPUMetricsHistory) []PodMet
 
 	return records
 }
-

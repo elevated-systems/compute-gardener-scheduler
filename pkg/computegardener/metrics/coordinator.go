@@ -6,8 +6,8 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/powerprovider"
 	v1 "k8s.io/api/core/v1"
-	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"k8s.io/klog/v2"
+	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
 // MetricsCoordinator provides domain-specific "shapes" of metrics data by orchestrating
@@ -155,9 +155,9 @@ type CollectionMetrics struct {
 	GPUPowerData map[string]float64
 
 	// Environmental context
-	CarbonIntensity  float64
-	ElectricityRate  float64
-	Timestamp        string
+	CarbonIntensity float64
+	ElectricityRate float64
+	Timestamp       string
 }
 
 // GetCollectionMetrics fetches the "shape" of data needed for periodic metrics collection.
@@ -165,7 +165,7 @@ type CollectionMetrics struct {
 func (mc *MetricsCoordinator) GetCollectionMetrics(ctx context.Context) (*CollectionMetrics, error) {
 	result := &CollectionMetrics{
 		GPUPowerData: make(map[string]float64),
-		Timestamp: ctx.Value("timestamp").(string), // Expected to be provided by caller
+		Timestamp:    ctx.Value("timestamp").(string), // Expected to be provided by caller
 	}
 
 	// 1. Get metrics for all pods from core metrics client
@@ -202,9 +202,9 @@ type CompletionMetrics struct {
 	HistoricalRecords []PodMetricsRecord
 
 	// Final power and energy calculations
-	TotalEnergyKWh   float64
-	AveragePowerW    float64
-	PeakPowerW       float64
+	TotalEnergyKWh float64
+	AveragePowerW  float64
+	PeakPowerW     float64
 
 	// GPU-specific completion data (optional)
 	GPUEnergyKWh     *float64
