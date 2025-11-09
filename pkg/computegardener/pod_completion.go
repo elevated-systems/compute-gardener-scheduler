@@ -294,7 +294,8 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 			if err == nil {
 				// Get the bind-time electricity rate from annotation (captured when pod passed filter)
 				var bindTimeRate float64
-				if bindTimeRateStr, hasBindTime := pod.Annotations[common.AnnotationBindTimeElectricityRate]; hasBindTime {
+				var hasBindTime bool
+				if bindTimeRateStr, hasBindTime := pod.Annotations[common.AnnotationBindElectricityRate]; hasBindTime {
 					bindTimeRate, _ = strconv.ParseFloat(bindTimeRateStr, 64)
 					hasBindTime = bindTimeRate > 0
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].ElectricityRate > 0 {
