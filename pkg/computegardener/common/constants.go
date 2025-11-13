@@ -39,8 +39,9 @@ const (
 	AnnotationGPUPUE = AnnotationBase + "/gpu-pue"
 
 	// General scheduling annotations
-	AnnotationSkip               = AnnotationBase + "/skip"
-	AnnotationMaxSchedulingDelay = AnnotationBase + "/max-scheduling-delay"
+	AnnotationSkip                   = AnnotationBase + "/skip"
+	AnnotationMaxSchedulingDelay     = AnnotationBase + "/max-scheduling-delay"
+	AnnotationEstimatedRuntimeHours  = AnnotationBase + "/estimated-runtime-hours" // Optional hint for savings estimation
 
 	// ----------------------------------------
 	// Namespace policy annotations
