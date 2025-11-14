@@ -152,7 +152,7 @@ func (e *Evaluator) EvaluateCarbonConstraints(ctx context.Context, pod *v1.Pod) 
 		result.ShouldDelay = true
 		result.DelayType = "carbon"
 		result.ReasonDescription = fmt.Sprintf(
-			"Current carbon intensity (%.2f gCO2/kWh) exceeds threshold (%.2f gCO2/kWh)",
+			"Current carbon intensity (%.2f gCO2eq/kWh) exceeds threshold (%.2f gCO2eq/kWh)",
 			intensityData.Value, threshold)
 	}
 

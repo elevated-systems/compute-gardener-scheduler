@@ -17,10 +17,10 @@ type EvaluationResult struct {
 	// Human-readable explanation with actual values (for logging/annotations)
 	ReasonDescription string
 
-	// Current carbon intensity at evaluation time
+	// Current carbon intensity at evaluation time (gCO2eq/kWh)
 	CurrentCarbon float64
 
-	// Carbon threshold that was checked
+	// Carbon threshold that was checked (gCO2eq/kWh)
 	CarbonThreshold float64
 
 	// Current electricity price at evaluation time
@@ -36,8 +36,8 @@ type EvaluationResult struct {
 	EstimatedRuntimeHours float64
 
 	// Conservative savings estimates (current - threshold)
-	EstimatedCarbonSavingsGCO2 float64
-	EstimatedCostSavingsUSD    float64
+	EstimatedCarbonSavingsGCO2 float64 // gCO2eq
+	EstimatedCostSavingsUSD    float64 // USD
 }
 
 // PodStartData stores information about a pod when it starts running
@@ -70,10 +70,10 @@ type EstimatedSavings struct {
 	// Actual energy consumed in kWh (based on estimated power × actual runtime)
 	EnergyKWh float64
 
-	// Estimated carbon savings in gCO2
+	// Estimated carbon savings (gCO2eq)
 	CarbonGCO2 float64
 
-	// Estimated cost savings in USD
+	// Estimated cost savings (USD)
 	CostUSD float64
 
 	// Actual runtime in hours
