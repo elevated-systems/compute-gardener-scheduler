@@ -260,12 +260,29 @@ func escapeJSONPointer(s string) string {
 	return result
 }
 
-// recordMetrics records dry-run metrics (placeholder - will implement with metrics package)
+// recordMetrics records dry-run metrics
 func (w *Webhook) recordMetrics(result *eval.EvaluationResult, pod *corev1.Pod) {
-	// TODO: Implement metrics recording
-	// This will be implemented in the next step with the metrics package
-	klog.V(4).InfoS("Recording metrics",
-		"pod", klog.KObj(pod),
-		"wouldDelay", result.ShouldDelay,
-		"delayType", result.DelayType)
+	// Count all evaluated pods
+	PodsEvaluatedTotal.WithLabelValues(pod.Namespace).Inc()
+
+	// Record pods that would be delayed
+	if result.ShouldDelay {
+		PodsWouldDelayTotal.WithLabelValues(pod.Namespace, result.DelayType).Inc()
+
+		// Record estimated savings
+		if result.EstimatedCarbonSavingsGCO2 > 0 {
+			EstimatedCarbonSavingsTotal.WithLabelValues(pod.Namespace).Add(result.EstimatedCarbonSavingsGCO2)
+		}
+		if result.EstimatedCostSavingsUSD > 0 {
+			EstimatedCostSavingsTotal.WithLabelValues(pod.Namespace).Add(result.EstimatedCostSavingsUSD)
+		}
+	}
+
+	// Record current conditions as gauges
+	if result.CurrentCarbon > 0 {
+		CurrentCarbonIntensity.WithLabelValues(pod.Namespace).Set(result.CurrentCarbon)
+	}
+	if result.CurrentPrice > 0 {
+		CurrentElectricityPrice.WithLabelValues(pod.Namespace).Set(result.CurrentPrice)
+	}
 }

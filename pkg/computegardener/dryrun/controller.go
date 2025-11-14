@@ -235,14 +235,22 @@ func (c *CompletionController) calculateEstimatedSavings(
 	return savings
 }
 
-// recordActualSavings records savings metrics (placeholder)
+// recordActualSavings records savings metrics using actual runtime
 func (c *CompletionController) recordActualSavings(savings *eval.EstimatedSavings, pod *corev1.Pod) {
-	// TODO: Implement metrics recording
-	// This will be implemented with the metrics package
-	klog.V(4).InfoS("Recording actual savings",
-		"pod", klog.KObj(pod),
-		"carbonSavings", savings.CarbonGCO2,
-		"costSavings", savings.CostUSD)
+	// Count completed pods
+	PodsCompletedTotal.WithLabelValues(pod.Namespace).Inc()
+
+	// Record actual savings
+	if savings.CarbonGCO2 > 0 {
+		ActualCarbonSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CarbonGCO2)
+	}
+	if savings.CostUSD > 0 {
+		ActualCostSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CostUSD)
+	}
+
+	// Record runtime and energy histograms
+	PodRuntimeHours.WithLabelValues(pod.Namespace).Observe(savings.RuntimeHours)
+	PodEnergyConsumptionKWh.WithLabelValues(pod.Namespace).Observe(savings.EnergyKWh)
 }
 
 // isPodCompleted checks if a pod has completed
