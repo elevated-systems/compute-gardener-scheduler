@@ -43,6 +43,19 @@ const (
 	AnnotationMaxSchedulingDelay     = AnnotationBase + "/max-scheduling-delay"
 	AnnotationEstimatedRuntimeHours  = AnnotationBase + "/estimated-runtime-hours" // Optional hint for savings estimation
 
+	// Dry-run mode annotations
+	AnnotationDryRunEvaluated               = AnnotationBase + "/dry-run-evaluated"
+	AnnotationDryRunTimestamp               = AnnotationBase + "/dry-run-timestamp"
+	AnnotationDryRunWouldDelay              = AnnotationBase + "/dry-run-would-delay"
+	AnnotationDryRunDelayType               = AnnotationBase + "/dry-run-delay-type"
+	AnnotationDryRunReason                  = AnnotationBase + "/dry-run-reason"
+	AnnotationDryRunCarbonIntensity         = AnnotationBase + "/dry-run-carbon-intensity"
+	AnnotationDryRunCarbonThreshold         = AnnotationBase + "/dry-run-carbon-threshold"
+	AnnotationDryRunPrice                   = AnnotationBase + "/dry-run-price"
+	AnnotationDryRunPriceThreshold          = AnnotationBase + "/dry-run-price-threshold"
+	AnnotationDryRunEstimatedCarbonSavings  = AnnotationBase + "/dry-run-estimated-carbon-savings-gco2"
+	AnnotationDryRunEstimatedCostSavings    = AnnotationBase + "/dry-run-estimated-cost-savings-usd"
+
 	// ----------------------------------------
 	// Namespace policy annotations
 	// ----------------------------------------
