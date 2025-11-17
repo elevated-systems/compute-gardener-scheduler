@@ -20,7 +20,8 @@ set -o pipefail
 
 SCRIPT_ROOT=$(realpath $(dirname "${BASH_SOURCE[@]}")/..)
 
-SCHEDULER_DIR="${SCRIPT_ROOT}"/build/scheduler
+# DOCKERFILE should be set by caller (e.g., build/scheduler/Dockerfile or build/dryrun/Dockerfile)
+DOCKERFILE=${DOCKERFILE:-build/scheduler/Dockerfile}
 
 # -t is the Docker engine default
 TAG_FLAG="-t"
@@ -48,10 +49,10 @@ fi
 # DOCKER_BUILDX_CMD is an env variable set in CI (valued as "/buildx-entrypoint")
 # If it's set, use it; otherwise use "$BUILDER buildx"
 
-# Build scheduler image
+# Build image
 ${IMAGE_BUILD_CMD} build \
   --platform=${PLATFORMS} \
-  -f ${SCHEDULER_DIR}/Dockerfile \
+  -f ${DOCKERFILE} \
   --build-arg RELEASE_VERSION=${RELEASE_VERSION} \
   --build-arg GO_BASE_IMAGE=${GO_BASE_IMAGE} \
   --build-arg DISTROLESS_BASE_IMAGE=${DISTROLESS_BASE_IMAGE} \

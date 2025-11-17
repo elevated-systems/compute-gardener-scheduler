@@ -39,6 +39,59 @@ scheduler:
     readinessProbe:
       initialDelaySeconds: 15
 
+# Dry-run mode configuration
+# "Try before you buy" - evaluate scheduling decisions without affecting actual workloads
+dryRun:
+  # Enable dry-run mode (webhook admission controller)
+  enabled: false
+  image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.3-alpha-a21899e
+  imagePullPolicy: IfNotPresent
+  replicaCount: 1
+
+  # Dry-run mode: "metrics" or "annotate"
+  # - metrics: Record evaluation results as Prometheus metrics only
+  # - annotate: Add evaluation results as pod annotations (visible in kubectl describe)
+  mode: "metrics"
+
+  # Namespaces to watch (empty list = watch all namespaces)
+  # Use this to scope dry-run evaluation to specific namespaces
+  watchNamespaces: []
+  # Example:
+  # watchNamespaces:
+  #   - "default"
+  #   - "production"
+
+  # Webhook configuration
+  webhook:
+    port: 8443
+    # Certificate configuration (required for admission webhooks)
+    # By default, uses cert-manager to generate certificates
+    # Set certManager.enabled=false to provide your own certificates
+    certManager:
+      enabled: true
+    # Manual certificate configuration (used when certManager.enabled=false)
+    tls:
+      crt: ""
+      key: ""
+
+  # Metrics endpoint configuration
+  metrics:
+    enabled: true
+    port: 8080
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: "true"
+  affinity: {}
+  tolerations: []
+  priorityClassName: ""
+
 # Carbon-aware scheduling configuration
 carbonAware:
   enabled: true

@@ -1,0 +1,41 @@
+{{- if and .Values.dryRun.enabled .Values.dryRun.metrics.enabled .Values.metrics.serviceMonitor.enabled (not .Values.metrics.gke) }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-dryrun
+  namespace: {{ .Values.metrics.serviceMonitor.namespace }}
+  labels:
+    app: compute-gardener-dryrun
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dryrun
+      component: metrics
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    path: /metrics
+    scheme: http
+{{- end }}
+{{- if and .Values.dryRun.enabled .Values.dryRun.metrics.enabled .Values.metrics.gke }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: compute-gardener-dryrun
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dryrun
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dryrun
+      component: webhook
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.metrics.serviceMonitor.interval }}
+    path: /metrics
+{{- end }}
