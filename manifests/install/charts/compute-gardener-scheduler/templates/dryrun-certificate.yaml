@@ -1,0 +1,45 @@
+{{- if and .Values.dryRun.enabled .Values.dryRun.webhook.certManager.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: compute-gardener-dryrun-webhook-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: compute-gardener-dryrun-webhook-cert
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  subject:
+    organizations:
+    - compute-gardener
+  commonName: compute-gardener-dryrun-webhook.{{ .Release.Namespace }}.svc
+  dnsNames:
+  - compute-gardener-dryrun-webhook
+  - compute-gardener-dryrun-webhook.{{ .Release.Namespace }}
+  - compute-gardener-dryrun-webhook.{{ .Release.Namespace }}.svc
+  - compute-gardener-dryrun-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: compute-gardener-dryrun-selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: compute-gardener-dryrun-selfsigned
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+{{- end }}
+{{- if and .Values.dryRun.enabled (not .Values.dryRun.webhook.certManager.enabled) }}
+---
+# Manual certificate secret (when cert-manager is not used)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: compute-gardener-dryrun-webhook-cert
+  namespace: {{ .Release.Namespace }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ .Values.dryRun.webhook.tls.crt | b64enc }}
+  tls.key: {{ .Values.dryRun.webhook.tls.key | b64enc }}
+{{- end }}
