@@ -199,88 +199,121 @@ func (cs *ComputeGardenerScheduler) processPodCompletionMetrics(pod *v1.Pod, pod
 	// but apply historical carbon intensity from the delayed period to estimate counterfactual emissions.
 
 	// Carbon savings calculation - only if pod was actually delayed by carbon constraints
-	if initialTimestampStr, ok := pod.Annotations[common.AnnotationInitialTimestamp]; ok {
-		// wasCarbonDelayed was already captured above before removing from map
-		// TODO: This in-memory state is lost on scheduler restart, so we won't calculate savings
-		// for pods that were delayed before a restart and complete after. Consider persisting delay
-		// state to etcd as annotation if we need to be resilient to scheduler restarts during job execution.
-
-		if !wasCarbonDelayed {
-			klog.V(3).InfoS("Skipping carbon savings calculation - pod was not carbon-delayed",
+	// We use the presence of initial-carbon-intensity annotation as the source of truth,
+	// since the in-memory carbonDelayedPods map gets set to false when intensity drops
+	// (to enable rising edge detection), making it unreliable for completion-time checks.
+	if initialCarbonIntensityStr, hasInitialCarbon := pod.Annotations[common.AnnotationInitialCarbonIntensity]; hasInitialCarbon {
+		// Check for carbon-specific timestamp (preferred), fallback to legacy initial-timestamp
+		var initialTimestampStr string
+		var hasTimestamp bool
+		if ts, ok := pod.Annotations[common.AnnotationCarbonDelayTimestamp]; ok {
+			initialTimestampStr = ts
+			hasTimestamp = true
+		} else if ts, ok := pod.Annotations[common.AnnotationInitialTimestamp]; ok {
+			// Fallback to legacy annotation for backward compatibility
+			initialTimestampStr = ts
+			hasTimestamp = true
+			klog.V(2).InfoS("Using legacy initial-timestamp for carbon savings calculation",
 				"pod", klog.KObj(pod))
-		} else {
-			// Try time-series counterfactual first (best precision)
-			counterfactualEmissions := cs.calculateCounterfactualCarbonEmissions(
-				context.Background(),
-				pod,
-				metricsHistory.Records,
-				initialTimestampStr,
-			)
+		}
 
+		// Parse initial intensity once (needed for all calculation methods)
+		initialIntensity, err := strconv.ParseFloat(initialCarbonIntensityStr, 64)
+		if err != nil {
+			klog.ErrorS(err, "Failed to parse initial carbon intensity",
+				"pod", klog.KObj(pod),
+				"value", initialCarbonIntensityStr)
+			// Can't proceed without valid initial intensity
+		} else {
+			// Fallback cascade for carbon savings calculation:
+			// 1. Try time-series counterfactual (best - requires timestamp & Prometheus)
+			// 2. Fall back to simple calculation (initial - bind) × energy
 			var carbonSavingsGrams float64
 			var method string
+			var shouldCalculateSavings bool
 
-			if counterfactualEmissions > 0 {
-				// Success! Use high-precision time-series method
-				method = "timeseries"
+			if hasTimestamp {
+				// Try time-series counterfactual first (best precision)
+				counterfactualEmissions := cs.calculateCounterfactualCarbonEmissions(
+					context.Background(),
+					pod,
+					metricsHistory.Records,
+					initialTimestampStr,
+				)
 
-				// Record counterfactual emissions metric
-				metrics.JobCounterfactualCarbonEmissions.WithLabelValues(podName, namespace).Set(counterfactualEmissions)
+				if counterfactualEmissions > 0 {
+					// Success! Use high-precision time-series method
+					method = "timeseries"
+					shouldCalculateSavings = true
 
-				// Calculate savings: counterfactual - actual
-				carbonSavingsGrams = counterfactualEmissions - totalCarbonEmissions
+					// Record counterfactual emissions metric
+					metrics.JobCounterfactualCarbonEmissions.WithLabelValues(podName, namespace).Set(counterfactualEmissions)
 
-				klog.V(2).InfoS("Calculated carbon savings using time-series counterfactual analysis",
-					"pod", klog.KObj(pod),
-					"method", method,
-					"actualEmissions", totalCarbonEmissions,
-					"counterfactualEmissions", counterfactualEmissions,
-					"savingsGrams", carbonSavingsGrams,
-					"isPositive", carbonSavingsGrams > 0)
-			} else {
-				// Fallback to simple calculation if Prometheus unavailable or data incomplete
+					// Calculate savings: counterfactual - actual
+					carbonSavingsGrams = counterfactualEmissions - totalCarbonEmissions
+
+					klog.V(2).InfoS("Calculated carbon savings using time-series counterfactual analysis",
+						"pod", klog.KObj(pod),
+						"method", method,
+						"actualEmissions", totalCarbonEmissions,
+						"counterfactualEmissions", counterfactualEmissions,
+						"savingsGrams", carbonSavingsGrams,
+						"isPositive", carbonSavingsGrams > 0)
+				}
+				// If counterfactual failed, fall through to simple calculation
+			}
+
+			// Fallback to simple calculation if:
+			// - No timestamp available, OR
+			// - Prometheus unavailable/incomplete data
+			if !shouldCalculateSavings {
 				method = "simple"
 
-				// Get initial and bind intensities for simple calculation
-				initialIntensity, err := strconv.ParseFloat(pod.Annotations[common.AnnotationInitialCarbonIntensity], 64)
-				if err != nil {
-					klog.ErrorS(err, "Failed to parse initial carbon intensity for fallback calculation",
-						"pod", klog.KObj(pod))
-					return // Can't calculate without initial intensity
-				}
-
+				// Get bind-time intensity (try annotation first, then first metrics record)
 				var bindTimeIntensity float64
 				if bindTimeStr, ok := pod.Annotations[common.AnnotationBindCarbonIntensity]; ok {
 					bindTimeIntensity, _ = strconv.ParseFloat(bindTimeStr, 64)
 				} else if len(metricsHistory.Records) > 0 && metricsHistory.Records[0].CarbonIntensity > 0 {
 					bindTimeIntensity = metricsHistory.Records[0].CarbonIntensity
+					klog.V(2).InfoS("Using first metrics record for bind-time intensity (annotation missing)",
+						"pod", klog.KObj(pod),
+						"intensity", bindTimeIntensity)
 				}
 
 				if bindTimeIntensity > 0 {
 					// Simple calculation: (initial - bind) × total_energy
 					intensityDiff := initialIntensity - bindTimeIntensity
 					carbonSavingsGrams = intensityDiff * totalEnergyKWh
+					shouldCalculateSavings = true
 
-					klog.V(2).InfoS("Calculated carbon savings using simple fallback method (Prometheus unavailable)",
+					reason := "no timestamp available"
+					if hasTimestamp {
+						reason = "Prometheus unavailable or incomplete data"
+					}
+
+					klog.V(2).InfoS("Calculated carbon savings using simple method",
 						"pod", klog.KObj(pod),
 						"method", method,
+						"reason", reason,
 						"initialIntensity", initialIntensity,
 						"bindTimeIntensity", bindTimeIntensity,
 						"energyKWh", totalEnergyKWh,
-						"savingsGrams", carbonSavingsGrams,
-						"note", "Rough estimate - historical data unavailable")
+						"savingsGrams", carbonSavingsGrams)
 
 					// Record efficiency metric (intensity delta, not emissions delta)
 					metrics.SchedulingEfficiencyMetrics.WithLabelValues("carbon_intensity_delta", podName).Set(intensityDiff)
 				} else {
 					klog.ErrorS(nil, "Cannot calculate carbon savings - no bind-time intensity available",
-						"pod", klog.KObj(pod))
-					return // Can't calculate at all
+						"pod", klog.KObj(pod),
+						"hasInitialIntensity", true,
+						"hasTimestamp", hasTimestamp)
 				}
 			}
 
-			// Record savings metric with method label
-			metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", method, podName, namespace).Set(carbonSavingsGrams)
+			// Record savings metric if we successfully calculated it
+			if shouldCalculateSavings {
+				metrics.EstimatedSavings.WithLabelValues("carbon", "grams_co2", method, podName, namespace).Set(carbonSavingsGrams)
+			}
 		}
 	}
 

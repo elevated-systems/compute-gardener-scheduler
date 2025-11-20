@@ -24,12 +24,14 @@ const (
 	AnnotationEnergyBudgetExceededBy = AnnotationBase + "/energy-budget-exceeded-by"
 
 	// Carbon and cost tracking annotations
-	AnnotationInitialCarbonIntensity = AnnotationBase + "/initial-carbon-intensity"
-	AnnotationInitialElectricityRate = AnnotationBase + "/initial-electricity-rate"
-	AnnotationInitialTimestamp       = AnnotationBase + "/initial-timestamp"          // RFC3339 timestamp when pod was first delayed
-	AnnotationBindTimestamp          = AnnotationBase + "/bind-timestamp"             // RFC3339 timestamp when pod bound to node
-	AnnotationBindCarbonIntensity    = AnnotationBase + "/bind-time-carbon-intensity" // Carbon intensity when pod bound
-	AnnotationBindElectricityRate    = AnnotationBase + "/bind-time-electricity-rate" // Electricity rate when pod bound
+	AnnotationInitialCarbonIntensity  = AnnotationBase + "/initial-carbon-intensity"
+	AnnotationInitialElectricityRate  = AnnotationBase + "/initial-electricity-rate"
+	AnnotationInitialTimestamp        = AnnotationBase + "/initial-timestamp"           // RFC3339 timestamp when pod was first delayed (DEPRECATED: use carbon or price specific)
+	AnnotationCarbonDelayTimestamp    = AnnotationBase + "/carbon-delay-timestamp"      // RFC3339 timestamp when pod was first delayed by carbon
+	AnnotationPriceDelayTimestamp     = AnnotationBase + "/price-delay-timestamp"       // RFC3339 timestamp when pod was first delayed by price
+	AnnotationBindTimestamp           = AnnotationBase + "/bind-timestamp"              // RFC3339 timestamp when pod bound to node
+	AnnotationBindCarbonIntensity     = AnnotationBase + "/bind-time-carbon-intensity"  // Carbon intensity when pod bound
+	AnnotationBindElectricityRate     = AnnotationBase + "/bind-time-electricity-rate"  // Electricity rate when pod bound
 
 	// Hardware efficiency annotations
 	AnnotationMaxPowerWatts   = AnnotationBase + "/max-power-watts"

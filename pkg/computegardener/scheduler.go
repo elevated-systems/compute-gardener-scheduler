@@ -967,9 +967,9 @@ func (cs *ComputeGardenerScheduler) recordInitialCarbonMetric(ctx context.Contex
 	oldValue := podCopy.Annotations[common.AnnotationInitialCarbonIntensity]
 	podCopy.Annotations[common.AnnotationInitialCarbonIntensity] = strconv.FormatFloat(currentIntensity, 'f', 2, 64)
 
-	// Also record the timestamp for counterfactual emissions calculation
+	// Also record the carbon-specific timestamp for counterfactual emissions calculation
 	initialTime := cs.clock.Now()
-	podCopy.Annotations[common.AnnotationInitialTimestamp] = initialTime.Format(time.RFC3339)
+	podCopy.Annotations[common.AnnotationCarbonDelayTimestamp] = initialTime.Format(time.RFC3339)
 
 	// Attempt to update the pod
 	_, err = clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
@@ -1025,6 +1025,10 @@ func (cs *ComputeGardenerScheduler) recordInitialPriceMetric(ctx context.Context
 	// Check if we're updating an existing annotation
 	oldValue := podCopy.Annotations[common.AnnotationInitialElectricityRate]
 	podCopy.Annotations[common.AnnotationInitialElectricityRate] = strconv.FormatFloat(currentRate, 'f', 6, 64)
+
+	// Also record the price-specific timestamp for cost savings calculation
+	initialTime := cs.clock.Now()
+	podCopy.Annotations[common.AnnotationPriceDelayTimestamp] = initialTime.Format(time.RFC3339)
 
 	// Attempt to update the pod
 	_, err := clientset.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
