@@ -144,6 +144,9 @@ var (
 	)
 
 	// EstimatedSavings tracks carbon and cost savings for completed pods (can be negative)
+	// The 'method' label indicates calculation methodology:
+	//   - "timeseries": High-precision counterfactual using historical Prometheus data
+	//   - "simple": Rough estimate using (initial - bind) × energy when Prometheus unavailable
 	EstimatedSavings = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
@@ -151,7 +154,7 @@ var (
 			Help:           "Estimated savings from compute-gardener scheduling per completed pod (grams_co2 or dollars)",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"type", "unit", "pod", "namespace"}, // type: "carbon", "cost", unit: "grams_co2", "dollars"
+		[]string{"type", "unit", "method", "pod", "namespace"}, // method: "timeseries", "simple"
 	)
 
 	// ElectricityRateGauge measures the current electricity rate
@@ -192,7 +195,18 @@ var (
 		&metrics.GaugeOpts{
 			Subsystem:      schedulerSubsystem,
 			Name:           "job_carbon_emissions_grams",
-			Help:           "Estimated carbon emissions in gCO2eq for completed jobs",
+			Help:           "Estimated carbon emissions in gCO2eq for completed jobs (actual emissions during execution)",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"pod", "namespace"},
+	)
+
+	// JobCounterfactualCarbonEmissions tracks what emissions would have been without carbon-aware scheduling
+	JobCounterfactualCarbonEmissions = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulerSubsystem,
+			Name:           "job_counterfactual_carbon_emissions_grams",
+			Help:           "Estimated carbon emissions in gCO2eq if job had run during initial delay period (counterfactual scenario)",
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"pod", "namespace"},
@@ -273,6 +287,7 @@ func init() {
 	legacyregistry.MustRegister(PriceBasedDelays)
 	legacyregistry.MustRegister(CarbonBasedDelays)
 	legacyregistry.MustRegister(JobCarbonEmissions)
+	legacyregistry.MustRegister(JobCounterfactualCarbonEmissions)
 	legacyregistry.MustRegister(NodePUE)
 	legacyregistry.MustRegister(PowerFilteredNodes)
 	legacyregistry.MustRegister(NodeEfficiency)

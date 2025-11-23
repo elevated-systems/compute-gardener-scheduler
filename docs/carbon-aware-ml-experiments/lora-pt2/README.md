@@ -10,17 +10,17 @@ Rather than running all experiments immediately or naively delaying everything t
 
 ### The Three-Tier Strategy
 
-**Tier 1: Baseline Variations** (225 gCO2/kWh threshold, 24h max delay)
+**Tier 1: Baseline Variations** (225 gCO2eq/kWh threshold, 24h max delay)
 - Fast feedback on known-good configurations (r=16 experiments)
 - Runs in most daily windows including moderate afternoon hours
 - 8 experiments exploring learning rates, alpha values, and dropout around proven baseline
 
-**Tier 2: Promising Directions** (175 gCO2/kWh threshold, 48h max delay)
+**Tier 2: Promising Directions** (175 gCO2eq/kWh threshold, 48h max delay)
 - Balance speed and sustainability for r=32 experiments with standard hyperparameters
 - Waits for cleaner solar valley conditions
 - 4 experiments stepping up model capacity
 
-**Tier 3: Experimental Long Shots** (125 gCO2/kWh threshold, 96h max delay)
+**Tier 3: Experimental Long Shots** (125 gCO2eq/kWh threshold, 96h max delay)
 - Maximum carbon optimization for speculative experiments
 - r=32 with aggressive/unconventional hyperparameters (alpha=128, dropout=0.15, lr=1e-5)
 - 9 experiments that can afford to wait for the cleanest grid windows
@@ -29,7 +29,7 @@ Rather than running all experiments immediately or naively delaying everything t
 
 Running 21 experiments on 2 GPUs (RTX 3090 + RTX A5000):
 - **Carbon reduction**: 40.2% (1.81 kgCO2 vs 3.03 kgCO2 immediate execution)
-- **Average intensity**: 142 gCO2/kWh vs 226 gCO2/kWh
+- **Average intensity**: 142 gCO2eq/kWh vs 226 gCO2eq/kWh
 - **Completion**: All 21/21 jobs completed successfully
 - **Wall-clock time**: 51.3 hours (vs ~16 hours immediate execution)
 - **Best model**: Tier 3 experiment (r=32, alpha=128, lr=1e-4, dropout=0.05) with 12% better validation loss than baseline
@@ -368,12 +368,12 @@ From our Oct 28-30 experiment, the top 5 configurations:
 
 **Key findings**:
 - Top 3 models all used alpha=128 with r=32 (Tier 3 long shots)
-- Best model ran at just 123 gCO2/kWh
+- Best model ran at just 123 gCO2eq/kWh
 - Higher alpha values had more impact than rank increases
 
 ## Why This Approach Works
 
-**Distribution prevents stampede**: Using three thresholds (225/175/125 gCO2/kWh) spreads the 21-job workload across multiple low-carbon periods rather than clustering everything at the absolute minimum, which would create GPU queue congestion.
+**Distribution prevents stampede**: Using three thresholds (225/175/125 gCO2eq/kWh) spreads the 21-job workload across multiple low-carbon periods rather than clustering everything at the absolute minimum, which would create GPU queue congestion.
 
 **Priority queue with carbon constraints**: When GPUs become available, the scheduler picks jobs that (1) meet their carbon threshold AND (2) have highest priority (Tier 1 > Tier 2 > Tier 3). This means:
 - Critical baseline experiments get faster feedback

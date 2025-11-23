@@ -105,10 +105,10 @@ func setupTestSchedulerForCompletion(
 				Enabled: priceImpl != nil,
 			},
 		},
-		metricsStore: metricsStore,
-		carbonImpl:   carbonImpl,
-		priceImpl:    priceImpl,
-		clock:        testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
+		metricsStore:      metricsStore,
+		carbonImpl:        carbonImpl,
+		priceImpl:         priceImpl,
+		clock:             testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
 		carbonDelayedPods: make(map[string]bool),
 		priceDelayedPods:  make(map[string]bool),
 	}
@@ -152,8 +152,8 @@ type MetricsTestCase struct {
 	MetricsHistory      *metrics.PodMetricsHistory
 	PodAnnotations      map[string]string
 	OwnerReferences     []metav1.OwnerReference
-	WasCarbonDelayed    bool                        // Whether pod was delayed by carbon constraints
-	WasPriceDelayed     bool                        // Whether pod was delayed by price constraints
+	WasCarbonDelayed    bool // Whether pod was delayed by carbon constraints
+	WasPriceDelayed     bool // Whether pod was delayed by price constraints
 	ExpectedEnergyKWh   float64
 	ExpectedCarbonGrams float64
 	ExpectedSavings     map[string]float64          // Type (carbon/cost) -> expected value
@@ -234,13 +234,16 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200", // Initial (when scheduler first heard)
+			common.AnnotationInitialCarbonIntensity: "200",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "150",  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.12", // Bind-time (first metrics record)
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
 		WasPriceDelayed:  true, // Pod was delayed by price constraints
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
-		// Carbon intensity delta: 200 - 150 = 50 gCO2/kWh (scheduler successfully waited for better conditions!)
+		// Carbon intensity delta: 200 - 150 = 50 gCO2eq/kWh (scheduler successfully waited for better conditions!)
 		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = 50 * 0.016666 = ~0.8333 gCO2
 		// Electricity rate delta: 0.18 - 0.12 = 0.06 $/kWh (scheduler successfully waited for better rates!)
 		// Expected cost savings: (InitialRate - BindTimeRate) * Energy = 0.06 * 0.016666 = ~0.001 $
@@ -271,13 +274,16 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150", // Initial (when scheduler first heard)
+			common.AnnotationInitialCarbonIntensity: "150",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "200",  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.18", // Bind-time (first metrics record)
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
 		WasPriceDelayed:  true, // Pod was delayed by price constraints
 		// Savings calculation: Compare initial vs bind-time to measure scheduler effectiveness
-		// Carbon intensity delta: 150 - 200 = -50 gCO2/kWh (scheduler delayed but conditions got worse by bind time!)
+		// Carbon intensity delta: 150 - 200 = -50 gCO2eq/kWh (scheduler delayed but conditions got worse by bind time!)
 		// Expected carbon savings: (InitialCI - BindTimeCI) * Energy = -50 * 0.016666 = ~-0.8333 gCO2
 		// Electricity rate delta: 0.12 - 0.18 = -0.06 $/kWh (scheduler delayed but rates got worse by bind time!)
 		// Expected cost savings: (InitialRate - BindTimeRate) * Energy = -0.06 * 0.016666 = ~-0.001 $
@@ -308,14 +314,14 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity: "150",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.13", // Initial when first seen
 			// No delay annotations - pod was delayed by other constraints (GPU, etc.), not by our scheduler
 		},
 		// Should be no savings calculated since pod was not delayed by carbon/price constraints
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
-		ExpectedSavings: map[string]float64{
+		ExpectedSavings:     map[string]float64{
 			// No savings should be recorded
 		},
 		ExpectedEfficiency: map[string]float64{
@@ -338,13 +344,14 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity:  "200", // Initial when first seen
-			common.AnnotationInitialElectricityRate:  "0.10", // Initial when first seen
-			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
-			common.AnnotationBindTimeElectricityRate: "0.10", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
+			common.AnnotationBindCarbonIntensity:    "120",  // Bind-time intensity
+			common.AnnotationBindElectricityRate:    "0.10", // Bind-time rate
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 		},
-		WasCarbonDelayed: true,  // Was delayed by carbon
-		WasPriceDelayed:  false, // Pricing wasn't the constraint
+		WasCarbonDelayed:    true,  // Was delayed by carbon
+		WasPriceDelayed:     false, // Pricing wasn't the constraint
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -372,13 +379,14 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity:  "120",  // Initial when first seen
-			common.AnnotationInitialElectricityRate:  "0.15", // Initial when first seen
-			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
-			common.AnnotationBindTimeElectricityRate: "0.08", // Bind-time rate
+			common.AnnotationInitialCarbonIntensity: "120",  // Initial when first seen
+			common.AnnotationInitialElectricityRate: "0.15", // Initial when first seen
+			common.AnnotationBindCarbonIntensity:    "120",  // Bind-time intensity
+			common.AnnotationBindElectricityRate:    "0.08", // Bind-time rate
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 		},
-		WasCarbonDelayed: false, // Carbon intensity wasn't the constraint
-		WasPriceDelayed:  true,  // Was delayed by price
+		WasCarbonDelayed:    false, // Carbon intensity wasn't the constraint
+		WasPriceDelayed:     true,  // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -408,10 +416,11 @@ var savingsTestCases = []MetricsTestCase{
 		PodAnnotations: map[string]string{
 			common.AnnotationInitialCarbonIntensity: "180",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.12", // Initial when first seen
+			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339),
 			// No bind-time annotations - should fallback to Records[0]
 		},
-		WasCarbonDelayed: true, // Was delayed by carbon
-		WasPriceDelayed:  true, // Was delayed by price
+		WasCarbonDelayed:    true, // Was delayed by carbon
+		WasPriceDelayed:     true, // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.333,
 		ExpectedSavings: map[string]float64{
@@ -450,7 +459,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.1 kWh
 		// Expected usage percent: 16.67%
 		ExpectedEnergyKWh:   0.01667,
-		ExpectedCarbonGrams: 3.333, // 200 gCO2/kWh * 0.01667 kWh = 3.333 gCO2
+		ExpectedCarbonGrams: 3.333, // 200 gCO2eq/kWh * 0.01667 kWh = 3.333 gCO2
 		ExpectedBudgetUsage: 16.67,
 		ExpectedCounters:    map[string]map[string]int64{},
 		MarkCompleted:       true,
@@ -478,7 +487,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.01 kWh
 		// Expected usage percent: 333.33%
 		ExpectedEnergyKWh:   0.03333,
-		ExpectedCarbonGrams: 6.667, // 200 gCO2/kWh * 0.03333 kWh = 6.667 gCO2
+		ExpectedCarbonGrams: 6.667, // 200 gCO2eq/kWh * 0.03333 kWh = 6.667 gCO2
 		ExpectedBudgetUsage: 333.33,
 		ExpectedCounters: map[string]map[string]int64{
 			"energy_budget_exceeded_total": {
@@ -510,7 +519,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.015 kWh
 		// Expected usage percent: 244.47%
 		ExpectedEnergyKWh:   0.03667,
-		ExpectedCarbonGrams: 7.333, // 200 gCO2/kWh * 0.03667 kWh = 7.333 gCO2
+		ExpectedCarbonGrams: 7.333, // 200 gCO2eq/kWh * 0.03667 kWh = 7.333 gCO2
 		ExpectedBudgetUsage: 244.47,
 		ExpectedCounters: map[string]map[string]int64{
 			"energy_budget_exceeded_total": {
@@ -542,7 +551,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.02 kWh
 		// Expected usage percent: 200%
 		ExpectedEnergyKWh:   0.04,
-		ExpectedCarbonGrams: 8.0, // 200 gCO2/kWh * 0.04 kWh = 8.0 gCO2
+		ExpectedCarbonGrams: 8.0, // 200 gCO2eq/kWh * 0.04 kWh = 8.0 gCO2
 		ExpectedBudgetUsage: 200.0,
 		ExpectedCounters: map[string]map[string]int64{
 			"energy_budget_exceeded_total": {
@@ -574,7 +583,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.025 kWh
 		// Expected usage percent: 173.32%
 		ExpectedEnergyKWh:   0.04333,
-		ExpectedCarbonGrams: 8.667, // 200 gCO2/kWh * 0.04333 kWh = 8.667 gCO2
+		ExpectedCarbonGrams: 8.667, // 200 gCO2eq/kWh * 0.04333 kWh = 8.667 gCO2
 		ExpectedBudgetUsage: 173.32,
 		ExpectedCounters: map[string]map[string]int64{
 			"energy_budget_exceeded_total": {
@@ -611,7 +620,7 @@ var energyBudgetTestCases = []MetricsTestCase{
 		// Budget: 0.03 kWh
 		// Expected usage percent: 155.57%
 		ExpectedEnergyKWh:   0.04667,
-		ExpectedCarbonGrams: 9.333, // 200 gCO2/kWh * 0.04667 kWh = 9.333 gCO2
+		ExpectedCarbonGrams: 9.333, // 200 gCO2eq/kWh * 0.04667 kWh = 9.333 gCO2
 		ExpectedBudgetUsage: 155.57,
 		ExpectedCounters: map[string]map[string]int64{
 			"energy_budget_exceeded_total": {
@@ -658,7 +667,7 @@ var edgeCaseTestCases = []MetricsTestCase{
 		},
 		// No initial annotations, so no savings calculation
 		ExpectedEnergyKWh:   0.01667,
-		ExpectedCarbonGrams: 3.125, // Using 10min time span: (200+200)/2*0.00833 + (200+150)/2*0.00833 = 10*0.00833 + 8.75*0.00833 = 0.0833 + 0.07289 = 0.15619 kWh*gCO2/kWh = 3.125 gCO2
+		ExpectedCarbonGrams: 3.125, // Using 10min time span: (200+200)/2*0.00833 + (200+150)/2*0.00833 = 10*0.00833 + 8.75*0.00833 = 0.0833 + 0.07289 = 0.15619 kWh*gCO2eq/kWh = 3.125 gCO2
 		MarkCompleted:       true,
 	},
 	{
@@ -816,8 +825,8 @@ func TestSavingsCalculation(t *testing.T) {
 					}
 
 					if unit != "" {
-						// Access the specific metric instance using labels
-						metricInstance := metrics.EstimatedSavings.WithLabelValues(savingsType, unit, tc.PodName, tc.Namespace)
+						// Access the specific metric instance using labels (including method="simple" since test has no Prometheus)
+						metricInstance := metrics.EstimatedSavings.WithLabelValues(savingsType, unit, "simple", tc.PodName, tc.Namespace)
 						// Use k8s testutil to get value from GaugeMetric
 						actualValue, err := k8smetrictesutil.GetGaugeMetricValue(metricInstance)
 						assert.NoError(t, err, "Error getting EstimatedSavings value for %s/%s", savingsType, unit)
