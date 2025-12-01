@@ -107,13 +107,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\"}",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\", data_status=\"real\"}",
           "legendFormat": "{{region}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Current Carbon Intensity",
+      "title": "Current Carbon Intensity (Real)",
       "type": "gauge"
     },
     {
@@ -354,8 +354,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"carbon\", unit=\"grams_co2\"} / 1000)",
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Carbon savings (kg CO2)",
+          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"carbon\", unit=\"grams_co2\", method=\"timeseries\"} / 1000)",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Carbon savings (kg CO2) [timeseries]",
           "range": true,
           "refId": "A"
         },
@@ -365,8 +365,19 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"cost\", unit=\"dollars\"})",
-          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Cost savings ($)",
+          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"carbon\", unit=\"grams_co2\", method=\"simple\"} / 1000)",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Carbon savings (kg CO2) [simple]",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (exported_namespace, exported_pod) (compute_gardener_scheduler_estimated_savings{type=\"cost\", unit=\"dollars\", method=\"simple\"})",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Cost savings ($) [simple]",
           "range": true,
           "refId": "C"
         }
@@ -518,8 +529,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\"}",
-          "legendFormat": "Carbon Intensity (gCO2/kWh) - {{region}}",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\", data_status=\"real\"}",
+          "legendFormat": "Carbon Intensity (gCO2/kWh) - {{region}} [real]",
           "range": true,
           "refId": "A"
         },
@@ -673,6 +684,153 @@
         }
       ],
       "title": "Scheduler Delays by Reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Comparison of real (precise) vs estimated (rough) carbon intensity data to understand data quality",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "gCO2/kWh"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*real.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*estimated.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 100,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\", data_status=\"real\"}",
+          "legendFormat": "{{region}} - real (precise)",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "compute_gardener_scheduler_carbon_intensity{region=~\"$region\", data_status=\"estimated\"}",
+          "legendFormat": "{{region}} - estimated (rough)",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Carbon Intensity: Real vs Estimated Data Quality",
       "type": "timeseries"
     },
     {
@@ -1312,6 +1470,149 @@
           }
         }
       ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Comparison of actual emissions vs counterfactual (what would have happened without carbon-aware scheduling) to validate savings calculations",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "kg"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Actual.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Counterfactual.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 101,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "compute_gardener_scheduler_job_carbon_emissions_grams / 1000 > 0",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Actual Emissions",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "compute_gardener_scheduler_job_counterfactual_carbon_emissions_grams / 1000 > 0",
+          "legendFormat": "{{exported_namespace}}/{{exported_pod}} - Counterfactual Emissions",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Actual vs Counterfactual Carbon Emissions (Savings Validation)",
       "type": "timeseries"
     },
     {
