@@ -42,7 +42,7 @@ ELECTRICITY_MAPS_TOKEN = os.environ.get("ELECTRICITY_MAPS_TOKEN", "YOUR_TOKEN_HE
 REGIONS: Dict[str, Dict] = {
     "quebec": {
         "zone": "CA-QC",           # Hydro-Quebec - very clean hydro
-        "ip": "100.65.196.126",         # Tailscale IP for Quebec instance
+        "ip": "100.x.x.x",         # Tailscale IP for Quebec instance
         "description": "Quebec, Canada - Hydro-dominated grid",
     },
     "ohio": {
@@ -57,7 +57,7 @@ REGIONS: Dict[str, Dict] = {
         # "zone": "SE",            # Sweden - hydro/nuclear
         # "zone": "NO",            # Norway - hydro dominated
         # "zone": "IE",            # Ireland (not nordic) - dirtier grid, for testing/forcing other regions
-        "ip": "100.80.123.80",         # Tailscale IP for Nordic instance
+        "ip": "100.x.x.x",         # Tailscale IP for Nordic instance
         "description": "Nordic - Hydro-dominated grid",
     },
 }
