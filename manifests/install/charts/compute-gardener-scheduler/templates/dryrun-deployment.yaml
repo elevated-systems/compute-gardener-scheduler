@@ -1,0 +1,117 @@
+{{- if .Values.dryRun.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: compute-gardener-dryrun
+    component: webhook
+  name: compute-gardener-dryrun
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dryrun
+      component: webhook
+  replicas: {{ .Values.dryRun.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-dryrun
+        component: webhook
+      annotations:
+        {{- if .Values.dryRun.metrics.enabled }}
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '{{ .Values.dryRun.metrics.port }}'
+        prometheus.io/path: '/metrics'
+        {{- end }}
+    spec:
+      serviceAccountName: compute-gardener-dryrun
+      containers:
+      - name: dryrun
+        image: {{ .Values.dryRun.image }}
+        imagePullPolicy: {{ .Values.dryRun.imagePullPolicy }}
+        args:
+        - --webhook-port={{ .Values.dryRun.webhook.port }}
+        - --metrics-port={{ .Values.dryRun.metrics.port }}
+        - --mode={{ .Values.dryRun.mode }}
+        {{- range .Values.dryRun.watchNamespaces }}
+        - --watch-namespace={{ . }}
+        {{- end }}
+        - --v=3
+        env:
+        {{- if .Values.carbonAware.enabled }}
+        - name: ELECTRICITY_MAP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.scheduler.name }}-secrets
+              key: electricity-map-api-key
+        {{- if ne (.Values.carbonAware.carbonIntensityThreshold | toString) "200.0" }}
+        - name: CARBON_INTENSITY_THRESHOLD
+          value: "{{ .Values.carbonAware.carbonIntensityThreshold }}"
+        {{- end }}
+        {{- end }}
+        {{- if .Values.priceAware.enabled }}
+        - name: PRICING_ENABLED
+          value: "true"
+        - name: PRICING_PROVIDER
+          value: "{{ .Values.priceAware.provider }}"
+        - name: PRICING_SCHEDULES_PATH
+          value: "/etc/kubernetes/compute-gardener-scheduler-pricing/pricing-schedules.yaml"
+        {{- end }}
+        {{- if .Values.hardwareProfiles.enabled }}
+        - name: HARDWARE_PROFILES_PATH
+          value: "{{ .Values.hardwareProfiles.mountPath }}/hardware-profiles.yaml"
+        {{- end }}
+        ports:
+        - containerPort: {{ .Values.dryRun.webhook.port }}
+          name: webhook
+          protocol: TCP
+        - containerPort: {{ .Values.dryRun.metrics.port }}
+          name: metrics
+          protocol: TCP
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+        {{- if .Values.priceAware.enabled }}
+        - name: pricing-schedules
+          mountPath: /etc/kubernetes/compute-gardener-scheduler-pricing
+          readOnly: true
+        {{- end }}
+        {{- if .Values.hardwareProfiles.enabled }}
+        - name: hardware-profiles
+          mountPath: {{ .Values.hardwareProfiles.mountPath }}
+          readOnly: true
+        {{- end }}
+        resources:
+          {{- toYaml .Values.dryRun.resources | nindent 10 }}
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: compute-gardener-dryrun-webhook-cert
+      {{- if .Values.priceAware.enabled }}
+      - name: pricing-schedules
+        configMap:
+          name: {{ .Values.scheduler.name }}-pricing
+      {{- end }}
+      {{- if .Values.hardwareProfiles.enabled }}
+      - name: hardware-profiles
+        configMap:
+          name: {{ .Values.scheduler.name }}-hw-profiles
+      {{- end }}
+      {{- with .Values.dryRun.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dryRun.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dryRun.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.dryRun.priorityClassName }}
+      priorityClassName: {{ .Values.dryRun.priorityClassName }}
+      {{- end }}
+{{- end }}
