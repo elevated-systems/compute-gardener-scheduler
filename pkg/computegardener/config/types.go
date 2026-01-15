@@ -128,6 +128,15 @@ type ElectricityMapsAPIConfig struct {
 	Region string `yaml:"region"`
 }
 
+// CGAPIConfig holds configuration specific to the Compute Gardener API
+type CGAPIConfig struct {
+	Endpoint     string        `yaml:"endpoint"`     // e.g., "https://api.computegardener.io"
+	APIKey       string        `yaml:"apiKey"`       // CG API key
+	Timeout      time.Duration `yaml:"timeout"`      // Request timeout
+	FallbackToEM bool          `yaml:"fallbackToEM"` // Use EM if CG API fails
+	BlendFactor  float64       `yaml:"blendFactor"`  // 0-1 for score endpoint (future)
+}
+
 // SchedulingConfig holds configuration for scheduling behavior
 type SchedulingConfig struct {
 	MaxSchedulingDelay  time.Duration `yaml:"maxSchedulingDelay"`
@@ -148,9 +157,10 @@ type Schedule struct {
 // CarbonConfig holds configuration for carbon-aware scheduling
 type CarbonConfig struct {
 	Enabled            bool                     `yaml:"enabled"`
-	Provider           string                   `yaml:"provider"` // e.g. "electricity-maps-api"
+	Provider           string                   `yaml:"provider"` // "electricity-maps-api" | "cg-api"
 	IntensityThreshold float64                  `yaml:"carbonIntensityThreshold"`
 	APIConfig          ElectricityMapsAPIConfig `yaml:"api"`
+	CGAPIConfig        *CGAPIConfig             `yaml:"cgApi,omitempty"` // CG API config (when provider is "cg-api")
 }
 
 // PriceConfig holds configuration for price-aware scheduling
@@ -163,9 +173,31 @@ type PriceConfig struct {
 // Validate performs validation of the configuration
 func (c *Config) Validate() error {
 	if c.Carbon.Enabled {
-		if c.Carbon.Provider == "electricity-maps-api" && c.Carbon.APIConfig.APIKey == "" {
-			return fmt.Errorf("Electricity Maps API key is required when provider is electricity-maps-api")
+		// Validate provider is recognized
+		if c.Carbon.Provider != "electricity-maps-api" && c.Carbon.Provider != "cg-api" {
+			return fmt.Errorf("invalid carbon provider: %s (must be 'electricity-maps-api' or 'cg-api')", c.Carbon.Provider)
 		}
+
+		// Provider-specific validation
+		if c.Carbon.Provider == "electricity-maps-api" {
+			if c.Carbon.APIConfig.APIKey == "" {
+				return fmt.Errorf("Electricity Maps API key is required when provider is electricity-maps-api")
+			}
+		}
+
+		if c.Carbon.Provider == "cg-api" {
+			if c.Carbon.CGAPIConfig == nil {
+				return fmt.Errorf("cgApi configuration is required when provider is cg-api")
+			}
+			if c.Carbon.CGAPIConfig.Endpoint == "" {
+				return fmt.Errorf("CG API endpoint is required when provider is cg-api")
+			}
+			// Validate fallback configuration
+			if c.Carbon.CGAPIConfig.FallbackToEM && c.Carbon.APIConfig.APIKey == "" {
+				return fmt.Errorf("Electricity Maps API key is required when fallbackToEM is enabled")
+			}
+		}
+
 		if c.Carbon.IntensityThreshold <= 0 {
 			return fmt.Errorf("base carbon intensity threshold must be positive")
 		}

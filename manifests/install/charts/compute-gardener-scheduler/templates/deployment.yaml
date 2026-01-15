@@ -41,6 +41,9 @@ spec:
         imagePullPolicy: {{ .Values.scheduler.imagePullPolicy }}
         env:
         {{- if .Values.carbonAware.enabled }}
+        # Carbon provider configuration
+        - name: CARBON_PROVIDER
+          value: "{{ .Values.carbonAware.provider }}"
         # API key is always needed when carbon awareness is enabled
         - name: ELECTRICITY_MAP_API_KEY
           valueFrom:
@@ -61,6 +64,32 @@ spec:
         {{- if ne .Values.scheduler.maxSchedulingDelay "24h" }}
         - name: MAX_SCHEDULING_DELAY
           value: "{{ .Values.scheduler.maxSchedulingDelay }}"
+        {{- end }}
+        # Compute Gardener API configuration (when provider is "cg-api")
+        {{- if eq .Values.carbonAware.provider "cg-api" }}
+        {{- if .Values.carbonAware.cgApi.endpoint }}
+        - name: CG_API_ENDPOINT
+          value: "{{ .Values.carbonAware.cgApi.endpoint }}"
+        {{- end }}
+        {{- if .Values.carbonAware.cgApi.apiKey }}
+        - name: CG_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.scheduler.name }}-secrets
+              key: cg-api-key
+        {{- end }}
+        {{- if .Values.carbonAware.cgApi.timeout }}
+        - name: CG_API_TIMEOUT
+          value: "{{ .Values.carbonAware.cgApi.timeout }}"
+        {{- end }}
+        {{- if hasKey .Values.carbonAware.cgApi "fallbackToEM" }}
+        - name: CG_API_FALLBACK_TO_EM
+          value: "{{ .Values.carbonAware.cgApi.fallbackToEM }}"
+        {{- end }}
+        {{- if .Values.carbonAware.cgApi.blendFactor }}
+        - name: CG_API_BLEND_FACTOR
+          value: "{{ .Values.carbonAware.cgApi.blendFactor }}"
+        {{- end }}
         {{- end }}
         {{- end }}
         {{- if .Values.priceAware.enabled }}

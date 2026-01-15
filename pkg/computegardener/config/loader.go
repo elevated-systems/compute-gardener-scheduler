@@ -30,13 +30,14 @@ func LoadFromEnv() (*Config, error) {
 		},
 		Carbon: CarbonConfig{
 			Enabled:            getBoolOrDefault("CARBON_ENABLED", true),
-			Provider:           "electricity-maps-api",
+			Provider:           getEnvOrDefault("CARBON_PROVIDER", "electricity-maps-api"),
 			IntensityThreshold: getFloatOrDefault("CARBON_INTENSITY_THRESHOLD", 150.0),
 			APIConfig: ElectricityMapsAPIConfig{
 				APIKey: os.Getenv("ELECTRICITY_MAP_API_KEY"),
 				URL:    getEnvOrDefault("ELECTRICITY_MAP_API_URL", "https://api.electricitymap.org/v3/carbon-intensity/latest?zone="),
 				Region: getEnvOrDefault("ELECTRICITY_MAP_API_REGION", "US-CAL-CISO"),
 			},
+			CGAPIConfig: loadCGAPIConfig(),
 		},
 		Pricing: PriceConfig{
 			Enabled:   getBoolOrDefault("PRICING_ENABLED", false),
@@ -310,6 +311,32 @@ func loadPrometheusConfig() *PrometheusConfig {
 		"queryTimeout", config.QueryTimeout,
 		"useDCGM", config.UseDCGM,
 		"dcgmPowerMetric", config.DCGMPowerMetric)
+
+	return config
+}
+
+// loadCGAPIConfig loads Compute Gardener API settings from environment variables
+func loadCGAPIConfig() *CGAPIConfig {
+	// Check if CG API endpoint is set - if not, don't enable CG API
+	endpoint := os.Getenv("CG_API_ENDPOINT")
+	if endpoint == "" {
+		return nil
+	}
+
+	// Create CG API config with endpoint
+	config := &CGAPIConfig{
+		Endpoint:     endpoint,
+		APIKey:       os.Getenv("CG_API_KEY"),
+		Timeout:      getDurationOrDefault("CG_API_TIMEOUT", 10*time.Second),
+		FallbackToEM: getBoolOrDefault("CG_API_FALLBACK_TO_EM", true),
+		BlendFactor:  getFloatOrDefault("CG_API_BLEND_FACTOR", 0.0),
+	}
+
+	klog.InfoS("Compute Gardener API configuration loaded",
+		"endpoint", config.Endpoint,
+		"timeout", config.Timeout,
+		"fallbackToEM", config.FallbackToEM,
+		"blendFactor", config.BlendFactor)
 
 	return config
 }

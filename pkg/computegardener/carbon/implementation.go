@@ -8,6 +8,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon/electricitymaps"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 )
 
@@ -34,76 +35,50 @@ type Implementation interface {
 	CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status
 }
 
-type carbonImpl struct {
-	config    *config.CarbonConfig
-	apiClient *api.Client
+// Factory creates carbon implementations based on configuration
+func Factory(cfg *config.CarbonConfig, apiClient *api.Client) (Implementation, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	switch cfg.Provider {
+	case "electricity-maps-api":
+		klog.V(2).InfoS("Creating Electricity Maps carbon implementation",
+			"region", cfg.APIConfig.Region)
+		return newElectricityMapsImplementation(cfg, apiClient), nil
+
+	case "cg-api":
+		if cfg.CGAPIConfig == nil {
+			return nil, fmt.Errorf("cgApi configuration required for cg-api provider")
+		}
+
+		klog.V(2).InfoS("Creating Compute Gardener API carbon implementation",
+			"endpoint", cfg.CGAPIConfig.Endpoint,
+			"region", cfg.APIConfig.Region,
+			"fallbackToEM", cfg.CGAPIConfig.FallbackToEM)
+
+		// Create Electricity Maps implementation as fallback if configured
+		var fallback Implementation
+		if cfg.CGAPIConfig.FallbackToEM {
+			fallback = newElectricityMapsImplementation(cfg, apiClient)
+			klog.V(2).InfoS("Fallback to Electricity Maps enabled")
+		}
+
+		return newCGAPIImplementation(*cfg.CGAPIConfig, cfg.APIConfig.Region, fallback)
+
+	default:
+		return nil, fmt.Errorf("unknown carbon provider: %s", cfg.Provider)
+	}
 }
 
-// New creates a new carbon implementation
+// New creates a new carbon implementation using the factory pattern
+// Deprecated: Use Factory instead for better provider selection
 func New(cfg *config.CarbonConfig, apiClient *api.Client) Implementation {
-	return &carbonImpl{
-		config:    cfg,
-		apiClient: apiClient,
-	}
-}
-
-func (c *carbonImpl) GetCurrentIntensity(ctx context.Context) (float64, error) {
-	data, err := c.GetCurrentIntensityWithStatus(ctx)
+	impl, err := Factory(cfg, apiClient)
 	if err != nil {
-		return 0, err
+		klog.ErrorS(err, "Failed to create carbon implementation, falling back to Electricity Maps")
+		// Fallback to Electricity Maps if factory fails
+		return newElectricityMapsImplementation(cfg, apiClient)
 	}
-	return data.Value, nil
-}
-
-func (c *carbonImpl) GetCurrentIntensityWithStatus(ctx context.Context) (*IntensityData, error) {
-	// Log region used for debugging
-	klog.V(3).InfoS("Fetching carbon intensity data",
-		"region", c.config.APIConfig.Region,
-		"apiKey", c.config.APIConfig.APIKey != "")
-
-	// The API client will check cache first and only make a request if needed
-	data, err := c.apiClient.GetCarbonIntensity(ctx, c.config.APIConfig.Region)
-	if err != nil {
-		klog.V(2).InfoS("Failed to get carbon intensity data", "error", err)
-		return nil, fmt.Errorf("failed to get carbon intensity data: %v", err)
-	}
-
-	return &IntensityData{
-		Value:      data.CarbonIntensity,
-		DataStatus: data.GetDataStatus(),
-	}, nil
-}
-
-func (c *carbonImpl) CheckIntensityConstraints(ctx context.Context, threshold float64) *framework.Status {
-	klog.V(2).InfoS("Checking carbon intensity constraints",
-		"threshold", threshold,
-		"region", c.config.APIConfig.Region)
-
-	intensity, err := c.GetCurrentIntensity(ctx)
-	if err != nil {
-		klog.ErrorS(err, "Failed to get carbon intensity data",
-			"region", c.config.APIConfig.Region)
-		return framework.NewStatus(framework.Error, err.Error())
-	}
-
-	klog.V(2).InfoS("Carbon intensity check",
-		"intensity", intensity,
-		"threshold", threshold,
-		"region", c.config.APIConfig.Region,
-		"exceeds", intensity > threshold)
-
-	if intensity > threshold {
-		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)", intensity, threshold)
-		klog.V(2).InfoS("Carbon intensity exceeds threshold - delaying scheduling",
-			"intensity", intensity,
-			"threshold", threshold,
-			"region", c.config.APIConfig.Region)
-		return framework.NewStatus(framework.Unschedulable, msg)
-	}
-
-	klog.V(2).InfoS("Carbon intensity within acceptable limits",
-		"intensity", intensity,
-		"threshold", threshold,
-		"region", c.config.APIConfig.Region)
-	return framework.NewStatus(framework.Success, "")
+	return impl
 }

@@ -10,7 +10,9 @@ This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kub
 
 ## Core Features
 
-- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data (requires [Electricity Maps API](https://api-portal.electricitymaps.com/) key)
+- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data
+  - **Electricity Maps API** (default): Direct integration with [Electricity Maps API](https://api-portal.electricitymaps.com/)
+  - **Compute Gardener API**: Use the CG API with built-in caching and aggregation (recommended for production)
 - **Price-Aware Scheduling**: Schedule pods based on time-of-use (TOU) electricity pricing
 - **Pod-Level Controls**: Customize scheduling via annotations and thresholds
 - **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration based on NFD labels, Kepler data or sensed HW
@@ -45,6 +47,42 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
 ```
 
 For more options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md). Also, if you prefer a raw manifest based install, see our [all-in-one](./manifests/compute-gardener-scheduler/) manifests.
+
+### Carbon Provider Configuration
+
+The scheduler supports two carbon intensity providers:
+
+#### Electricity Maps API (Default)
+Direct integration with Electricity Maps API:
+
+```bash
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set carbonAware.provider=electricity-maps-api \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+```
+
+#### Compute Gardener API (Recommended for Production)
+Use the CG API for improved caching, aggregation, and reduced API costs:
+
+```bash
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set carbonAware.provider=cg-api \
+  --set carbonAware.cgApi.endpoint=https://api.computegardener.io \
+  --set carbonAware.cgApi.apiKey=YOUR_CG_API_KEY \
+  --set carbonAware.cgApi.fallbackToEM=true \
+  --set carbonAware.electricityMap.apiKey=YOUR_EM_API_KEY
+```
+
+**Configuration Options:**
+- `carbonAware.provider`: Set to `electricity-maps-api` or `cg-api`
+- `carbonAware.cgApi.endpoint`: CG API endpoint URL
+- `carbonAware.cgApi.apiKey`: CG API authentication key (optional)
+- `carbonAware.cgApi.fallbackToEM`: Enable fallback to Electricity Maps if CG API fails (default: true)
+- `carbonAware.cgApi.timeout`: Request timeout (default: 10s)
 
 ## Additional Features
 

@@ -42,10 +42,27 @@ scheduler:
 # Carbon-aware scheduling configuration
 carbonAware:
   enabled: true
+  # Carbon intensity provider: "electricity-maps-api" (default) or "cg-api"
+  provider: "electricity-maps-api"
   carbonIntensityThreshold: 200.0
+
+  # Electricity Maps API configuration (used for "electricity-maps-api" provider or as fallback for "cg-api")
   electricityMap:
     apiKey: "YOUR_ELECTRICITY_MAP_API_KEY" # Change this or use --set-string
     # Additional electricity map settings can be added here
+
+  # Compute Gardener API configuration (used when provider is "cg-api")
+  cgApi:
+    # CG API endpoint
+    endpoint: "https://api.computegardener.io"
+    # CG API key (optional, depending on API configuration)
+    apiKey: ""
+    # Request timeout (default: 10s)
+    timeout: "10s"
+    # Fall back to Electricity Maps if CG API is unavailable (default: true)
+    fallbackToEM: true
+    # Blend factor for future score endpoint (0-1, default: 0.0)
+    blendFactor: 0.0
 
 # Price-aware scheduling configuration
 priceAware:
