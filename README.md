@@ -4,215 +4,98 @@
 
 # Compute Gardener Scheduler
 
-The Compute Gardener Scheduler is a Kubernetes scheduler plugin that enables carbon and price-aware scheduling of pods based on real-time carbon intensity data and time-of-use electricity pricing.
+A Kubernetes scheduler plugin enabling carbon and price-aware scheduling based on real-time carbon intensity data and time-of-use electricity pricing. Built on the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) framework.
 
-This project builds on the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/scheduler-plugins) framework to provide specialized energy and cost-aware scheduling capabilities.
+## Features
 
-## Core Features
-
-- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity data (requires [Electricity Maps API](https://api-portal.electricitymaps.com/) key)
-- **Price-Aware Scheduling**: Schedule pods based on time-of-use (TOU) electricity pricing
-- **Pod-Level Controls**: Customize scheduling via annotations and thresholds
-- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE consideration based on NFD labels, Kepler data or sensed HW
-- **Region Mapping**: Automatically map most major cloud provider regions to their corresponding Electricity Maps API carbon intensity regions.
-- **Grafana Dashboard**: View workload and scheduler performance metrics in simple visualizations.
-- **Energy Budget Tracking**: Define and monitor energy usage limits for workloads
-
-## Getting Started
-Please see our new [getting started guide](./docs/getting-started.md) for an in-depth workflow, installing the scheduler, getting carbon awarenes, price awareness and metrics working.
+- **Carbon-Aware Scheduling**: Schedule pods based on real-time carbon intensity ([Electricity Maps API](https://api-portal.electricitymaps.com/))
+- **Price-Aware Scheduling**: Time-of-use (TOU) electricity pricing support
+- **Hardware Power Profiling**: Accurate power modeling with datacenter PUE via NFD labels, Kepler, or runtime detection
+- **Region Mapping**: Auto-map major cloud provider regions to carbon intensity zones
+- **Energy Budgets**: Define and monitor energy usage limits per workload
+- **Grafana Dashboard**: Visualize scheduler metrics, carbon intensity, and savings
+- **Namespace Policies**: Apply energy policies at the namespace level
 
 ## Quick Start
-
-### Install Using Helm
 
 ```bash
 # Add the Helm repository
 helm repo add compute-gardener https://elevated-systems.github.io/compute-gardener-scheduler
 helm repo update
 
-# Standard installation with metrics enabled
+# Install with carbon awareness
 helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
   --namespace compute-gardener \
   --create-namespace \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
-  
-# Installation without metrics (for clusters without Prometheus Operator)
-helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
-  --namespace compute-gardener \
-  --create-namespace \
-  --set metrics.enabled=false \
-  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-For more options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md). Also, if you prefer a raw manifest based install, see our [all-in-one](./manifests/compute-gardener-scheduler/) manifests.
+For detailed setup, see our [getting started guide](./docs/getting-started.md). For all Helm options, see the [chart README](manifests/install/charts/compute-gardener-scheduler/README.md).
 
-## Additional Features
+## Dry-Run Mode (Preview)
 
-- **GPU & CPU Power Monitoring**: Integrated with DCGM and CPU frequency monitoring
-- **Caching**: Built-in caching of API responses to limit external API calls
-- **Observability**: Comprehensive Prometheus metrics
-- **Workload-Specific Optimizations**: Different policies for workload types (batch, service, stateful)
-- **Namespace-Level Policies**: Define energy policies at namespace level
+Not ready to install a secondary scheduler? **Dry-run mode** lets you evaluate potential savings without affecting workloads.
 
-## Architecture
+Dry-run mode installs a lightweight admission webhook that:
+- Evaluates every pod using the same carbon/price logic as the scheduler
+- Records what *would* happen via Prometheus metrics or pod annotations
+- Tracks completed pods to calculate actual savings potential
+- Scopes to specific namespaces for safe experimentation
 
-The scheduler consists of these key components:
-
-1. **Main Scheduler Plugin**: Implements Kubernetes scheduler framework interfaces (PreFilter and Filter for now)
-2. **Carbon Scheduler**: Considers carbon intensity in scheduling
-3. **Hardware Profiler**: Models power consumption with PUE considerations
-4. **TOU Scheduler**: Manages time-of-use pricing schedules
-5. **API Client**: Communicates with Electricity Maps API
-6. **Cache**: Provides caching of API responses to reduce external API calls
-7. **Energy Budget Tracker**: Monitors energy usage against budgets
-8. **Energy Policy Webhook**: Applies namespace-level energy policies
-
-### Scheduling Logic
-
-The scheduler follows this decision flow:
-
-1. **PreFilter Stage**: 
-   - Check if pod has exceeded maximum scheduling delay or has opted-out
-   - If pricing is enabled:
-     - Get current rate from pricing implementation
-     - Compare against threshold
-   - If carbon-aware scheduling is enabled:
-     - Get current carbon intensity from implementation
-     - Compare against threshold
-
-2. **Filter Stage**:
-    - Recheck if pod has exceeded maximum scheduling delay or has opeted-out
-   - If hardware efficiency controls are enabled:
-     - Calculate effective power consumption with PUE
-     - Filter nodes based on power limits and efficiency
-
-3. **Post-scheduling**:
-   - Track energy usage over time
-   - Compare against energy budgets
-   - Take configurable actions when budgets are exceeded
-
-### Time-of-Use Pricing Schedules
-
-```yaml
-schedules:
-  - name: "california-pge"          # Schedule name
-    dayOfWeek: "1-5"                # Days (1=Monday, 5=Friday)
-    startTime: "16:00"              # Start time (24h format)
-    endTime: "21:00"                # End time (24h format)
-    timezone: "America/Los_Angeles" # IANA timezone
-    peakRate: 0.30                  # Peak rate in $/kWh (optional)
-    offPeakRate: 0.10               # Off-peak rate (optional)
-```
-
-### Pod Annotations
-
-```yaml
-# Basic scheduling controls
-compute-gardener-scheduler.kubernetes.io/skip: "true"                      # Opt out
-compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0" # Custom threshold
-compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"           # Custom price threshold
-compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"       # Custom delay
-
-# Energy budget
-compute-gardener-scheduler.kubernetes.io/energy-budget-kwh: "5.0"          # Energy budget in kWh
-compute-gardener-scheduler.kubernetes.io/gpu-workload-type: "inference"    # GPU workload type
-```
-
-## Hardware Power Profiles
-
-The scheduler uses hardware-specific power profiles to accurately estimate energy consumption.
-
-Optional: For optimal performance (skip run-time checks), you can label your nodes with their hardware details:
+This answers key questions before committing: *How much could we actually save? Is the carbon data reliable for our region? What would the scheduler do with our workloads?*
 
 ```bash
-# Label all nodes (optional)
-./hack/label-node-hardware.sh
+# Install dry-run mode only
+helm install compute-gardener ./manifests/install/charts/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set dryRun.enabled=true \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-Sample profile:
+See [Dry-Run Mode Documentation](./docs/dry-run-mode.md) for details.
+
+## Pod Annotations
+
+Control scheduling behavior per-pod:
 
 ```yaml
-# Global defaults 
-defaultPUE: 1.15      # Default datacenter PUE
-defaultGPUPUE: 1.2    # Default GPU-specific PUE
-
-# CPU profiles
-cpuProfiles:
-  "Intel(R) Xeon(R) Platinum 8275CL":
-    idlePower: 10.5   # Idle power (watts)
-    maxPower: 120.0   # Max power (watts)
-
-# GPU profiles with workload types
-gpuProfiles:
-  "NVIDIA A100":
-    idlePower: 25.0
-    maxPower: 400.0
-    workloadTypes:
-      inference: 0.6  # 60% of max power
-      training: 1.0   # Full power
+compute-gardener-scheduler.kubernetes.io/skip: "true"                        # Opt out
+compute-gardener-scheduler.kubernetes.io/carbon-intensity-threshold: "250.0" # gCO2eq/kWh
+compute-gardener-scheduler.kubernetes.io/price-threshold: "0.12"             # $/kWh
+compute-gardener-scheduler.kubernetes.io/max-scheduling-delay: "12h"         # Max wait
+compute-gardener-scheduler.kubernetes.io/energy-budget-kwh: "5.0"            # Energy limit
 ```
 
 ## Metrics
 
-Key metrics available:
+Key Prometheus metrics:
 
-**Carbon and Pricing**
-- `compute_gardener_scheduler_carbon_intensity`: Current carbon intensity
-- `compute_gardener_scheduler_electricity_rate`: Current electricity rate
-- `compute_gardener_scheduler_carbon_delay_total`: Scheduling delays due to carbon
-- `compute_gardener_scheduler_estimated_savings`: Carbon/cost savings from scheduling decisions
-  - Includes `method` label: `timeseries` (high precision) or `simple` (rough estimate when Prometheus unavailable)
-- `compute_gardener_scheduler_job_carbon_emissions_grams`: Actual carbon emissions during execution
-- `compute_gardener_scheduler_job_counterfactual_carbon_emissions_grams`: What emissions would have been (for timeseries method)
+- `compute_gardener_scheduler_carbon_intensity` / `electricity_rate`: Current conditions
+- `compute_gardener_scheduler_estimated_savings`: Carbon/cost savings with `method` label (timeseries or simple)
+- `compute_gardener_scheduler_job_carbon_emissions_grams`: Actual emissions per job
+- `compute_gardener_scheduler_energy_budget_usage_percent`: Budget utilization
 
-**Energy Budget**
-- `compute_gardener_scheduler_energy_budget_usage_percent`: Budget usage percentage
-- `compute_gardener_scheduler_job_energy_usage_kwh`: Energy usage for completed jobs
+See [Carbon Calculations](./docs/carbon-calculations.md) for methodology details.
 
-**Hardware**
-- `compute_gardener_scheduler_node_power_estimate_watts`: Power consumption
+## Documentation
 
-For a detailed explanation of how carbon emissions and savings are calculated, see the [Carbon Calculations Documentation](./docs/carbon-calculations.md).
-
-
-### Namespace-Level Energy Policies
-
-Enable with namespace label:
-
-```yaml
-labels:
-  compute-gardener-scheduler.kubernetes.io/energy-policies: "enabled"
-```
-
-Set default policies with annotations:
-
-```yaml
-annotations:
-  compute-gardener-scheduler.kubernetes.io/policy-carbon-intensity-threshold: "200"
-  compute-gardener-scheduler.kubernetes.io/policy-energy-budget-kwh: "10"
-```
+- [Getting Started Guide](./docs/getting-started.md)
+- [Carbon Calculations](./docs/carbon-calculations.md)
+- [Hardware Profiles](./docs/hardware-profiles.md)
+- [Project Roadmap](./docs/roadmap.md)
 
 ## Development
 
-We'd be thrilled to have your dev assistance and shared wisdom!
-
-Peruse our [issues](https://github.com/elevated-systems/compute-gardener-scheduler/issues) to see if anything speaks to you or you have any bugs or suggested features.
-
 ```bash
-# Build
-make build
-
-# Build and Push Image
-# Be sure to set your registry details in Makefile first
-make build-push-image
-
-# Run tests
-make unit-test
-
-# Run tests with coverage report
-make unit-test-coverage
+make build           # Build binaries
+make build-push-image # Build and push container image
+make unit-test       # Run tests
+make unit-test-coverage # Tests with coverage report
 ```
+
+See our [issues](https://github.com/elevated-systems/compute-gardener-scheduler/issues) for ways to contribute.
 
 ## Contributing
 
-Please see the [contributing guide](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
