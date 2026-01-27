@@ -10,7 +10,7 @@ Built on the [Kubernetes Scheduler Plugins](https://github.com/kubernetes-sigs/s
 
 ## Why Compute Gardener?
 
-Most Kubernetes workloads don't need to run *right now*. ML training jobs, batch processing, CI pipelines—these can often wait minutes or hours. Compute Gardener uses that flexibility to:
+Many Kubernetes workloads don't need to run *right now*. ML training jobs, batch processing, CI pipelines—these can often wait minutes or hours. Compute Gardener uses that flexibility to:
 
 - **Reduce carbon emissions** by scheduling during low-carbon periods using real-time grid data
 - **Lower electricity costs** by avoiding peak pricing windows
