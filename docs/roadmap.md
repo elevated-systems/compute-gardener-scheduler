@@ -31,7 +31,7 @@ The tail end of 2025 focused on marketing, documentation and building awareness 
 - 🚀 **Simple forecasting**: Schedule at predicted optimal times rather than just waiting for threshold crossings.
 
 - 🚀 **Compute Gardener API**: Integration with our upcoming API service that will provide:
-  - Electricity Maps API pass-through (familiar interface, additional features)
+  - Electricity Maps API-like responses of intensity data blended with costs
   - Cloud spot pricing data for cost-optimized scheduling
   - Blended optimization support (e.g., 60% carbon weight / 40% cost weight)
 
