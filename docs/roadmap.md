@@ -24,7 +24,7 @@
 
 ### H1 2026
 
-The second half of 2025 focused on marketing, documentation, and building awareness around carbon-aware computing. Development is resuming with:
+The tail end of 2025 focused on marketing, documentation and building awareness around carbon-aware computing. Ongoing development:
 
 - 🚀 **Dry-run mode polish**: Completing the dry-run admission webhook for production readiness. Allows evaluation of scheduling decisions and savings potential without installing a secondary scheduler - reducing adoption risk for curious teams.
 
