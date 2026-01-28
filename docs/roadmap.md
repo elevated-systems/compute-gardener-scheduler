@@ -1,47 +1,54 @@
 # Compute Gardener Project Roadmap
 
-## Recently Completed
+*Last updated: January 2026*
 
-### v0.1.6 (mid March 2025)
-- ✅ Integrated hardware profiler for accurate power estimation based on CPU model and frequency
-- ✅ Added support for DCGM exporter integration for precise GPU power monitoring
-- ✅ Implemented energy budget tracking with configurable actions (log/notify/annotate/label)
+## Completed
 
-### v0.1.7 (late March 2025)
-- ✅ This roadmap document
-- ✅ Improved hardware detection with dynamic CPU frequency scaling considerations
-- ✅ Enhanced monitoring with new metrics for energy efficiency and PUE tracking
-- ✅ Grafana dashboard visualizing most scheduler captured metrics including carbon and cost savings
-- ✅ Extend unit test coverage to >40%
+### v0.1.6 - v0.1.7 (March 2025)
+- ✅ Hardware profiler for accurate power estimation (CPU model, frequency, DCGM GPU monitoring)
+- ✅ Energy budget tracking with configurable actions
+- ✅ Grafana dashboard for scheduler metrics and savings visualization
+- ✅ Unit test coverage >40%
 
-### v0.2.0 (April 2025)
-- ✅ Validate savings calculations and metrics collection
-- ✅ Validate as secondary scheduler in Google Cloud Platform (not autopilot nodes)
-- ✅ Various metrics collection and dashboard viz enhancements
+### v0.2.0 - v0.2.1 (April-May 2025)
+- ✅ Validated savings calculations and metrics on GCP (non-autopilot)
+- ✅ Kepler data integration support
+- ✅ Cascading node detection (custom annotations, NFD labels)
 
-### v0.2.1 (May 2025)
-- ✅ Build initial support for Kepler data integration
-- ✅ Support various, cascading node detection strategies: custom annotations, NFD labels
-- ✅ Addl dashboard viz enhancements
+### v0.2.2 (Summer-Fall 2025)
+- ✅ Dry-run mode: webhook-based evaluation without scheduler installation
+- ✅ AWS validation (non-auto-provisioned nodes)
+- ✅ Documentation improvements and blog series on carbon-aware ML training
 
-## Upcoming Releases
+## In Progress
 
-### v0.2.2 (June 2025)
-- 🚀 Implement simple forecasting to schedule at optimal times (not just waiting for threshold)
-- 🚀 Validate as secondary scheduler in AWS (likely not auto-provisioned nodes)
-- 🚀 Enhance and validate energy budget admission webhook
-- 🚀 Increase test coverage to >60%
+### H1 2026
 
-### v0.3.0 (mid-late 2025)
-- 🔮 Implement multi-cluster/spatial deferral (likely)
-- 🔮 Support for custom carbon intensity sources beyond Electricity Maps API (likely WattTime)
-- 🔮 Develop predictive workload classification for automatic energy optimization (maybe)
+The tail end of 2025 focused on marketing, documentation and building awareness around carbon-aware computing. Ongoing development:
 
-## Ongoing Initiatives
-- 📈 Improving documentation and examples
-- 🔍 Benchmarking energy savings across different workload types
+- 🚀 **Dry-run mode polish**: Completing the dry-run admission webhook for production readiness. Allows evaluation of scheduling decisions and savings potential without installing a secondary scheduler - reducing adoption risk for curious teams.
+
+- 🚀 **Simple forecasting**: Schedule at predicted optimal times rather than just waiting for threshold crossings.
+
+- 🚀 **Compute Gardener API**: Integration with our upcoming API service that will provide:
+  - Electricity Maps API-like responses of intensity data blended with costs
+  - Cloud spot pricing data for cost-optimized scheduling
+  - Blended optimization support (e.g., 60% carbon weight / 40% cost weight)
+
+## Future Roadmap
+
+### H2 2026 and Beyond
+
+- 🔮 **Multi-dimensional optimization**: Combined carbon + cost + spot pricing scheduling decisions
+- 🔮 **Multi-cluster/spatial deferral**: Route workloads to lower-carbon regions
+- 🔮 **Additional carbon data sources**: WattTime and other providers
+- 🔮 **Predictive workload classification**: Automatic energy optimization based on workload patterns
+
+## Ongoing
+- 📈 Documentation and examples
+- 🔍 Benchmarking energy savings across workload types
 - 🌱 Building community around carbon-aware computing
 
 ----
 
-We welcome community contributions to help us achieve these goals. Please see our [README](../README.md) and [Contributing Guide](../CONTRIBUTING.md) for more information on how to get involved.
+We welcome contributions! See our [README](../README.md) and [Contributing Guide](../CONTRIBUTING.md) to get involved.
