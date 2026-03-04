@@ -35,13 +35,22 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --namespace compute-gardener \
   --create-namespace \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
-  
+
 # Installation without metrics (for clusters without Prometheus Operator)
 helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
   --namespace compute-gardener \
   --create-namespace \
   --set metrics.enabled=false \
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
+
+# AWS-specific installation
+# AWS EKS requires nodeSelector and tolerations to be set to null
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY \
+  --set scheduler.nodeSelector=null \
+  --set scheduler.tolerations=null
 ```
 
 For more options, see the [Helm chart README](manifests/install/charts/compute-gardener-scheduler/README.md). Also, if you prefer a raw manifest based install, see our [all-in-one](./manifests/compute-gardener-scheduler/) manifests.
