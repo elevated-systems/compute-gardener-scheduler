@@ -40,6 +40,18 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
+## AWS-specific installation
+### AWS EKS requires nodeSelector and tolerations to be nulled
+
+```bash
+helm install compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set carbonAware.electricityMap.apiKey=YOUR_API_KEY \
+  --set scheduler.nodeSelector=null \
+  --set scheduler.tolerations=null
+```
+
 Then schedule pods with `schedulerName: compute-gardener-scheduler`. See the [Getting Started Guide](./docs/getting-started.md) for detailed setup.
 
 ## Dry-Run Mode (Preview)
