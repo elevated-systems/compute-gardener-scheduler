@@ -17,7 +17,8 @@ PLATFORMS ?= linux/amd64,linux/arm64,linux/s390x,linux/ppc64le
 BUILDER ?= docker
 REGISTRY?=docker.io/dmasselink
 RELEASE_VERSION?=$(shell git tag -l "v*" --sort=-committerdate | head -n 1)-$(shell git rev-parse --short HEAD)
-RELEASE_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
+SCHEDULER_IMAGE:=compute-gardener-scheduler:$(RELEASE_VERSION)
+DRYRUN_IMAGE:=compute-gardener-dryrun:$(RELEASE_VERSION)
 GO_BASE_IMAGE?=golang:$(GO_VERSION)
 DISTROLESS_BASE_IMAGE?=gcr.io/distroless/static:nonroot
 
@@ -28,26 +29,50 @@ VERSION:=$(or $(VERSION),v0.0.$(shell date +%Y%m%d))
 all: build
 
 .PHONY: build
-build: build-scheduler
+build: build-scheduler build-dryrun
 
 .PHONY: build-scheduler
 build-scheduler:
 	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/kube-scheduler cmd/scheduler/main.go
 
-.PHONY: build-image
-build-image:
+.PHONY: build-dryrun
+build-dryrun:
+	$(GO_BUILD_ENV) go build -ldflags '-X k8s.io/component-base/version.gitVersion=$(VERSION) -w' -o bin/dryrun cmd/dryrun/main.go
+
+.PHONY: build-scheduler-image
+build-scheduler-image:
 	BUILDER=$(BUILDER) \
 	PLATFORMS=$(PLATFORMS) \
 	RELEASE_VERSION=$(RELEASE_VERSION) \
 	REGISTRY=$(REGISTRY) \
-	IMAGE=$(RELEASE_IMAGE) \
+	IMAGE=$(SCHEDULER_IMAGE) \
+	DOCKERFILE=build/scheduler/Dockerfile \
 	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
 	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
 	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
 
-.PHONY: build-push-image
-build-push-image: EXTRA_ARGS="--push"
-build-push-image: build-image
+.PHONY: build-push-scheduler-image
+build-push-scheduler-image: EXTRA_ARGS="--push"
+build-push-scheduler-image: build-scheduler-image
+
+.PHONY: build-dryrun-image
+build-dryrun-image:
+	BUILDER=$(BUILDER) \
+	PLATFORMS=$(PLATFORMS) \
+	RELEASE_VERSION=$(RELEASE_VERSION) \
+	REGISTRY=$(REGISTRY) \
+	IMAGE=$(DRYRUN_IMAGE) \
+	DOCKERFILE=build/dryrun/Dockerfile \
+	GO_BASE_IMAGE=$(GO_BASE_IMAGE) \
+	DISTROLESS_BASE_IMAGE=$(DISTROLESS_BASE_IMAGE) \
+	EXTRA_ARGS=$(EXTRA_ARGS) hack/build-images.sh
+
+.PHONY: build-push-dryrun-image
+build-push-dryrun-image: EXTRA_ARGS="--push"
+build-push-dryrun-image: build-dryrun-image
+
+.PHONY: build-push-images
+build-push-images: build-push-scheduler-image build-push-dryrun-image
 
 .PHONY: update-gomod
 update-gomod:
