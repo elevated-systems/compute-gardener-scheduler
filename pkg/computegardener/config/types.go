@@ -109,6 +109,7 @@ type Config struct {
 	Pricing    PriceConfig      `yaml:"pricing"`
 	Power      PowerConfig      `yaml:"power"`
 	Metrics    MetricsConfig    `yaml:"metrics"`
+	Almanac    AlmanacConfig    `yaml:"almanac"`
 }
 
 // APICacheConfig holds configuration for API caching behavior
@@ -158,6 +159,28 @@ type PriceConfig struct {
 	Enabled   bool       `yaml:"enabled"`
 	Provider  string     `yaml:"provider"`  // e.g. "tou" for time-of-use pricing
 	Schedules []Schedule `yaml:"schedules"` // Time-based pricing periods with their rates
+}
+
+// AlmanacConfig holds configuration for almanac scoring API integration
+type AlmanacConfig struct {
+	Enabled bool   `yaml:"enabled"`           // Enable almanac scoring
+	URL     string `yaml:"url"`               // Base URL for almanac API (e.g., "http://almanac.svc:8080")
+	Timeout string `yaml:"timeout,omitempty"` // Request timeout (default: "10s")
+
+	// Default optimization weights (can be overridden per-pod via annotations)
+	DefaultCarbonWeight float64 `yaml:"defaultCarbonWeight"` // Default carbon weight (0.0-1.0)
+	DefaultPriceWeight  float64 `yaml:"defaultPriceWeight"`  // Default price weight (0.0-1.0)
+
+	// Default score threshold for proceeding (can be overridden per-pod)
+	DefaultScoreThreshold float64 `yaml:"defaultScoreThreshold,omitempty"` // Default: 0.7
+
+	// Cloud provider defaults (used when node labels are not available)
+	DefaultProvider     string `yaml:"defaultProvider,omitempty"`     // e.g., "aws", "gcp", "azure"
+	DefaultRegion       string `yaml:"defaultRegion,omitempty"`       // e.g., "us-west-2"
+	DefaultInstanceType string `yaml:"defaultInstanceType,omitempty"` // e.g., "m5.xlarge"
+
+	// Fallback behavior when almanac is unavailable
+	FailOpen bool `yaml:"failOpen,omitempty"` // If true, allow scheduling when almanac is down (default: true)
 }
 
 // Validate performs validation of the configuration
@@ -267,6 +290,52 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("invalid pod completion delay: %v", err)
 			}
 		}
+	}
+
+	// Validate almanac config if enabled
+	if c.Almanac.Enabled {
+		if err := c.validateAlmanac(); err != nil {
+			return fmt.Errorf("invalid almanac config: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Config) validateAlmanac() error {
+	if c.Almanac.URL == "" {
+		return fmt.Errorf("almanac URL is required when almanac is enabled")
+	}
+
+	// Validate timeout if provided
+	if c.Almanac.Timeout != "" {
+		if _, err := time.ParseDuration(c.Almanac.Timeout); err != nil {
+			return fmt.Errorf("invalid almanac timeout: %v", err)
+		}
+	}
+
+	// Validate weights sum to 1.0 (with small tolerance for floating point)
+	weightSum := c.Almanac.DefaultCarbonWeight + c.Almanac.DefaultPriceWeight
+	if weightSum < 0.99 || weightSum > 1.01 {
+		return fmt.Errorf("default weights must sum to 1.0, got %.2f", weightSum)
+	}
+
+	// Validate individual weights
+	if c.Almanac.DefaultCarbonWeight < 0 || c.Almanac.DefaultCarbonWeight > 1 {
+		return fmt.Errorf("default carbon weight must be between 0 and 1, got %.2f", c.Almanac.DefaultCarbonWeight)
+	}
+	if c.Almanac.DefaultPriceWeight < 0 || c.Almanac.DefaultPriceWeight > 1 {
+		return fmt.Errorf("default price weight must be between 0 and 1, got %.2f", c.Almanac.DefaultPriceWeight)
+	}
+
+	// Validate score threshold if provided
+	if c.Almanac.DefaultScoreThreshold != 0 {
+		if c.Almanac.DefaultScoreThreshold < 0 || c.Almanac.DefaultScoreThreshold > 1 {
+			return fmt.Errorf("default score threshold must be between 0 and 1, got %.2f", c.Almanac.DefaultScoreThreshold)
+		}
+	} else {
+		// Set default threshold
+		c.Almanac.DefaultScoreThreshold = 0.7
 	}
 
 	return nil
