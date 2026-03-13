@@ -31,6 +31,17 @@ func setupTestCompletionController(t *testing.T) (*CompletionController, *PodEva
 	return controller, podStore
 }
 
+// runController starts the controller in a goroutine, tolerating context.Canceled
+// on shutdown (normal when the test cancels the context).
+func runController(t *testing.T, controller *CompletionController, ctx context.Context) {
+	t.Helper()
+	go func() {
+		if err := controller.Run(ctx); err != nil && ctx.Err() == nil {
+			t.Errorf("Run error: %v", err)
+		}
+	}()
+}
+
 // controllerTestEnv bundles everything a controller integration test needs.
 type controllerTestEnv struct {
 	Controller *CompletionController
@@ -49,11 +60,7 @@ func setupControllerWithPod(t *testing.T, pod *corev1.Pod) *controllerTestEnv {
 	controller, podStore := setupTestCompletionController(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	// Wait for controller to start and cache to sync
 	time.Sleep(200 * time.Millisecond)
@@ -85,11 +92,7 @@ func TestCompletionController_RunsSuccessfully(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	time.Sleep(100 * time.Millisecond)
 	cancel()
@@ -102,11 +105,7 @@ func TestCompletionController_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	time.Sleep(100 * time.Millisecond)
 	cancel()
@@ -121,11 +120,7 @@ func TestCompletionController_NonEvaluatedPodsIgnored(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -157,11 +152,7 @@ func TestCompletionController_UnwatchedNamespaceIgnored(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -344,11 +335,7 @@ func TestCompletionController_TombstoneHandling(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	go func() {
-		if err := controller.Run(ctx); err != nil {
-			t.Errorf("Run error: %v", err)
-		}
-	}()
+	runController(t, controller, ctx)
 
 	time.Sleep(200 * time.Millisecond)
 
