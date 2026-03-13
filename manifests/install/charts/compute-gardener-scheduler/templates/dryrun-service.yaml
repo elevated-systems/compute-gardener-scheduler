@@ -1,0 +1,40 @@
+{{- if .Values.dryRun.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-dryrun-webhook
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dryrun
+    component: webhook
+spec:
+  ports:
+  - name: webhook
+    port: 443
+    targetPort: webhook
+    protocol: TCP
+  selector:
+    app: compute-gardener-dryrun
+    component: webhook
+---
+{{- if .Values.dryRun.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-dryrun-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: compute-gardener-dryrun
+    component: metrics
+spec:
+  ports:
+  - name: metrics
+    port: {{ .Values.dryRun.metrics.port }}
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: compute-gardener-dryrun
+    component: webhook
+{{- end }}
+{{- end }}

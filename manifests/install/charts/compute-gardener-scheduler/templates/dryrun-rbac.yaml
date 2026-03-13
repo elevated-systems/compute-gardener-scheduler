@@ -1,0 +1,44 @@
+{{- if .Values.dryRun.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compute-gardener-dryrun
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compute-gardener-dryrun
+rules:
+# Watch pods for completion tracking
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+# Read config maps for pricing and hardware profiles
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-dryrun
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-dryrun
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: compute-gardener-dryrun
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
