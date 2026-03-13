@@ -770,7 +770,6 @@ func (c *PrometheusMetricsClient) QueryGPUInstanceLabels(ctx context.Context, ku
 	return uuidToNode, nil
 }
 
-
 // resolvePodToNodeName resolves a pod name and namespace to the node it's running on
 func (c *PrometheusMetricsClient) resolvePodToNodeName(ctx context.Context, kubeClient kubernetes.Interface, podName, namespace string) (string, error) {
 	pod, err := kubeClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})

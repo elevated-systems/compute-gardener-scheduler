@@ -50,14 +50,14 @@ type PodStartData struct {
 	StartTime time.Time
 
 	// Initial evaluation data (from webhook)
-	InitialCarbon       float64
-	InitialPrice        float64
-	CarbonThreshold     float64
-	PriceThreshold      float64
-	WouldHaveDelayed    bool
-	DelayType           string
-	EstimatedPowerW     float64
-	EstimatedRuntimeH   float64
+	InitialCarbon     float64
+	InitialPrice      float64
+	CarbonThreshold   float64
+	PriceThreshold    float64
+	WouldHaveDelayed  bool
+	DelayType         string
+	EstimatedPowerW   float64
+	EstimatedRuntimeH float64
 }
 
 // EstimatedSavings contains the calculated savings using actual pod runtime
@@ -80,9 +80,9 @@ type EstimatedSavings struct {
 
 // PodResourceEstimate contains estimated resource usage for a pod
 type PodResourceEstimate struct {
-	CPUCores    float64
-	MemoryGB    float64
-	GPUCount    float64
-	PowerWatts  float64
+	CPUCores     float64
+	MemoryGB     float64
+	GPUCount     float64
+	PowerWatts   float64
 	RuntimeHours float64
 }

@@ -188,4 +188,3 @@ func ConvertGPUHistoryToStandardFormat(h *clients.PodGPUMetricsHistory) []PodMet
 
 	return records
 }
-

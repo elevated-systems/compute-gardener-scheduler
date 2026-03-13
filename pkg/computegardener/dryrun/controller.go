@@ -255,6 +255,9 @@ func (c *CompletionController) recordActualSavings(savings *eval.EstimatedSaving
 
 // isPodCompleted checks if a pod has completed
 func isPodCompleted(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
 	switch pod.Status.Phase {
 	case corev1.PodSucceeded, corev1.PodFailed:
 		return true

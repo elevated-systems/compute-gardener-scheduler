@@ -105,10 +105,10 @@ func setupTestSchedulerForCompletion(
 				Enabled: priceImpl != nil,
 			},
 		},
-		metricsStore: metricsStore,
-		carbonImpl:   carbonImpl,
-		priceImpl:    priceImpl,
-		clock:        testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
+		metricsStore:      metricsStore,
+		carbonImpl:        carbonImpl,
+		priceImpl:         priceImpl,
+		clock:             testingclock.NewFakeClock(time.Now()), // Use fake clock if needed
 		carbonDelayedPods: make(map[string]bool),
 		priceDelayedPods:  make(map[string]bool),
 	}
@@ -152,8 +152,8 @@ type MetricsTestCase struct {
 	MetricsHistory      *metrics.PodMetricsHistory
 	PodAnnotations      map[string]string
 	OwnerReferences     []metav1.OwnerReference
-	WasCarbonDelayed    bool                        // Whether pod was delayed by carbon constraints
-	WasPriceDelayed     bool                        // Whether pod was delayed by price constraints
+	WasCarbonDelayed    bool // Whether pod was delayed by carbon constraints
+	WasPriceDelayed     bool // Whether pod was delayed by price constraints
 	ExpectedEnergyKWh   float64
 	ExpectedCarbonGrams float64
 	ExpectedSavings     map[string]float64          // Type (carbon/cost) -> expected value
@@ -234,7 +234,7 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200", // Initial (when scheduler first heard)
+			common.AnnotationInitialCarbonIntensity: "200",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
@@ -271,7 +271,7 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150", // Initial (when scheduler first heard)
+			common.AnnotationInitialCarbonIntensity: "150",  // Initial (when scheduler first heard)
 			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
@@ -308,14 +308,14 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity: "150",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.13", // Initial when first seen
 			// No delay annotations - pod was delayed by other constraints (GPU, etc.), not by our scheduler
 		},
 		// Should be no savings calculated since pod was not delayed by carbon/price constraints
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
-		ExpectedSavings: map[string]float64{
+		ExpectedSavings:     map[string]float64{
 			// No savings should be recorded
 		},
 		ExpectedEfficiency: map[string]float64{
@@ -338,13 +338,13 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity:  "200", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity:  "200",  // Initial when first seen
 			common.AnnotationInitialElectricityRate:  "0.10", // Initial when first seen
 			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
 			common.AnnotationBindTimeElectricityRate: "0.10", // Bind-time rate
 		},
-		WasCarbonDelayed: true,  // Was delayed by carbon
-		WasPriceDelayed:  false, // Pricing wasn't the constraint
+		WasCarbonDelayed:    true,  // Was delayed by carbon
+		WasPriceDelayed:     false, // Pricing wasn't the constraint
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -377,8 +377,8 @@ var savingsTestCases = []MetricsTestCase{
 			common.AnnotationBindTimeCarbonIntensity: "120",  // Bind-time intensity
 			common.AnnotationBindTimeElectricityRate: "0.08", // Bind-time rate
 		},
-		WasCarbonDelayed: false, // Carbon intensity wasn't the constraint
-		WasPriceDelayed:  true,  // Was delayed by price
+		WasCarbonDelayed:    false, // Carbon intensity wasn't the constraint
+		WasPriceDelayed:     true,  // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.167,
 		ExpectedSavings: map[string]float64{
@@ -410,8 +410,8 @@ var savingsTestCases = []MetricsTestCase{
 			common.AnnotationInitialElectricityRate: "0.12", // Initial when first seen
 			// No bind-time annotations - should fallback to Records[0]
 		},
-		WasCarbonDelayed: true, // Was delayed by carbon
-		WasPriceDelayed:  true, // Was delayed by price
+		WasCarbonDelayed:    true, // Was delayed by carbon
+		WasPriceDelayed:     true, // Was delayed by price
 		ExpectedEnergyKWh:   0.016667,
 		ExpectedCarbonGrams: 2.333,
 		ExpectedSavings: map[string]float64{
