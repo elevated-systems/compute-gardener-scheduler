@@ -6,7 +6,7 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/powerprovider"
 	v1 "k8s.io/api/core/v1"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
