@@ -15,7 +15,7 @@ webhooks:
     service:
       name: compute-gardener-dryrun-webhook
       namespace: {{ .Release.Namespace }}
-      path: /mutate-pod
+      path: /mutate
     {{- if not .Values.dryRun.webhook.certManager.enabled }}
     caBundle: {{ .Values.dryRun.webhook.tls.crt | b64enc }}
     {{- end }}
@@ -35,7 +35,7 @@ webhooks:
   failurePolicy: Ignore
   {{- end }}
   timeoutSeconds: 5
-  {{- if .Values.dryRun.watchNamespaces }}
+  {{- if and (eq .Values.dryRun.filterMode "namespace") .Values.dryRun.watchNamespaces }}
   namespaceSelector:
     matchExpressions:
     - key: kubernetes.io/metadata.name

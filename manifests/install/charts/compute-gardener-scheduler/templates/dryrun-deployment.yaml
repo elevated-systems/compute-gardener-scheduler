@@ -30,17 +30,24 @@ spec:
       - name: dryrun
         image: {{ .Values.dryRun.image }}
         imagePullPolicy: {{ .Values.dryRun.imagePullPolicy }}
+        command:
+        - /bin/dryrun
         args:
         - --webhook-port={{ .Values.dryRun.webhook.port }}
         - --metrics-port={{ .Values.dryRun.metrics.port }}
         - --mode={{ .Values.dryRun.mode }}
+        - --filter-mode={{ .Values.dryRun.filterMode }}
+        {{- if eq .Values.dryRun.filterMode "namespace" }}
         {{- range .Values.dryRun.watchNamespaces }}
         - --watch-namespace={{ . }}
         {{- end }}
-        - --v=3
+        {{- end }}
+        - --tls-cert=/tmp/k8s-webhook-server/serving-certs/tls.crt
+        - --tls-key=/tmp/k8s-webhook-server/serving-certs/tls.key
+        - --v={{ .Values.scheduler.logLevel }}
         env:
         {{- if .Values.carbonAware.enabled }}
-        - name: ELECTRICITY_MAP_API_KEY
+        - name: ELECTRICITY_MAPS_API_KEY
           valueFrom:
             secretKeyRef:
               name: {{ .Values.scheduler.name }}-secrets
