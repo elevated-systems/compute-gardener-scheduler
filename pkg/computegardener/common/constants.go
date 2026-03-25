@@ -116,6 +116,15 @@ const (
 	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
 )
 
+// Scheduler names
+const (
+	// SchedulerName is the name used in pod specs to request the compute-gardener scheduler
+	SchedulerName = "compute-gardener-scheduler"
+
+	// DefaultSchedulerName is the Kubernetes default scheduler name
+	DefaultSchedulerName = "default-scheduler"
+)
+
 // Energy budget actions
 const (
 	EnergyBudgetActionLog      = "log"

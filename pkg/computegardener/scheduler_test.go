@@ -1202,7 +1202,7 @@ func TestFilterWithUnknownHardwareProfile(t *testing.T) {
 			Annotations: map[string]string{common.AnnotationMaxPowerWatts: "30"},
 		},
 		Spec: v1.PodSpec{
-			SchedulerName: SchedulerName,
+			SchedulerName: common.SchedulerName,
 			Containers: []v1.Container{
 				{
 					Resources: v1.ResourceRequirements{
@@ -1276,7 +1276,7 @@ func TestFilterWithMismatchedHardwareInfo(t *testing.T) {
 			Annotations: map[string]string{common.AnnotationMaxPowerWatts: "30"},
 		},
 		Spec: v1.PodSpec{
-			SchedulerName: SchedulerName,
+			SchedulerName: common.SchedulerName,
 			Containers: []v1.Container{
 				{
 					Resources: v1.ResourceRequirements{
@@ -1347,7 +1347,7 @@ func TestRecordInitialMetricsUpdateFailure(t *testing.T) {
 			UID:       "test-pod-uid",
 		},
 		Spec: v1.PodSpec{
-			SchedulerName: SchedulerName,
+			SchedulerName: common.SchedulerName,
 		},
 	}
 
@@ -1385,7 +1385,7 @@ func TestPreFilterWithCarbonFailure(t *testing.T) {
 			UID:       "test-pod-uid",
 		},
 		Spec: v1.PodSpec{
-			SchedulerName: SchedulerName,
+			SchedulerName: common.SchedulerName,
 		},
 	}
 
@@ -1428,7 +1428,7 @@ func TestPreFilterWithPricingFailure(t *testing.T) {
 			UID:       "test-pod-uid",
 		},
 		Spec: v1.PodSpec{
-			SchedulerName: SchedulerName,
+			SchedulerName: common.SchedulerName,
 		},
 	}
 

@@ -29,8 +29,6 @@ import (
 const (
 	// Name is the name of the plugin used in Registry and configurations.
 	Name = "ComputeGardenerScheduler"
-	// SchedulerName is the name used in pod specs to request this scheduler
-	SchedulerName = "compute-gardener-scheduler"
 )
 
 // preFilterState is used to record that a pod passed the PreFilter phase
@@ -291,7 +289,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 							return false
 						}
 					}
-					return pod.Spec.SchedulerName == SchedulerName || pod.Spec.SchedulerName == Name
+					return pod.Spec.SchedulerName == common.SchedulerName || pod.Spec.SchedulerName == Name
 				},
 				Handler: cache.ResourceEventHandlerFuncs{
 					UpdateFunc: func(oldObj, newObj interface{}) {
