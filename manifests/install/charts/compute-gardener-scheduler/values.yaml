@@ -53,13 +53,17 @@ dryRun:
   # - annotate: Add evaluation results as pod annotations (visible in kubectl describe)
   mode: "metrics"
 
-  # Namespaces to watch (empty list = watch all namespaces)
-  # Use this to scope dry-run evaluation to specific namespaces
-  watchNamespaces: []
-  # Example:
-  # watchNamespaces:
-  #   - "default"
-  #   - "production"
+  # Pod filter mode: "schedulerName" or "namespace"
+  # - schedulerName (default): Only evaluate pods with schedulerName: compute-gardener-scheduler,
+  #   then rewrite schedulerName to default-scheduler so pods get scheduled normally.
+  #   Use this when running the webhook without the full scheduler plugin.
+  # - namespace: Evaluate all pods in the listed watchNamespaces (no schedulerName check).
+  filterMode: "schedulerName"
+
+  # Namespaces to watch (only used when filterMode is "namespace")
+  # Empty list = watch nothing. Each namespace must be explicitly listed.
+  watchNamespaces:
+    - "default"
 
   # Webhook configuration
   webhook:

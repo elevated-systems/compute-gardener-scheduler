@@ -89,12 +89,23 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		}
 	}
 
-	// Check if this namespace is in our watch list
-	if !w.isNamespaceWatched(req.Namespace) {
-		klog.V(4).InfoS("Namespace not in watch list, skipping",
-			"namespace", req.Namespace,
-			"pod", klog.KObj(&pod))
-		return &admissionv1.AdmissionResponse{Allowed: true}
+	// Apply filter mode
+	if w.config.FilterMode == FilterModeNamespace {
+		// Namespace mode: only evaluate pods in explicitly listed namespaces
+		if !w.isNamespaceWatched(req.Namespace) {
+			klog.V(4).InfoS("Namespace not in watch list, skipping",
+				"namespace", req.Namespace,
+				"pod", klog.KObj(&pod))
+			return &admissionv1.AdmissionResponse{Allowed: true}
+		}
+	} else {
+		// SchedulerName mode (default): only evaluate pods targeting our scheduler
+		if pod.Spec.SchedulerName != common.SchedulerName {
+			klog.V(5).InfoS("Pod not targeting our scheduler, skipping",
+				"pod", klog.KObj(&pod),
+				"schedulerName", pod.Spec.SchedulerName)
+			return &admissionv1.AdmissionResponse{Allowed: true}
+		}
 	}
 
 	// Check if pod is opted out
@@ -114,10 +125,19 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		return &admissionv1.AdmissionResponse{Allowed: true}
 	}
 
-	klog.V(2).InfoS("Evaluated pod",
-		"pod", klog.KObj(&pod),
-		"wouldDelay", result.ShouldDelay,
-		"delayType", result.DelayType)
+	podID := klog.KObj(&pod)
+	if pod.Name == "" && pod.GenerateName != "" {
+		klog.V(2).InfoS("Evaluated pod",
+			"pod", podID,
+			"generateName", pod.GenerateName,
+			"wouldDelay", result.ShouldDelay,
+			"delayType", result.DelayType)
+	} else {
+		klog.V(2).InfoS("Evaluated pod",
+			"pod", podID,
+			"wouldDelay", result.ShouldDelay,
+			"delayType", result.DelayType)
+	}
 
 	// Record metrics (if in metrics mode)
 	if w.config.Mode == "metrics" {
@@ -129,35 +149,61 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		w.storeInitialEvaluation(&pod, result)
 	}
 
-	// Return response based on mode
+	// Build patches
+	var patches []map[string]interface{}
+
+	// In schedulerName mode, mutate schedulerName back to default-scheduler
+	// so the pod can be scheduled by the default scheduler
+	if w.config.FilterMode != FilterModeNamespace {
+		patches = append(patches, map[string]interface{}{
+			"op":    "replace",
+			"path":  "/spec/schedulerName",
+			"value": common.DefaultSchedulerName,
+		})
+	}
+
+	// In annotate mode, add dry-run annotations
 	if w.config.Mode == "annotate" {
-		// Add dry-run annotations to pod
 		annotations := w.createDryRunAnnotations(result)
-		patch, err := createJSONPatch(annotations)
-		if err != nil {
-			klog.ErrorS(err, "Failed to create patch", "pod", klog.KObj(&pod))
-			return &admissionv1.AdmissionResponse{Allowed: true}
+
+		// Ensure /metadata/annotations exists before adding individual keys
+		if pod.Annotations == nil {
+			patches = append(patches, map[string]interface{}{
+				"op":    "add",
+				"path":  "/metadata/annotations",
+				"value": map[string]string{},
+			})
 		}
 
+		annotationPatches, err := createAnnotationPatches(annotations)
+		if err != nil {
+			klog.ErrorS(err, "Failed to create annotation patches", "pod", klog.KObj(&pod))
+			return &admissionv1.AdmissionResponse{Allowed: true}
+		}
+		patches = append(patches, annotationPatches...)
+	}
+
+	// Return with patches if any
+	if len(patches) > 0 {
+		patchBytes, err := json.Marshal(patches)
+		if err != nil {
+			klog.ErrorS(err, "Failed to marshal patches", "pod", klog.KObj(&pod))
+			return &admissionv1.AdmissionResponse{Allowed: true}
+		}
 		patchType := admissionv1.PatchTypeJSONPatch
 		return &admissionv1.AdmissionResponse{
 			Allowed:   true,
-			Patch:     patch,
+			Patch:     patchBytes,
 			PatchType: &patchType,
 		}
 	}
 
-	// Metrics mode - just allow without modifications
 	return &admissionv1.AdmissionResponse{Allowed: true}
 }
 
-// isNamespaceWatched checks if the namespace is in the watch list
+// isNamespaceWatched checks if the namespace is in the watch list.
+// Empty list = watch nothing (explicit opt-in required).
 func (w *Webhook) isNamespaceWatched(namespace string) bool {
-	// If no namespaces specified, watch all
-	if len(w.config.WatchNamespaces) == 0 {
-		return true
-	}
-
 	for _, ns := range w.config.WatchNamespaces {
 		if ns == namespace {
 			return true
@@ -184,9 +230,14 @@ func (w *Webhook) storeInitialEvaluation(pod *corev1.Pod, result *eval.Evaluatio
 	}
 
 	w.podStore.RecordStart(string(pod.UID), startData)
-	klog.V(3).InfoS("Stored initial evaluation for tracking",
+	logKV := []interface{}{
 		"pod", klog.KObj(pod),
-		"wouldDelay", result.ShouldDelay)
+		"wouldDelay", result.ShouldDelay,
+	}
+	if pod.Name == "" && pod.GenerateName != "" {
+		logKV = append(logKV, "generateName", pod.GenerateName)
+	}
+	klog.V(3).InfoS("Stored initial evaluation for tracking", logKV...)
 }
 
 // createDryRunAnnotations creates annotations for annotate mode
@@ -226,8 +277,8 @@ func (w *Webhook) createDryRunAnnotations(result *eval.EvaluationResult) map[str
 	return annotations
 }
 
-// createJSONPatch creates a JSON patch for adding annotations
-func createJSONPatch(annotations map[string]string) ([]byte, error) {
+// createAnnotationPatches creates JSON patch operations for adding annotations
+func createAnnotationPatches(annotations map[string]string) ([]map[string]interface{}, error) {
 	var patches []map[string]interface{}
 
 	for key, value := range annotations {
@@ -239,7 +290,7 @@ func createJSONPatch(annotations map[string]string) ([]byte, error) {
 		patches = append(patches, patch)
 	}
 
-	return json.Marshal(patches)
+	return patches, nil
 }
 
 // escapeJSONPointer escapes special characters for JSON Pointer (RFC 6901)

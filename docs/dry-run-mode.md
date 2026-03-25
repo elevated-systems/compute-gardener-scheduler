@@ -1,6 +1,6 @@
 # Dry-Run Mode: Try Before You Buy
 
-Dry-run mode provides a low-risk way to evaluate Compute Gardener's carbon and price-aware scheduling capabilities **without affecting your actual workloads**. Think of it as a "read-only" observability layer that shows you what the scheduler would do, without actually doing it.
+Dry-run mode provides a low-risk way to evaluate Compute Gardener's carbon and price-aware scheduling capabilities **without affecting your actual workloads**. Think of it as an observability layer that shows you what the scheduler would do, without actually delaying anything.
 
 ## Why Dry-Run Mode?
 
@@ -8,11 +8,11 @@ Installing a secondary scheduler can feel risky. What if there are bugs? What if
 
 Dry-run mode answers these questions by:
 
-- **Evaluating every pod creation** using the same logic as the scheduler
+- **Evaluating pod creations** using the same logic as the scheduler
 - **Recording metrics** about potential delays and savings
-- **Not affecting pod scheduling** - your existing scheduler continues to work normally
-- **Scoping to specific namespaces** - test on development workloads first
-- **Providing two output modes** - Prometheus metrics or pod annotations
+- **Not delaying pod scheduling** - pods are evaluated but always allowed to proceed
+- **Two filter modes** - target pods by scheduler name or by namespace
+- **Two output modes** - Prometheus metrics or pod annotations
 
 This lets you build confidence in the scheduler's behavior and quantify potential savings before committing to using it in production.
 
@@ -20,12 +20,23 @@ This lets you build confidence in the scheduler's behavior and quantify potentia
 
 Dry-run mode uses a Kubernetes [MutatingWebhook](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#mutatingadmissionwebhook) that intercepts pod creation events:
 
-1. **Webhook evaluation**: When a pod is created, the webhook evaluates carbon intensity and electricity prices using the same logic as the scheduler
-2. **Decision recording**: Records whether the scheduler would delay the pod, and why
-3. **Completion tracking**: Watches for pod completion to calculate actual runtime and energy consumption
-4. **Savings estimation**: Calculates conservative savings estimates based on actual runtime
+1. **Pod filtering**: Determines which pods to evaluate based on the configured filter mode
+2. **Webhook evaluation**: Evaluates carbon intensity and electricity prices using the same logic as the scheduler
+3. **Decision recording**: Records whether the scheduler would delay the pod, and why
+4. **Completion tracking**: Watches for pod completion to calculate actual runtime and energy consumption
+5. **Savings estimation**: Calculates conservative savings estimates based on actual runtime
 
-The webhook operates in one of two modes:
+### Pod Filter Modes
+
+The webhook supports two filter modes that control which pods get evaluated:
+
+**`schedulerName` mode (default)**: Only evaluates pods with `schedulerName: compute-gardener-scheduler`. After evaluation, the webhook mutates the `schedulerName` back to `default-scheduler` so the pod gets scheduled normally. This is the recommended mode when running the webhook without the full scheduler plugin - just set `schedulerName` on the pods you want evaluated, and they'll still be scheduled by the default scheduler.
+
+**`namespace` mode**: Evaluates all pods in explicitly listed namespaces, regardless of `schedulerName`. No `schedulerName` mutation is performed. Use this when you want to evaluate every pod in specific namespaces without requiring any pod-level configuration.
+
+### Output Modes
+
+The webhook operates in one of two output modes:
 
 ### Metrics Mode (Default)
 Records evaluation data as Prometheus metrics only. No modifications to pods.
@@ -65,13 +76,28 @@ Adds evaluation results as annotations to pods. Useful for inspecting individual
 
 ### Quick Start
 
-1. **Install with dry-run mode enabled:**
+1. **Install with dry-run mode enabled (scheduler name filter, default):**
 
 ```bash
 helm install compute-gardener ./manifests/install/charts/compute-gardener-scheduler \
   --namespace compute-gardener \
   --create-namespace \
   --set dryRun.enabled=true \
+  --set carbonAware.enabled=true \
+  --set-string carbonAware.electricityMap.apiKey=YOUR_API_KEY
+```
+
+This uses the default `schedulerName` filter mode. Only pods with `schedulerName: compute-gardener-scheduler` will be evaluated, and their `schedulerName` will be mutated back to `default-scheduler` so they get scheduled normally.
+
+**Or install with namespace filter mode:**
+
+```bash
+helm install compute-gardener ./manifests/install/charts/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --create-namespace \
+  --set dryRun.enabled=true \
+  --set dryRun.filterMode=namespace \
+  --set 'dryRun.watchNamespaces={default,staging}' \
   --set carbonAware.enabled=true \
   --set-string carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
@@ -83,11 +109,23 @@ kubectl get pods -n compute-gardener
 kubectl get mutatingwebhookconfigurations compute-gardener-dryrun
 ```
 
-3. **Check metrics** (if using metrics mode):
+3. **Test with a pod** (schedulerName mode):
 
 ```bash
-kubectl port-forward -n compute-gardener svc/compute-gardener-dryrun-metrics 8080:8080
-curl http://localhost:8080/metrics | grep compute_gardener_dryrun
+kubectl run test-dryrun --image=busybox --restart=Never \
+  --overrides='{"spec":{"schedulerName":"compute-gardener-scheduler"}}' \
+  --command -- sleep 30
+
+# Check that schedulerName was mutated back to default-scheduler
+kubectl get pod test-dryrun -o jsonpath='{.spec.schedulerName}'
+# Should output: default-scheduler
+```
+
+4. **Check metrics**:
+
+```bash
+kubectl port-forward -n compute-gardener deployment/compute-gardener-dryrun 8080:8080
+curl -s http://localhost:8080/metrics | grep compute_gardener_dryrun
 ```
 
 ### Configuration Options
@@ -97,20 +135,24 @@ dryRun:
   enabled: true
   mode: "metrics"  # or "annotate"
 
-  # Namespace scoping - gradually roll out evaluation
-  watchNamespaces: []  # Empty = all namespaces
-  # Example gradual rollout:
-  # watchNamespaces:
-  #   - "development"  # Start here
-  #   - "staging"      # Add after observing dev
-  #   - "production"   # Add last
+  # Pod filter mode:
+  # "schedulerName" (default) - only evaluate pods targeting compute-gardener-scheduler,
+  #   then rewrite schedulerName to default-scheduler so pods get scheduled normally
+  # "namespace" - evaluate all pods in listed watchNamespaces
+  filterMode: "schedulerName"
+
+  # Namespaces to watch (only used when filterMode is "namespace")
+  # Empty list = watch nothing. Each namespace must be explicitly listed.
+  watchNamespaces:
+    - "default"
 
   # Carbon/price settings inherited from carbonAware and priceAware sections
 ```
 
 **Key settings:**
-- `mode`: "metrics" (Prometheus only) or "annotate" (add pod annotations)
-- `watchNamespaces`: Empty list watches all namespaces, or specify a whitelist for scoped evaluation
+- `filterMode`: `"schedulerName"` (evaluate pods targeting our scheduler, mutate schedulerName back) or `"namespace"` (evaluate all pods in listed namespaces)
+- `mode`: `"metrics"` (Prometheus only) or `"annotate"` (add pod annotations)
+- `watchNamespaces`: Only used in namespace filter mode. Empty list watches nothing; each namespace must be explicitly listed
 - Carbon/price thresholds are inherited from the main `carbonAware` and `priceAware` configuration
 
 ## Understanding the Metrics
@@ -160,10 +202,21 @@ increase(compute_gardener_dryrun_actual_cost_savings_usd_total[24h])
 
 ## Annotate Mode Examples
 
-Create a pod and inspect annotations:
+Deploy with annotate mode, then create a pod targeting our scheduler:
 
 ```bash
-kubectl run test-pod --image=busybox --command -- sleep 3600
+# Deploy with annotate mode
+helm upgrade compute-gardener ./manifests/install/charts/compute-gardener-scheduler \
+  --namespace compute-gardener \
+  --set dryRun.enabled=true \
+  --set dryRun.mode=annotate \
+  --set carbonAware.enabled=true \
+  --set-string carbonAware.electricityMap.apiKey=YOUR_API_KEY
+
+# Create a test pod (schedulerName mode)
+kubectl run test-pod --image=busybox --restart=Never \
+  --overrides='{"spec":{"schedulerName":"compute-gardener-scheduler"}}' \
+  --command -- sleep 3600
 
 kubectl describe pod test-pod | grep compute-gardener
 ```
@@ -196,12 +249,12 @@ spec:
 
 ## Transitioning to Active Scheduling
 
-Once you're confident in the dry-run metrics and understand the potential savings:
+The `schedulerName` filter mode makes this transition seamless. Since your pods already use `schedulerName: compute-gardener-scheduler`, transitioning to the real scheduler requires no pod changes:
 
-1. **Review the data**: Look at `pods_would_delay_total` and savings metrics
-2. **Start small**: Enable the scheduler for a development namespace first
-3. **Gradual rollout**: Use `schedulerName: compute-gardener-scheduler` on specific workloads
-4. **Monitor both**: Keep dry-run enabled to compare scheduler behavior vs predictions
+1. **Review the data**: Look at `pods_would_delay_total` and savings metrics from dry-run
+2. **Install the scheduler**: Enable the scheduler plugin alongside (or instead of) the dry-run webhook
+3. **Remove the webhook**: Once the scheduler is handling pods, disable `dryRun.enabled`
+4. **Or keep both**: Run dry-run in namespace mode on namespaces not yet using the scheduler to track potential savings
 
 ## Limitations
 

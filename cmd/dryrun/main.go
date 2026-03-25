@@ -22,6 +22,7 @@ func main() {
 		webhookPort     int
 		metricsPort     int
 		mode            string
+		filterMode      string
 		watchNamespaces stringSlice
 		carbonEnabled   bool
 		carbonRegion    string
@@ -35,7 +36,8 @@ func main() {
 	flag.IntVar(&webhookPort, "webhook-port", 8443, "Webhook server port")
 	flag.IntVar(&metricsPort, "metrics-port", 8080, "Metrics server port")
 	flag.StringVar(&mode, "mode", "metrics", "Dry-run mode: 'metrics' or 'annotate'")
-	flag.Var(&watchNamespaces, "watch-namespace", "Namespace to watch (can be specified multiple times)")
+	flag.StringVar(&filterMode, "filter-mode", "schedulerName", "Pod filter mode: 'schedulerName' (match pods targeting our scheduler) or 'namespace' (match pods in listed namespaces)")
+	flag.Var(&watchNamespaces, "watch-namespace", "Namespace to watch (can be specified multiple times, only used in namespace filter mode)")
 	flag.BoolVar(&carbonEnabled, "carbon-enabled", true, "Enable carbon-aware evaluation")
 	flag.StringVar(&carbonRegion, "carbon-region", "US-CAL-CISO", "Electricity Maps region")
 	flag.Float64Var(&carbonThreshold, "carbon-threshold", 200.0, "Default carbon intensity threshold")
@@ -53,6 +55,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Validate filter mode
+	if filterMode != dryrun.FilterModeSchedulerName && filterMode != dryrun.FilterModeNamespace {
+		klog.ErrorS(nil, "Invalid filter-mode, must be 'schedulerName' or 'namespace'", "filterMode", filterMode)
+		os.Exit(1)
+	}
+
+	if filterMode == dryrun.FilterModeNamespace && len(watchNamespaces) == 0 {
+		klog.InfoS("WARNING: filter-mode is 'namespace' but no namespaces specified; no pods will be evaluated")
+	}
+
 	// Get API key from environment if not provided via flag
 	if carbonAPIKey == "" {
 		carbonAPIKey = os.Getenv("ELECTRICITY_MAPS_API_KEY")
@@ -62,6 +74,7 @@ func main() {
 		"webhookPort", webhookPort,
 		"metricsPort", metricsPort,
 		"mode", mode,
+		"filterMode", filterMode,
 		"watchNamespaces", watchNamespaces,
 		"carbonEnabled", carbonEnabled,
 		"pricingEnabled", pricingEnabled)
@@ -83,6 +96,7 @@ func main() {
 	// Create dry-run configuration
 	dryRunConfig := &dryrun.Config{
 		Mode:            mode,
+		FilterMode:      filterMode,
 		WatchNamespaces: watchNamespaces,
 		Carbon: dryrun.CarbonConfig{
 			Enabled:   carbonEnabled,

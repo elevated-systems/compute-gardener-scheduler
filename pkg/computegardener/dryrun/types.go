@@ -6,10 +6,22 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/eval"
 )
 
+// Filter mode constants
+const (
+	// FilterModeSchedulerName filters pods by schedulerName matching compute-gardener-scheduler.
+	// Pods that match are evaluated and have their schedulerName mutated back to default-scheduler.
+	FilterModeSchedulerName = "schedulerName"
+
+	// FilterModeNamespace filters pods by explicit namespace list.
+	// Empty list = watch nothing. Each namespace must be explicitly specified.
+	FilterModeNamespace = "namespace"
+)
+
 // Config holds configuration for the dry-run system
 type Config struct {
 	Mode            string   // "metrics" or "annotate"
-	WatchNamespaces []string // Whitelist of namespaces to evaluate
+	FilterMode      string   // "schedulerName" (default) or "namespace"
+	WatchNamespaces []string // Namespaces to evaluate (only used in namespace filter mode)
 	Carbon          CarbonConfig
 	Pricing         PricingConfig
 }

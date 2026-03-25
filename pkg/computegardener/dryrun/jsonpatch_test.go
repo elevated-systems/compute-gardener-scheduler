@@ -1,40 +1,29 @@
 package dryrun
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 )
 
-func TestCreateJSONPatch(t *testing.T) {
+func TestCreateAnnotationPatches(t *testing.T) {
 	annotations := map[string]string{
 		common.AnnotationDryRunEvaluated:  "true",
 		common.AnnotationDryRunWouldDelay: "true",
 		common.AnnotationDryRunDelayType:  "carbon",
 	}
 
-	patch, err := createJSONPatch(annotations)
+	patches, err := createAnnotationPatches(annotations)
 	if err != nil {
-		t.Fatalf("Failed to create patch: %v", err)
+		t.Fatalf("Failed to create patches: %v", err)
 	}
 
-	if patch == nil {
-		t.Fatal("Expected patch to be non-nil")
-	}
-
-	// Verify patch is valid JSON array
-	var rawPatch []map[string]interface{}
-	if err := json.Unmarshal(patch, &rawPatch); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	if len(rawPatch) != 3 {
-		t.Errorf("Expected 3 patch operations, got %d", len(rawPatch))
+	if len(patches) != 3 {
+		t.Errorf("Expected 3 patch operations, got %d", len(patches))
 	}
 
 	// Verify each operation has required fields
-	for i, op := range rawPatch {
+	for i, op := range patches {
 		if op["op"] != "add" {
 			t.Errorf("Operation %d: expected op 'add', got %v", i, op["op"])
 		}
@@ -47,73 +36,53 @@ func TestCreateJSONPatch(t *testing.T) {
 	}
 }
 
-func TestCreateJSONPatch_EmptyAnnotations(t *testing.T) {
+func TestCreateAnnotationPatches_EmptyAnnotations(t *testing.T) {
 	annotations := map[string]string{}
 
-	patch, err := createJSONPatch(annotations)
+	patches, err := createAnnotationPatches(annotations)
 	if err != nil {
-		t.Fatalf("Failed to create patch: %v", err)
+		t.Fatalf("Failed to create patches: %v", err)
 	}
 
-	// Empty annotations should produce null/empty JSON array
-	var rawPatch []map[string]interface{}
-	if err := json.Unmarshal(patch, &rawPatch); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	if len(rawPatch) != 0 {
-		t.Errorf("Expected 0 patch operations for empty annotations, got %d", len(rawPatch))
+	if len(patches) != 0 {
+		t.Errorf("Expected 0 patch operations for empty annotations, got %d", len(patches))
 	}
 }
 
-func TestCreateJSONPatch_SpecialCharacters(t *testing.T) {
+func TestCreateAnnotationPatches_SpecialCharacters(t *testing.T) {
 	annotations := map[string]string{
 		"compute-gardener-scheduler.kubernetes.io/dry-run-evaluated": "true",
 	}
 
-	patch, err := createJSONPatch(annotations)
+	patches, err := createAnnotationPatches(annotations)
 	if err != nil {
-		t.Fatalf("Failed to create patch: %v", err)
+		t.Fatalf("Failed to create patches: %v", err)
 	}
 
-	var rawPatch []map[string]interface{}
-	if err := json.Unmarshal(patch, &rawPatch); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	if len(rawPatch) != 1 {
-		t.Fatalf("Expected 1 patch operation, got %d", len(rawPatch))
+	if len(patches) != 1 {
+		t.Fatalf("Expected 1 patch operation, got %d", len(patches))
 	}
 
 	// The / in the annotation key should be escaped as ~1
-	path := rawPatch[0]["path"].(string)
+	path := patches[0]["path"].(string)
 	expectedPath := "/metadata/annotations/compute-gardener-scheduler.kubernetes.io~1dry-run-evaluated"
 	if path != expectedPath {
 		t.Errorf("Expected path %q, got %q", expectedPath, path)
 	}
 }
 
-func TestCreateJSONPatch_NoDelay(t *testing.T) {
+func TestCreateAnnotationPatches_NoDelay(t *testing.T) {
 	annotations := map[string]string{
 		common.AnnotationDryRunEvaluated:  "true",
 		common.AnnotationDryRunWouldDelay: "false",
 	}
 
-	patch, err := createJSONPatch(annotations)
+	patches, err := createAnnotationPatches(annotations)
 	if err != nil {
-		t.Fatalf("Failed to create patch: %v", err)
+		t.Fatalf("Failed to create patches: %v", err)
 	}
 
-	if patch == nil {
-		t.Fatal("Expected patch to be non-nil even when no delay")
-	}
-
-	var rawPatch []map[string]interface{}
-	if err := json.Unmarshal(patch, &rawPatch); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	if len(rawPatch) != 2 {
-		t.Errorf("Expected 2 patch operations, got %d", len(rawPatch))
+	if len(patches) != 2 {
+		t.Errorf("Expected 2 patch operations, got %d", len(patches))
 	}
 }

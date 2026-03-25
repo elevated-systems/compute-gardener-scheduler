@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog/v2"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
@@ -33,7 +34,7 @@ func NewSystem(kubeClient kubernetes.Interface, cfg *Config) (*System, error) {
 	podStore := NewPodEvaluationStore()
 
 	// Create cache for API calls
-	dataCache := schedulercache.New(5*60*1000, 30*60*1000) // 5 min TTL, 30 min max age
+	dataCache := schedulercache.New(5*time.Minute, 30*time.Minute)
 
 	// Initialize carbon implementation if enabled
 	var carbonImpl carbon.Implementation
@@ -45,11 +46,11 @@ func NewSystem(kubeClient kubernetes.Interface, cfg *Config) (*System, error) {
 		apiConfig := config.ElectricityMapsAPIConfig{
 			APIKey: cfg.Carbon.APIKey,
 			Region: cfg.Carbon.Region,
-			URL:    "https://api.electricitymap.org/v3",
+			URL:    "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=",
 		}
 
 		cacheConfig := config.APICacheConfig{
-			CacheTTL: 5 * 60 * 1000, // 5 minutes
+			CacheTTL: 5 * time.Minute,
 		}
 
 		apiClient := api.NewClient(apiConfig, cacheConfig, api.WithCache(dataCache))
@@ -121,7 +122,7 @@ func (s *System) WebhookHandler() http.Handler {
 
 // MetricsHandler returns the HTTP handler for metrics
 func (s *System) MetricsHandler() http.Handler {
-	return promhttp.Handler()
+	return legacyregistry.Handler()
 }
 
 // RunController starts the completion controller
