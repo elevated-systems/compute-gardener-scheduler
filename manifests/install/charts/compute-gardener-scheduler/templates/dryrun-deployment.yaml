@@ -44,7 +44,7 @@ spec:
         {{- end }}
         - --tls-cert=/tmp/k8s-webhook-server/serving-certs/tls.crt
         - --tls-key=/tmp/k8s-webhook-server/serving-certs/tls.key
-        - --v={{ .Values.scheduler.logLevel }}
+        - --v={{ .Values.dryRun.logLevel }}
         env:
         {{- if .Values.carbonAware.enabled }}
         - name: ELECTRICITY_MAPS_API_KEY

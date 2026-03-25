@@ -108,11 +108,25 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		}
 	}
 
-	// Check if pod is opted out
+	// Build patches - start with schedulerName mutation since it must happen
+	// even for opted-out pods (they still need to be schedulable)
+	var patches []map[string]interface{}
+
+	// In schedulerName mode, mutate schedulerName back to default-scheduler
+	// so the pod can be scheduled by the default scheduler
+	if w.config.FilterMode != FilterModeNamespace {
+		patches = append(patches, map[string]interface{}{
+			"op":    "replace",
+			"path":  "/spec/schedulerName",
+			"value": common.DefaultSchedulerName,
+		})
+	}
+
+	// Check if pod is opted out (skip evaluation but still apply schedulerName mutation)
 	if pod.Annotations[common.AnnotationSkip] == "true" {
 		klog.V(3).InfoS("Pod opted out of evaluation",
 			"pod", klog.KObj(&pod))
-		return &admissionv1.AdmissionResponse{Allowed: true}
+		return w.buildResponse(patches)
 	}
 
 	// Evaluate pod constraints
@@ -122,7 +136,7 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 	result, err := w.evaluator.EvaluateAll(ctx, &pod, time.Now())
 	if err != nil {
 		klog.ErrorS(err, "Evaluation failed", "pod", klog.KObj(&pod))
-		return &admissionv1.AdmissionResponse{Allowed: true}
+		return w.buildResponse(patches)
 	}
 
 	podID := klog.KObj(&pod)
@@ -149,19 +163,6 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		w.storeInitialEvaluation(&pod, result)
 	}
 
-	// Build patches
-	var patches []map[string]interface{}
-
-	// In schedulerName mode, mutate schedulerName back to default-scheduler
-	// so the pod can be scheduled by the default scheduler
-	if w.config.FilterMode != FilterModeNamespace {
-		patches = append(patches, map[string]interface{}{
-			"op":    "replace",
-			"path":  "/spec/schedulerName",
-			"value": common.DefaultSchedulerName,
-		})
-	}
-
 	// In annotate mode, add dry-run annotations
 	if w.config.Mode == "annotate" {
 		annotations := w.createDryRunAnnotations(result)
@@ -183,11 +184,15 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		patches = append(patches, annotationPatches...)
 	}
 
-	// Return with patches if any
+	return w.buildResponse(patches)
+}
+
+// buildResponse creates an AdmissionResponse, applying any patches if present.
+func (w *Webhook) buildResponse(patches []map[string]interface{}) *admissionv1.AdmissionResponse {
 	if len(patches) > 0 {
 		patchBytes, err := json.Marshal(patches)
 		if err != nil {
-			klog.ErrorS(err, "Failed to marshal patches", "pod", klog.KObj(&pod))
+			klog.ErrorS(err, "Failed to marshal patches")
 			return &admissionv1.AdmissionResponse{Allowed: true}
 		}
 		patchType := admissionv1.PatchTypeJSONPatch
@@ -197,7 +202,6 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 			PatchType: &patchType,
 		}
 	}
-
 	return &admissionv1.AdmissionResponse{Allowed: true}
 }
 

@@ -65,6 +65,9 @@ dryRun:
   watchNamespaces:
     - "default"
 
+  # Log verbosity level (0-5)
+  logLevel: 3
+
   # Webhook configuration
   webhook:
     port: 8443
