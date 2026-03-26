@@ -171,10 +171,9 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 	// Use admission request UID as tracking ID (pod UID isn't assigned yet at admission time)
 	trackingID := string(req.UID)
 
-	// Store initial evaluation for completion tracking
-	if result.ShouldDelay {
-		w.storeInitialEvaluation(&pod, result, trackingID)
-	}
+	// Store initial evaluation for completion tracking (all evaluated pods,
+	// not just delayed ones, so we can track runtime/energy for all workloads)
+	w.storeInitialEvaluation(&pod, result, trackingID)
 
 	// Ensure /metadata/annotations exists before adding annotation patches
 	if pod.Annotations == nil {

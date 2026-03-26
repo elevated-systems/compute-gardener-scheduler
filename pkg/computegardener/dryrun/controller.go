@@ -181,12 +181,6 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 		return
 	}
 
-	// Only calculate savings if pod would have been delayed
-	if !startData.WouldHaveDelayed {
-		c.podStore.Remove(trackingID)
-		return
-	}
-
 	// Calculate actual runtime
 	completionTime := time.Now()
 	if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
@@ -201,29 +195,49 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 
 	actualRuntimeHours := completionTime.Sub(startData.StartTime).Hours()
 	if actualRuntimeHours <= 0 {
-		klog.V(2).InfoS("Invalid runtime for pod, skipping savings calculation",
+		klog.V(2).InfoS("Invalid runtime for pod, skipping completion tracking",
 			"pod", klog.KObj(pod),
 			"startTime", startData.StartTime,
 			"completionTime", completionTime)
-		c.podStore.Remove(string(pod.UID))
+		c.podStore.Remove(trackingID)
 		return
 	}
 
 	// Calculate actual energy consumed (using estimated power × actual runtime)
 	actualEnergyKWh := (startData.EstimatedPowerW / 1000.0) * actualRuntimeHours
 
-	// Calculate estimated savings (conservative: current - threshold)
+	// Always record completion count, runtime, and energy metrics
+	PodsCompletedTotal.WithLabelValues(pod.Namespace).Inc()
+	PodRuntimeHours.WithLabelValues(pod.Namespace).Observe(actualRuntimeHours)
+	PodEnergyConsumptionKWh.WithLabelValues(pod.Namespace).Observe(actualEnergyKWh)
+
+	// Only calculate savings if pod would have been delayed
+	if !startData.WouldHaveDelayed {
+		klog.V(2).InfoS("Pod completed - no delay would have occurred",
+			"pod", klog.KObj(pod),
+			"runtime", fmt.Sprintf("%.2fh", actualRuntimeHours),
+			"energy", fmt.Sprintf("%.3f kWh", actualEnergyKWh))
+		c.podStore.Remove(trackingID)
+		return
+	}
+
+	// Calculate savings for pods that would have been delayed
 	savings := c.calculateEstimatedSavings(startData, actualEnergyKWh, actualRuntimeHours)
 
-	klog.InfoS("Pod completed - calculated estimated savings",
+	klog.InfoS("Pod completed - calculated potential savings",
 		"pod", klog.KObj(pod),
 		"runtime", fmt.Sprintf("%.2fh", actualRuntimeHours),
 		"energy", fmt.Sprintf("%.3f kWh", actualEnergyKWh),
 		"carbonSavings", fmt.Sprintf("%.2f gCO2eq", savings.CarbonGCO2),
 		"costSavings", fmt.Sprintf("$%.4f", savings.CostUSD))
 
-	// Record actual savings metrics
-	c.recordActualSavings(savings, pod)
+	// Record savings metrics
+	if savings.CarbonGCO2 > 0 {
+		ActualCarbonSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CarbonGCO2)
+	}
+	if savings.CostUSD > 0 {
+		ActualCostSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CostUSD)
+	}
 
 	// Clean up from store
 	c.podStore.Remove(trackingID)
@@ -256,24 +270,6 @@ func (c *CompletionController) calculateEstimatedSavings(
 	}
 
 	return savings
-}
-
-// recordActualSavings records savings metrics using actual runtime
-func (c *CompletionController) recordActualSavings(savings *eval.EstimatedSavings, pod *corev1.Pod) {
-	// Count completed pods
-	PodsCompletedTotal.WithLabelValues(pod.Namespace).Inc()
-
-	// Record actual savings
-	if savings.CarbonGCO2 > 0 {
-		ActualCarbonSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CarbonGCO2)
-	}
-	if savings.CostUSD > 0 {
-		ActualCostSavingsTotal.WithLabelValues(pod.Namespace).Add(savings.CostUSD)
-	}
-
-	// Record runtime and energy histograms
-	PodRuntimeHours.WithLabelValues(pod.Namespace).Observe(savings.RuntimeHours)
-	PodEnergyConsumptionKWh.WithLabelValues(pod.Namespace).Observe(savings.EnergyKWh)
 }
 
 // isPodCompleted checks if a pod has completed

@@ -312,7 +312,7 @@
       },
       "id": 6,
       "panels": [],
-      "title": "Potential Savings",
+      "title": "Measured Savings (from completed pods)",
       "type": "row"
     },
     {
@@ -320,70 +320,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total estimated carbon savings if the scheduler had been active (gCO2eq)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "gCO2eq"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 6
-      },
-      "id": 7,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(compute_gardener_dryrun_estimated_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Estimated",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Est. Carbon Savings (gCO2eq)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Total actual carbon savings using real pod runtimes (gCO2eq)",
+      "description": "Carbon savings calculated from actual pod runtimes (gCO2eq). Based on the carbon intensity delta at evaluation time multiplied by measured energy consumption.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -404,15 +341,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
+        "h": 5,
+        "w": 12,
+        "x": 0,
         "y": 6
       },
       "id": 8,
       "options": {
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -433,12 +370,12 @@
           },
           "editorMode": "code",
           "expr": "sum(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Actual",
+          "legendFormat": "Carbon Saved",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Actual Carbon Savings (gCO2eq)",
+      "title": "Carbon Savings (gCO2eq)",
       "type": "stat"
     },
     {
@@ -446,71 +383,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total estimated cost savings if the scheduler had been active",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "currencyUSD",
-          "decimals": 2
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 6
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(compute_gardener_dryrun_estimated_cost_savings_usd_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Estimated",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Est. Cost Savings (USD)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Total actual cost savings using real pod runtimes",
+      "description": "Cost savings calculated from actual pod runtimes. Based on the price delta at evaluation time multiplied by measured energy consumption.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -527,20 +400,20 @@
             ]
           },
           "unit": "currencyUSD",
-          "decimals": 2
+          "decimals": 4
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
+        "h": 5,
+        "w": 12,
+        "x": 12,
         "y": 6
       },
       "id": 10,
       "options": {
         "colorMode": "value",
-        "graphMode": "none",
+        "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -561,13 +434,154 @@
           },
           "editorMode": "code",
           "expr": "sum(compute_gardener_dryrun_actual_cost_savings_usd_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Actual",
+          "legendFormat": "Cost Saved",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Actual Cost Savings (USD)",
+      "title": "Cost Savings (USD)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Cumulative measured savings over time from completed pods",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "gCO2eq",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Carbon (gCO2eq)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cost (USD)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
+          "legendFormat": "Carbon (gCO2eq)",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(compute_gardener_dryrun_actual_cost_savings_usd_total{exported_namespace=~\"$namespace\"})",
+          "legendFormat": "Cost (USD)",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Cumulative Measured Savings",
+      "type": "timeseries"
     },
     {
       "collapsed": false,
@@ -575,7 +589,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 19
       },
       "id": 11,
       "panels": [],
@@ -653,7 +667,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 20
       },
       "id": 12,
       "options": {
@@ -685,139 +699,6 @@
         }
       ],
       "title": "Carbon Intensity at Evaluation Time",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Cumulative carbon savings over time (estimated at pod creation vs actual at pod completion)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "gCO2eq",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Estimated"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Actual"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 11
-      },
-      "id": 13,
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "9.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(compute_gardener_dryrun_estimated_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Estimated",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
-          "legendFormat": "Actual",
-          "range": true,
-          "refId": "B"
-        }
-      ],
-      "title": "Cumulative Carbon Savings",
       "type": "timeseries"
     },
     {
@@ -908,8 +789,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 19
+        "x": 12,
+        "y": 20
       },
       "id": 14,
       "options": {
@@ -1057,8 +938,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 19
+        "x": 0,
+        "y": 28
       },
       "id": 15,
       "options": {
@@ -1097,7 +978,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 36
       },
       "id": 16,
       "panels": [],
@@ -1162,7 +1043,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 37
       },
       "id": 17,
       "options": {
@@ -1251,7 +1132,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 37
       },
       "id": 18,
       "options": {
@@ -1281,6 +1162,147 @@
       ],
       "title": "Pod Energy Consumption Distribution",
       "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "id": 19,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "description": "Carbon savings estimated at admission time using guessed runtime and power. Less accurate than measured savings from completed pods.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "light-green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "gCO2eq"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "id": 7,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "9.3.1",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "editorMode": "code",
+              "expr": "sum(compute_gardener_dryrun_estimated_carbon_savings_gco2eq_total{exported_namespace=~\"$namespace\"})",
+              "legendFormat": "Estimated",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Est. Carbon Savings (gCO2eq)",
+          "type": "stat"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "description": "Cost savings estimated at admission time using guessed runtime and power. Less accurate than measured savings from completed pods.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "light-green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "currencyUSD",
+              "decimals": 4
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "id": 9,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto"
+          },
+          "pluginVersion": "9.3.1",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "editorMode": "code",
+              "expr": "sum(compute_gardener_dryrun_estimated_cost_savings_usd_total{exported_namespace=~\"$namespace\"})",
+              "legendFormat": "Estimated",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Est. Cost Savings (USD)",
+          "type": "stat"
+        }
+      ],
+      "title": "Admission-Time Estimates (less accurate)",
+      "type": "row"
     }
   ],
   "refresh": "30s",

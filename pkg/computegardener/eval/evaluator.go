@@ -97,13 +97,13 @@ func (e *Evaluator) EvaluateAll(ctx context.Context, pod *v1.Pod, now time.Time)
 		result.DelayType = "price"
 	}
 
-	// Estimate power and savings if pod would be delayed
-	if result.ShouldDelay {
-		estimate := e.estimatePodResources(pod)
-		result.EstimatedPowerW = estimate.PowerWatts
-		result.EstimatedRuntimeHours = estimate.RuntimeHours
+	// Always estimate power for completion tracking
+	estimate := e.estimatePodResources(pod)
+	result.EstimatedPowerW = estimate.PowerWatts
+	result.EstimatedRuntimeHours = estimate.RuntimeHours
 
-		// Calculate conservative savings (current - threshold)
+	// Calculate conservative savings only if pod would be delayed
+	if result.ShouldDelay {
 		energyKWh := (estimate.PowerWatts / 1000.0) * estimate.RuntimeHours
 
 		if carbonDelay {
