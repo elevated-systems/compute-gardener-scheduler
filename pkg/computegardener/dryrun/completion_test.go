@@ -181,13 +181,15 @@ func TestCompletionController_UnwatchedNamespaceIgnored(t *testing.T) {
 // --- Pod lifecycle tracking tests ---
 
 func TestCompletionController_PodStartTimeTracking(t *testing.T) {
+	trackingID := "tracking-start-test"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       "test-uid",
 			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated: "true",
+				common.AnnotationDryRunEvaluated:  "true",
+				common.AnnotationDryRunTrackingID: trackingID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -198,10 +200,10 @@ func TestCompletionController_PodStartTimeTracking(t *testing.T) {
 	env := setupControllerWithPod(t, pod)
 	defer env.Cancel()
 
-	// Store initial evaluation
-	env.PodStore.RecordStart("test-uid", &eval.PodStartData{
+	// Store initial evaluation keyed by tracking ID
+	env.PodStore.RecordStart(trackingID, &eval.PodStartData{
 		Namespace:        "default",
-		UID:              "test-uid",
+		UID:              trackingID,
 		StartTime:        time.Now(),
 		WouldHaveDelayed: true,
 		DelayType:        "carbon",
@@ -222,7 +224,7 @@ func TestCompletionController_PodStartTimeTracking(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	env.Cancel()
 
-	updatedData, found := env.PodStore.GetStart("test-uid")
+	updatedData, found := env.PodStore.GetStart(trackingID)
 	if !found {
 		t.Fatal("Expected start data to be stored")
 	}
@@ -233,13 +235,15 @@ func TestCompletionController_PodStartTimeTracking(t *testing.T) {
 }
 
 func TestCompletionController_CompletedPodSavings(t *testing.T) {
+	trackingID := "tracking-completion-test"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       "test-uid",
 			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated: "true",
+				common.AnnotationDryRunEvaluated:  "true",
+				common.AnnotationDryRunTrackingID: trackingID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -251,9 +255,9 @@ func TestCompletionController_CompletedPodSavings(t *testing.T) {
 	defer env.Cancel()
 
 	startTime := time.Now().Add(-2 * time.Hour)
-	env.PodStore.RecordStart("test-uid", &eval.PodStartData{
+	env.PodStore.RecordStart(trackingID, &eval.PodStartData{
 		Namespace:        "default",
-		UID:              "test-uid",
+		UID:              trackingID,
 		StartTime:        startTime,
 		WouldHaveDelayed: true,
 		DelayType:        "carbon",
@@ -281,19 +285,21 @@ func TestCompletionController_CompletedPodSavings(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	env.Cancel()
 
-	if _, found := env.PodStore.GetStart("test-uid"); found {
+	if _, found := env.PodStore.GetStart(trackingID); found {
 		t.Error("Expected pod to be removed from store after completion")
 	}
 }
 
 func TestCompletionController_DidNotDelayPodNoSavings(t *testing.T) {
+	trackingID := "tracking-no-delay-test"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "non-delayed-pod",
 			Namespace: "default",
 			UID:       "non-delayed-uid",
 			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated: "true",
+				common.AnnotationDryRunEvaluated:  "true",
+				common.AnnotationDryRunTrackingID: trackingID,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -305,9 +311,9 @@ func TestCompletionController_DidNotDelayPodNoSavings(t *testing.T) {
 	defer env.Cancel()
 
 	startTime := time.Now().Add(-1 * time.Hour)
-	env.PodStore.RecordStart("non-delayed-uid", &eval.PodStartData{
+	env.PodStore.RecordStart(trackingID, &eval.PodStartData{
 		Namespace:        "default",
-		UID:              "non-delayed-uid",
+		UID:              trackingID,
 		StartTime:        startTime,
 		WouldHaveDelayed: false,
 	})
@@ -324,7 +330,7 @@ func TestCompletionController_DidNotDelayPodNoSavings(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	env.Cancel()
 
-	if _, found := env.PodStore.GetStart("non-delayed-uid"); found {
+	if _, found := env.PodStore.GetStart(trackingID); found {
 		t.Error("Expected pod to be removed from store (no savings for non-delayed pods)")
 	}
 }

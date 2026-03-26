@@ -106,8 +106,14 @@ func (c *CompletionController) Run(ctx context.Context) error {
 	return nil
 }
 
-// wasEvaluated checks if the pod was evaluated by the dry-run webhook
+// wasEvaluated checks if the pod was evaluated by the dry-run webhook.
+// Checks both in-memory store (metrics mode) and annotations (annotate mode).
 func (c *CompletionController) wasEvaluated(pod *corev1.Pod) bool {
+	// Check in-memory store first (works in both modes)
+	if _, ok := c.podStore.GetStart(string(pod.UID)); ok {
+		return true
+	}
+	// Fall back to annotation check (annotate mode)
 	_, ok := pod.Annotations[common.AnnotationDryRunEvaluated]
 	return ok
 }
@@ -127,13 +133,24 @@ func (c *CompletionController) isNamespaceWatched(namespace string) bool {
 	return false
 }
 
+// getTrackingID returns the dry-run tracking ID from pod annotations
+func (c *CompletionController) getTrackingID(pod *corev1.Pod) string {
+	return pod.Annotations[common.AnnotationDryRunTrackingID]
+}
+
 // handlePodStart records when a pod actually starts running
 func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
+	trackingID := c.getTrackingID(pod)
+	if trackingID == "" {
+		return
+	}
+
 	// Check if we have initial evaluation data for this pod
-	startData, found := c.podStore.GetStart(string(pod.UID))
+	startData, found := c.podStore.GetStart(trackingID)
 	if !found {
 		klog.V(3).InfoS("No initial evaluation found for pod start",
-			"pod", klog.KObj(pod))
+			"pod", klog.KObj(pod),
+			"trackingID", trackingID)
 		return
 	}
 
@@ -141,7 +158,7 @@ func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
 	startData.StartTime = pod.Status.StartTime.Time
 
 	// Store the updated data
-	c.podStore.RecordStart(string(pod.UID), startData)
+	c.podStore.RecordStart(trackingID, startData)
 
 	klog.V(2).InfoS("Recorded actual pod start time",
 		"pod", klog.KObj(pod),
@@ -150,17 +167,23 @@ func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
 
 // handlePodCompletion calculates savings using actual runtime
 func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
+	trackingID := c.getTrackingID(pod)
+	if trackingID == "" {
+		return
+	}
+
 	// Retrieve start data
-	startData, found := c.podStore.GetStart(string(pod.UID))
+	startData, found := c.podStore.GetStart(trackingID)
 	if !found {
 		klog.V(3).InfoS("No start data found for completed pod",
-			"pod", klog.KObj(pod))
+			"pod", klog.KObj(pod),
+			"trackingID", trackingID)
 		return
 	}
 
 	// Only calculate savings if pod would have been delayed
 	if !startData.WouldHaveDelayed {
-		c.podStore.Remove(string(pod.UID))
+		c.podStore.Remove(trackingID)
 		return
 	}
 
@@ -203,7 +226,7 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 	c.recordActualSavings(savings, pod)
 
 	// Clean up from store
-	c.podStore.Remove(string(pod.UID))
+	c.podStore.Remove(trackingID)
 }
 
 // calculateEstimatedSavings calculates conservative savings estimates

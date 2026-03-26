@@ -93,17 +93,27 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 	if w.config.FilterMode == FilterModeNamespace {
 		// Namespace mode: only evaluate pods in explicitly listed namespaces
 		if !w.isNamespaceWatched(req.Namespace) {
-			klog.V(4).InfoS("Namespace not in watch list, skipping",
+			logArgs := []interface{}{
 				"namespace", req.Namespace,
-				"pod", klog.KObj(&pod))
+				"pod", klog.KObj(&pod),
+			}
+			if pod.Name == "" && pod.GenerateName != "" {
+				logArgs = append(logArgs, "generateName", pod.GenerateName)
+			}
+			klog.V(4).InfoS("Namespace not in watch list, skipping", logArgs...)
 			return &admissionv1.AdmissionResponse{Allowed: true}
 		}
 	} else {
 		// SchedulerName mode (default): only evaluate pods targeting our scheduler
 		if pod.Spec.SchedulerName != common.SchedulerName {
-			klog.V(5).InfoS("Pod not targeting our scheduler, skipping",
+			logArgs := []interface{}{
 				"pod", klog.KObj(&pod),
-				"schedulerName", pod.Spec.SchedulerName)
+				"schedulerName", pod.Spec.SchedulerName,
+			}
+			if pod.Name == "" && pod.GenerateName != "" {
+				logArgs = append(logArgs, "generateName", pod.GenerateName)
+			}
+			klog.V(5).InfoS("Pod not targeting our scheduler, skipping", logArgs...)
 			return &admissionv1.AdmissionResponse{Allowed: true}
 		}
 	}
@@ -158,23 +168,40 @@ func (w *Webhook) handleAdmission(req *admissionv1.AdmissionRequest) *admissionv
 		w.recordMetrics(result, &pod)
 	}
 
+	// Use admission request UID as tracking ID (pod UID isn't assigned yet at admission time)
+	trackingID := string(req.UID)
+
 	// Store initial evaluation for completion tracking
 	if result.ShouldDelay {
-		w.storeInitialEvaluation(&pod, result)
+		w.storeInitialEvaluation(&pod, result, trackingID)
 	}
 
-	// In annotate mode, add dry-run annotations
+	// Ensure /metadata/annotations exists before adding annotation patches
+	if pod.Annotations == nil {
+		patches = append(patches, map[string]interface{}{
+			"op":    "add",
+			"path":  "/metadata/annotations",
+			"value": map[string]string{},
+		})
+	}
+
+	// Always add marker annotations (needed for completion tracking in all modes)
+	patches = append(patches, map[string]interface{}{
+		"op":    "add",
+		"path":  "/metadata/annotations/" + escapeJSONPointer(common.AnnotationDryRunEvaluated),
+		"value": "true",
+	})
+	patches = append(patches, map[string]interface{}{
+		"op":    "add",
+		"path":  "/metadata/annotations/" + escapeJSONPointer(common.AnnotationDryRunTrackingID),
+		"value": trackingID,
+	})
+
+	// In annotate mode, add full dry-run annotations
 	if w.config.Mode == "annotate" {
 		annotations := w.createDryRunAnnotations(result)
-
-		// Ensure /metadata/annotations exists before adding individual keys
-		if pod.Annotations == nil {
-			patches = append(patches, map[string]interface{}{
-				"op":    "add",
-				"path":  "/metadata/annotations",
-				"value": map[string]string{},
-			})
-		}
+		// Remove the evaluated key since we already added it above
+		delete(annotations, common.AnnotationDryRunEvaluated)
 
 		annotationPatches, err := createAnnotationPatches(annotations)
 		if err != nil {
@@ -217,11 +244,11 @@ func (w *Webhook) isNamespaceWatched(namespace string) bool {
 }
 
 // storeInitialEvaluation stores evaluation data for later completion tracking
-func (w *Webhook) storeInitialEvaluation(pod *corev1.Pod, result *eval.EvaluationResult) {
+func (w *Webhook) storeInitialEvaluation(pod *corev1.Pod, result *eval.EvaluationResult, trackingID string) {
 	startData := &eval.PodStartData{
 		Namespace:         pod.Namespace,
 		Name:              pod.Name,
-		UID:               string(pod.UID),
+		UID:               trackingID, // Use tracking ID since pod UID isn't assigned yet at admission
 		StartTime:         time.Now(), // Will be updated when pod actually starts
 		InitialCarbon:     result.CurrentCarbon,
 		InitialPrice:      result.CurrentPrice,
@@ -233,7 +260,7 @@ func (w *Webhook) storeInitialEvaluation(pod *corev1.Pod, result *eval.Evaluatio
 		EstimatedRuntimeH: result.EstimatedRuntimeHours,
 	}
 
-	w.podStore.RecordStart(string(pod.UID), startData)
+	w.podStore.RecordStart(trackingID, startData)
 	logKV := []interface{}{
 		"pod", klog.KObj(pod),
 		"wouldDelay", result.ShouldDelay,

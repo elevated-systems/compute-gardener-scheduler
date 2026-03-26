@@ -127,10 +127,10 @@ func TestWebhook_StoreInitialEvaluation(t *testing.T) {
 		EstimatedRuntimeHours: 2.0,
 	}
 
-	webhook.storeInitialEvaluation(pod, result)
+	webhook.storeInitialEvaluation(pod, result, "test-tracking-id")
 
 	// Verify storage
-	startData, found := podStore.GetStart("test-uid")
+	startData, found := podStore.GetStart("test-tracking-id")
 	if !found {
 		t.Fatal("Expected start data to be stored")
 	}

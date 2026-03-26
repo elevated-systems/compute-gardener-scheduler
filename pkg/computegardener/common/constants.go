@@ -59,6 +59,7 @@ const (
 	AnnotationDryRunPriceThreshold         = AnnotationBase + "/dry-run-price-threshold"
 	AnnotationDryRunEstimatedCarbonSavings = AnnotationBase + "/dry-run-estimated-carbon-savings-gco2"
 	AnnotationDryRunEstimatedCostSavings   = AnnotationBase + "/dry-run-estimated-cost-savings-usd"
+	AnnotationDryRunTrackingID             = AnnotationBase + "/dry-run-tracking-id"
 
 	// ----------------------------------------
 	// Namespace policy annotations
