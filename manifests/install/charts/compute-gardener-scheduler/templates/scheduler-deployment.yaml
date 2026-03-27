@@ -1,3 +1,4 @@
+{{- if not .Values.dryRun.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -148,3 +149,4 @@ spec:
           configMap:
             name: {{ .Values.scheduler.name }}-hw-profiles
         {{- end }}
+{{- end }}

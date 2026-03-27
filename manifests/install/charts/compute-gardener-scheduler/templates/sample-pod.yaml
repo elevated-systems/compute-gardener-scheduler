@@ -1,8 +1,4 @@
-{{- if .Values.samplePod.enabled }}
-# TODO: Potential race condition - in dry-run mode (schedulerName filter), this pod may be created
-# before the webhook deployment is ready, causing it to keep schedulerName: compute-gardener-scheduler
-# and stay Pending if the scheduler plugin isn't running. Consider using a Helm post-install hook
-# (helm.sh/hook: post-install) or an init container with a webhook readiness check.
+{{- if and .Values.samplePod.enabled (not .Values.dryRun.enabled) }}
 apiVersion: v1
 kind: Pod
 metadata:

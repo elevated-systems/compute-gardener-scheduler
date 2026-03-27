@@ -1,4 +1,4 @@
-{{- if and .Values.metrics.enabled .Values.metrics.gpuMetrics.enabled (not .Values.metrics.gpuMetrics.external) }}
+{{- if and .Values.metrics.enabled .Values.metrics.gpuMetrics.enabled (not .Values.metrics.gpuMetrics.external) (not .Values.dryRun.enabled) }}
 {{- /* Standard constants for NVIDIA GPU setup */}}
 {{- $gpuNodeSelector := dict "nvidia.com/gpu" "present" }}
 {{- $gpuRuntimeClassName := "nvidia" }}
