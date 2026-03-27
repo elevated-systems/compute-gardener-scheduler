@@ -1,6 +1,6 @@
 # Compute Gardener Project Roadmap
 
-*Last updated: January 2026*
+*Last updated: March 2026*
 
 ## Completed
 
@@ -16,17 +16,22 @@
 - ✅ Cascading node detection (custom annotations, NFD labels)
 
 ### v0.2.2 (Summer-Fall 2025)
-- ✅ Dry-run mode: webhook-based evaluation without scheduler installation
 - ✅ AWS validation (non-auto-provisioned nodes)
 - ✅ Documentation improvements and blog series on carbon-aware ML training
+
+### v0.2.3 (Q1 2026)
+- ✅ **Dry-run mode**: webhook-based "try before you buy" evaluation without scheduler installation
+  - SchedulerName mutation: webhook rewrites to default-scheduler for seamless transition
+  - Shared evaluation logic: common evaluator used by both scheduler plugin and dry-run webhook
+  - Dedicated Grafana dashboard (`dashboards/compute-gardener-dryrun-dashboard.json`)
+- ✅ **Savings calculation fixes**: corrected carbon savings to use bind-time intensity, fixed GPU power misattribution in 1:1 GPU-to-node configurations, reworked initial carbon/price metrics
+- ✅ **CloudInfo integration**: cloud provider and region detection via CloudInfo, replacing deprecated manual region mapping
 
 ## In Progress
 
 ### H1 2026
 
 The tail end of 2025 focused on marketing, documentation and building awareness around carbon-aware computing. Ongoing development:
-
-- 🚀 **Dry-run mode polish**: Completing the dry-run admission webhook for production readiness. Allows evaluation of scheduling decisions and savings potential without installing a secondary scheduler - reducing adoption risk for curious teams.
 
 - 🚀 **Simple forecasting**: Schedule at predicted optimal times rather than just waiting for threshold crossings.
 

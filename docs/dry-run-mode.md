@@ -30,7 +30,7 @@ Dry-run mode uses a Kubernetes [MutatingWebhook](https://kubernetes.io/docs/refe
 
 The webhook supports two filter modes that control which pods get evaluated:
 
-**`schedulerName` mode (default)**: Only evaluates pods with `schedulerName: compute-gardener-scheduler`. After evaluation, the webhook mutates the `schedulerName` back to `default-scheduler` so the pod gets scheduled normally. This is the recommended mode when running the webhook without the full scheduler plugin - just set `schedulerName` on the pods you want evaluated, and they'll still be scheduled by the default scheduler.
+**`schedulerName` mode (default)**: Only evaluates pods with `schedulerName: compute-gardener-scheduler`. After evaluation, the webhook mutates the `schedulerName` back to `default-scheduler` so the pod gets scheduled normally by the standard Kubernetes scheduler. **No additional scheduler is running in the cluster** — the mutation simply ensures the default scheduler picks up the pod as usual. This is the recommended mode when running the webhook without the full scheduler plugin.
 
 **`namespace` mode**: Evaluates all pods in explicitly listed namespaces, regardless of `schedulerName`. No `schedulerName` mutation is performed. Use this when you want to evaluate every pod in specific namespaces without requiring any pod-level configuration.
 
@@ -87,7 +87,9 @@ helm install compute-gardener ./manifests/install/charts/compute-gardener-schedu
   --set-string carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-This uses the default `schedulerName` filter mode. Only pods with `schedulerName: compute-gardener-scheduler` will be evaluated, and their `schedulerName` will be mutated back to `default-scheduler` so they get scheduled normally.
+When `dryRun.enabled=true`, the chart installs only the dry-run webhook — the scheduler plugin, its RBAC, configmaps, DCGM exporters, and sample pod are all excluded automatically. The only resources created are the webhook deployment, its service, and TLS certificates.
+
+This uses the default `schedulerName` filter mode. Only pods with `schedulerName: compute-gardener-scheduler` will be evaluated, and their `schedulerName` will be mutated back to `default-scheduler` so they get scheduled normally. No additional scheduler runs in the cluster.
 
 **Or install with namespace filter mode:**
 
@@ -155,49 +157,50 @@ dryRun:
 - `watchNamespaces`: Only used in namespace filter mode. Empty list watches nothing; each namespace must be explicitly listed
 - Carbon/price thresholds are inherited from the main `carbonAware` and `priceAware` configuration
 
+## Grafana Dashboard
+
+A ready-to-import Grafana dashboard is included at `dashboards/compute-gardener-dryrun-dashboard.json`. It provides:
+
+- **Overview**: Pods evaluated, would-delay count, delay rate gauge, pods completed
+- **Measured Savings**: Carbon and cost savings calculated from actual pod runtimes (primary)
+- **Trends**: Carbon intensity over time, evaluation rate, delays by type
+- **Workload Details**: Runtime and energy consumption histograms
+- **Admission-Time Estimates** (collapsed): Rough savings estimates from pod creation time
+
+The dashboard uses a namespace template variable for filtering. **Note:** If using kube-prometheus-stack (e.g. Rancher monitoring), metric labels are relabeled — the dashboard uses `exported_namespace` accordingly.
+
 ## Understanding the Metrics
 
-### Estimated vs Actual Savings
+### Measured vs Estimated Savings
 
-Dry-run provides two types of savings calculations:
+Dry-run tracks savings in two ways. **Measured savings are the primary metric.**
+
+**Measured savings** (`actual_*_total`):
+- Calculated when pods complete
+- Uses **real runtime** from the pod lifecycle
+- Conservative: assumes the pod would have run at threshold intensity/price values
+- Available for all evaluated pods that complete during the webhook's lifetime
 
 **Estimated savings** (`estimated_*_total`):
-- Calculated at pod creation time
-- Uses **estimated runtime** from pod annotations or defaults
-- Conservative assumption: pod would run at threshold values (not current)
+- Calculated at pod creation time using rough power/runtime guesses
+- Useful as a leading indicator before pods complete
+- Less accurate than measured savings
 
-**Actual savings** (`actual_*_total`):
-- Calculated at pod completion time
-- Uses **real runtime** from pod lifecycle
-- Still conservative: assumes pod would have run at threshold values
-
-The "actual" metrics are more accurate because they use real runtime data, but both are conservative estimates.
-
-### Example: Reading Carbon Savings
+### Example: PromQL Queries
 
 ```promql
-# Total estimated carbon savings (all time)
-compute_gardener_dryrun_estimated_carbon_savings_gco2eq_total
-
-# Rate of carbon savings (per hour)
-rate(compute_gardener_dryrun_estimated_carbon_savings_gco2eq_total[1h])
-
 # Percentage of pods that would be delayed
 (
   compute_gardener_dryrun_pods_would_delay_total
   /
   compute_gardener_dryrun_pods_evaluated_total
 ) * 100
-```
 
-### Example: Grafana Dashboard Query
+# Carbon savings rate (per hour)
+rate(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total[1h])
 
-```promql
-# Carbon savings by namespace
-sum(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total) by (namespace)
-
-# Cost savings by namespace (last 24h)
-increase(compute_gardener_dryrun_actual_cost_savings_usd_total[24h])
+# Cumulative measured savings by namespace
+sum(compute_gardener_dryrun_actual_carbon_savings_gco2eq_total) by (exported_namespace)
 ```
 
 ## Annotate Mode Examples
@@ -249,12 +252,14 @@ spec:
 
 ## Transitioning to Active Scheduling
 
-The `schedulerName` filter mode makes this transition seamless. Since your pods already use `schedulerName: compute-gardener-scheduler`, transitioning to the real scheduler requires no pod changes:
+The `schedulerName` filter mode makes this transition seamless. During dry-run, the webhook intercepts pods targeting `compute-gardener-scheduler`, evaluates them, and rewrites `schedulerName` to `default-scheduler` — so the standard Kubernetes scheduler handles everything. **No secondary scheduler runs during dry-run.**
 
-1. **Review the data**: Look at `pods_would_delay_total` and savings metrics from dry-run
-2. **Install the scheduler**: Enable the scheduler plugin alongside (or instead of) the dry-run webhook
-3. **Remove the webhook**: Once the scheduler is handling pods, disable `dryRun.enabled`
-4. **Or keep both**: Run dry-run in namespace mode on namespaces not yet using the scheduler to track potential savings
+Since your pods already use `schedulerName: compute-gardener-scheduler`, transitioning to the real scheduler requires no pod spec changes:
+
+1. **Review the data**: Check the Grafana dashboard for delay rates, measured savings, and workload patterns
+2. **Install the scheduler**: Set `dryRun.enabled=false` — this automatically enables the scheduler plugin with all its RBAC and configuration
+3. **Pods start being scheduled**: The same `schedulerName: compute-gardener-scheduler` now routes to the real scheduler instead of being rewritten
+4. **Or keep both**: Run dry-run in namespace mode on namespaces not yet using the scheduler to continue tracking potential savings
 
 ## Limitations
 

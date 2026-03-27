@@ -30,7 +30,9 @@ This document describes the process for creating new releases of the Compute Gar
    make build-push-images
    ```
 
-5. Update `manifests/install/charts/compute-gardener-scheduler/Chart.yaml`:
+5. Update the default image tags in `values.yaml` to point to the new release images
+
+6. Update `manifests/install/charts/compute-gardener-scheduler/Chart.yaml`:
    - Set `version` to the new chart version (increment when chart/values change)
    - Set `appVersion` to match the new tag + short commit hash, e.g. `"v0.2.3-abc1234"`
 
@@ -38,8 +40,6 @@ This document describes the process for creating new releases of the Compute Gar
    `.github/workflows/release-charts.yml` workflow, which uses
    [chart-releaser](https://github.com/helm/chart-releaser-action) to create
    a GitHub Release from the new chart version.
-
-6. Update the default image tags in `values.yaml` to point to the new release images
 
 ## Version Numbering
 
