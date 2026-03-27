@@ -170,12 +170,12 @@ func (cs *ComputeGardenerScheduler) collectPodMetrics(ctx context.Context) {
 		klog.V(4).InfoS("Checking pod scheduler name",
 			"pod", klog.KObj(pod),
 			"podSchedulerName", pod.Spec.SchedulerName,
-			"ourSchedulerName", SchedulerName,
+			"ourSchedulerName", common.SchedulerName,
 			"ourPluginName", Name,
-			"match", pod.Spec.SchedulerName == SchedulerName)
+			"match", pod.Spec.SchedulerName == common.SchedulerName)
 
 		// Skip pods not scheduled by our scheduler - more tolerant check
-		if pod.Spec.SchedulerName != SchedulerName && pod.Spec.SchedulerName != Name {
+		if pod.Spec.SchedulerName != common.SchedulerName && pod.Spec.SchedulerName != Name {
 			klog.V(4).InfoS("Skipping pod with different scheduler",
 				"pod", klog.KObj(pod),
 				"schedulerName", pod.Spec.SchedulerName)

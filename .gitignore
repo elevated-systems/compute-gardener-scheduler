@@ -46,3 +46,7 @@ testdata/tmp/
 
 # Debug binaries
 __debug_bin*
+
+# AI dev assistance
+CLAUDE.md
+.claude/*

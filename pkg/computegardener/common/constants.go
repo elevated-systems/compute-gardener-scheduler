@@ -43,8 +43,23 @@ const (
 	AnnotationGPUPUE = AnnotationBase + "/gpu-pue"
 
 	// General scheduling annotations
-	AnnotationSkip               = AnnotationBase + "/skip"
-	AnnotationMaxSchedulingDelay = AnnotationBase + "/max-scheduling-delay"
+	AnnotationSkip                  = AnnotationBase + "/skip"
+	AnnotationMaxSchedulingDelay    = AnnotationBase + "/max-scheduling-delay"
+	AnnotationEstimatedRuntimeHours = AnnotationBase + "/estimated-runtime-hours" // Optional hint for savings estimation
+
+	// Dry-run mode annotations
+	AnnotationDryRunEvaluated              = AnnotationBase + "/dry-run-evaluated"
+	AnnotationDryRunTimestamp              = AnnotationBase + "/dry-run-timestamp"
+	AnnotationDryRunWouldDelay             = AnnotationBase + "/dry-run-would-delay"
+	AnnotationDryRunDelayType              = AnnotationBase + "/dry-run-delay-type"
+	AnnotationDryRunReason                 = AnnotationBase + "/dry-run-reason"
+	AnnotationDryRunCarbonIntensity        = AnnotationBase + "/dry-run-carbon-intensity"
+	AnnotationDryRunCarbonThreshold        = AnnotationBase + "/dry-run-carbon-threshold"
+	AnnotationDryRunPrice                  = AnnotationBase + "/dry-run-price"
+	AnnotationDryRunPriceThreshold         = AnnotationBase + "/dry-run-price-threshold"
+	AnnotationDryRunEstimatedCarbonSavings = AnnotationBase + "/dry-run-estimated-carbon-savings-gco2"
+	AnnotationDryRunEstimatedCostSavings   = AnnotationBase + "/dry-run-estimated-cost-savings-usd"
+	AnnotationDryRunTrackingID             = AnnotationBase + "/dry-run-tracking-id"
 
 	// ----------------------------------------
 	// Namespace policy annotations
@@ -100,6 +115,15 @@ const (
 
 	// CPU frequency dynamic check enabled
 	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
+)
+
+// Scheduler names
+const (
+	// SchedulerName is the name used in pod specs to request the compute-gardener scheduler
+	SchedulerName = "compute-gardener-scheduler"
+
+	// DefaultSchedulerName is the Kubernetes default scheduler name
+	DefaultSchedulerName = "default-scheduler"
 )
 
 // Energy budget actions

@@ -54,11 +54,13 @@ helm install compute-gardener-scheduler compute-gardener/compute-gardener-schedu
 
 Then schedule pods with `schedulerName: compute-gardener-scheduler`. See the [Getting Started Guide](./docs/getting-started.md) for detailed setup.
 
-## Dry-Run Mode (Preview)
+## Dry-Run Mode
 
 Not ready to install a secondary scheduler? **Dry-run mode** lets you evaluate potential savings without affecting your workloads.
 
-It installs a lightweight admission webhook that evaluates every pod using the same carbon/price logic, recording what *would* happen via Prometheus metrics. Track potential savings, validate data quality for your region, and build confidence—all before committing to the scheduler.
+It installs a lightweight admission webhook that evaluates pods using the same carbon/price logic, recording what *would* happen via Prometheus metrics or pod annotations. Track potential savings, validate data quality for your region, and build confidence - all before committing to the scheduler.
+
+By default, it uses **schedulerName filtering**: only pods with `schedulerName: compute-gardener-scheduler` are evaluated, and the webhook mutates `schedulerName` back to `default-scheduler` so pods get scheduled normally. This means your pods are already configured for the real scheduler when you're ready to switch.
 
 ```bash
 helm install compute-gardener ./manifests/install/charts/compute-gardener-scheduler \
@@ -68,7 +70,7 @@ helm install compute-gardener ./manifests/install/charts/compute-gardener-schedu
   --set carbonAware.electricityMap.apiKey=YOUR_API_KEY
 ```
 
-See [Dry-Run Mode Documentation](./docs/dry-run-mode.md) for details.
+See [Dry-Run Mode Documentation](./docs/dry-run-mode.md) for details on filter modes, output options, and transitioning to active scheduling.
 
 ## Documentation
 

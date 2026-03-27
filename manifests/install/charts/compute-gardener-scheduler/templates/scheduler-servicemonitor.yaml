@@ -1,4 +1,4 @@
-{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled (not .Values.dryRun.enabled) }}
 {{- if .Values.metrics.gke }}
 # GKE-specific monitoring
 apiVersion: monitoring.googleapis.com/v1
