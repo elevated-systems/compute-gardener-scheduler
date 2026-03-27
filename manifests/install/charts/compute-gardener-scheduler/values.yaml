@@ -11,7 +11,7 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.3-alpha-a21899e
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.3-57ae4e1
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
@@ -44,7 +44,7 @@ scheduler:
 dryRun:
   # Enable dry-run mode (webhook admission controller)
   enabled: false
-  image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.3-alpha-a21899e
+  image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.3-57ae4e1
   imagePullPolicy: IfNotPresent
   replicaCount: 1
 
@@ -157,7 +157,7 @@ metrics:
   serviceMonitor:
     enabled: true
     # Default Prometheus namespace, change to match your setup (ex: cattle-monitoring-system with Rancher)
-    namespace: "cattle-monitoring-system"
+    namespace: "monitoring"
     interval: "15s" # Match the node exporter's sampling interval
     insecureSkipVerify: true # For testing only, consider proper CA verification in prod
   # Set to true for GKE to use PodMonitoring instead of ServiceMonitor
@@ -171,7 +171,7 @@ metrics:
     # - Standard Prometheus Operator: http://prometheus-operated.monitoring.svc.cluster.local:9090
     # - Rancher Monitoring: http://prometheus-operated.cattle-monitoring-system.svc.cluster.local:9090
     # - Cloud provider managed: Check your cloud provider's documentation
-    url: "http://prometheus-operated.cattle-monitoring-system.svc.cluster.local:9090"
+    url: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
     # Query timeout for Prometheus queries (default: 30s)
     queryTimeout: "30s"
     # Whether to use DCGM metrics (default: true)
@@ -192,7 +192,7 @@ metrics:
     port: 9400
     # Metrics endpoint for Prometheus when using external GPU metrics exporter
     # For internal installation, will be constructed based on service name
-    endpoint: "http://dcgm-exporter.cattle-monitoring-system:9400/metrics"
+    endpoint: "http://dcgm-exporter.monitoring:9400/metrics"
     # Whether to deploy ServiceMonitor for GPU metrics exporter
     serviceMonitor:
       enabled: true
