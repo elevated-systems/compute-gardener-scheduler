@@ -34,7 +34,7 @@ webhooks:
   # If it fails, allow pod creation to proceed
   failurePolicy: Ignore
   {{- end }}
-  timeoutSeconds: 5
+  timeoutSeconds: {{ .Values.dryRun.webhook.timeoutSeconds | default 10 }}
   {{- if and (eq .Values.dryRun.filterMode "namespace") .Values.dryRun.watchNamespaces }}
   namespaceSelector:
     matchExpressions:

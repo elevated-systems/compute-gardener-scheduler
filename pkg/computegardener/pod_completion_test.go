@@ -234,10 +234,10 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200",  // Initial (when scheduler first heard)
-			common.AnnotationInitialElectricityRate: "0.18", // Initial (when scheduler first heard)
-			common.AnnotationBindCarbonIntensity:    "150",  // Bind-time (first metrics record)
-			common.AnnotationBindElectricityRate:    "0.12", // Bind-time (first metrics record)
+			common.AnnotationInitialCarbonIntensity: "200",                                                  // Initial (when scheduler first heard)
+			common.AnnotationInitialElectricityRate: "0.18",                                                 // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "150",                                                  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.12",                                                 // Bind-time (first metrics record)
 			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
@@ -274,10 +274,10 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "150",  // Initial (when scheduler first heard)
-			common.AnnotationInitialElectricityRate: "0.12", // Initial (when scheduler first heard)
-			common.AnnotationBindCarbonIntensity:    "200",  // Bind-time (first metrics record)
-			common.AnnotationBindElectricityRate:    "0.18", // Bind-time (first metrics record)
+			common.AnnotationInitialCarbonIntensity: "150",                                                  // Initial (when scheduler first heard)
+			common.AnnotationInitialElectricityRate: "0.12",                                                 // Initial (when scheduler first heard)
+			common.AnnotationBindCarbonIntensity:    "200",                                                  // Bind-time (first metrics record)
+			common.AnnotationBindElectricityRate:    "0.18",                                                 // Bind-time (first metrics record)
 			common.AnnotationInitialTimestamp:       time.Now().Add(-15 * time.Minute).Format(time.RFC3339), // When first delayed
 		},
 		WasCarbonDelayed: true, // Pod was delayed by carbon constraints
@@ -344,7 +344,7 @@ var savingsTestCases = []MetricsTestCase{
 			Completed: false,
 		},
 		PodAnnotations: map[string]string{
-			common.AnnotationInitialCarbonIntensity: "200", // Initial when first seen
+			common.AnnotationInitialCarbonIntensity: "200",  // Initial when first seen
 			common.AnnotationInitialElectricityRate: "0.10", // Initial when first seen
 			common.AnnotationBindCarbonIntensity:    "120",  // Bind-time intensity
 			common.AnnotationBindElectricityRate:    "0.10", // Bind-time rate
