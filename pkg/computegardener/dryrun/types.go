@@ -19,11 +19,12 @@ const (
 
 // Config holds configuration for the dry-run system
 type Config struct {
-	Mode            string   // "metrics" or "annotate"
-	FilterMode      string   // "schedulerName" (default) or "namespace"
-	WatchNamespaces []string // Namespaces to evaluate (only used in namespace filter mode)
-	Carbon          CarbonConfig
-	Pricing         PricingConfig
+	Mode               string   // "metrics" or "annotate"
+	FilterMode         string   // "schedulerName" (default) or "namespace"
+	WatchNamespaces    []string // Namespaces to evaluate (only used in namespace filter mode)
+	WebhookTimeoutSeconds int // Must match MutatingWebhookConfiguration timeoutSeconds; eval runs 1s under this
+	Carbon             CarbonConfig
+	Pricing            PricingConfig
 }
 
 // CarbonConfig holds carbon-aware evaluation settings

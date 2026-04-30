@@ -42,6 +42,7 @@ spec:
         - --watch-namespace={{ . }}
         {{- end }}
         {{- end }}
+        - --webhook-timeout={{ .Values.dryRun.webhook.timeoutSeconds | default 10 }}
         - --tls-cert=/tmp/k8s-webhook-server/serving-certs/tls.crt
         - --tls-key=/tmp/k8s-webhook-server/serving-certs/tls.key
         - --v={{ .Values.dryRun.logLevel | default 3 }}

@@ -19,18 +19,19 @@ import (
 
 func main() {
 	var (
-		webhookPort     int
-		metricsPort     int
-		mode            string
-		filterMode      string
-		watchNamespaces stringSlice
-		carbonEnabled   bool
-		carbonRegion    string
-		carbonThreshold float64
-		carbonAPIKey    string
-		pricingEnabled  bool
-		tlsCertPath     string
-		tlsKeyPath      string
+		webhookPort        int
+		metricsPort        int
+		mode               string
+		filterMode         string
+		watchNamespaces    stringSlice
+		carbonEnabled      bool
+		carbonRegion       string
+		carbonThreshold    float64
+		carbonAPIKey       string
+		pricingEnabled     bool
+		tlsCertPath        string
+		tlsKeyPath         string
+		webhookTimeoutSeconds int
 	)
 
 	flag.IntVar(&webhookPort, "webhook-port", 8443, "Webhook server port")
@@ -45,6 +46,7 @@ func main() {
 	flag.BoolVar(&pricingEnabled, "pricing-enabled", false, "Enable price-aware evaluation")
 	flag.StringVar(&tlsCertPath, "tls-cert", "/etc/webhook/certs/tls.crt", "Path to TLS certificate")
 	flag.StringVar(&tlsKeyPath, "tls-key", "/etc/webhook/certs/tls.key", "Path to TLS key")
+	flag.IntVar(&webhookTimeoutSeconds, "webhook-timeout", 10, "Admission webhook timeout in seconds; the internal evaluation deadline runs 1s under this")
 
 	klog.InitFlags(nil)
 	flag.Parse()
@@ -95,9 +97,10 @@ func main() {
 
 	// Create dry-run configuration
 	dryRunConfig := &dryrun.Config{
-		Mode:            mode,
-		FilterMode:      filterMode,
-		WatchNamespaces: watchNamespaces,
+		Mode:               mode,
+		FilterMode:         filterMode,
+		WatchNamespaces:    watchNamespaces,
+		WebhookTimeoutSeconds: webhookTimeoutSeconds,
 		Carbon: dryrun.CarbonConfig{
 			Enabled:   carbonEnabled,
 			Region:    carbonRegion,

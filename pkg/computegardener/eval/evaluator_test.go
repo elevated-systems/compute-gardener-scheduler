@@ -77,7 +77,7 @@ func TestDetermineWorkloadType(t *testing.T) {
 		{
 			name: "explicit label overrides everything",
 			pod: &v1.Pod{ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{common.LabelWorkloadType: "batch"},
+				Labels:          map[string]string{common.LabelWorkloadType: "batch"},
 				OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment"}},
 			}},
 			expected: "batch",
@@ -224,11 +224,11 @@ func TestEvaluateCarbonConstraints_ThresholdLogic(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name            string
+		name             string
 		currentIntensity float64
 		globalThreshold  float64
 		podAnnotation    string
-		wantDelay       bool
+		wantDelay        bool
 	}{
 		{
 			name:             "below global threshold → no delay",
@@ -330,11 +330,11 @@ func TestEvaluatePriceConstraints_PodAnnotationThreshold(t *testing.T) {
 	cfg := priceOnlyConfig()
 
 	tests := []struct {
-		name          string
-		rate          float64
-		isPeak        bool
-		annotation    string
-		wantDelay     bool
+		name       string
+		rate       float64
+		isPeak     bool
+		annotation string
+		wantDelay  bool
 	}{
 		{
 			name:       "rate exceeds annotation threshold → delay even off-peak",

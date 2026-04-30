@@ -14,17 +14,17 @@ func TestPodEvaluationStore_RecordAndGetStart(t *testing.T) {
 	startTime := now.Add(-5 * time.Hour)
 
 	startData := &eval.PodStartData{
-		UID:              "test-uid",
-		Namespace:        "default",
-		StartTime:        startTime,
-		EstimatedPowerW:  100.0,
+		UID:               "test-uid",
+		Namespace:         "default",
+		StartTime:         startTime,
+		EstimatedPowerW:   100.0,
 		EstimatedRuntimeH: 4.0,
-		WouldHaveDelayed: true,
-		DelayType:        "carbon",
-		InitialCarbon:    1.5,
-		CarbonThreshold:  1.0,
-		InitialPrice:     0.06,
-		PriceThreshold:   0.05,
+		WouldHaveDelayed:  true,
+		DelayType:         "carbon",
+		InitialCarbon:     1.5,
+		CarbonThreshold:   1.0,
+		InitialPrice:      0.06,
+		PriceThreshold:    0.05,
 	}
 
 	store.RecordStart("test-uid", startData)
