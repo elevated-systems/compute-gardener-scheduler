@@ -46,6 +46,10 @@ data:
   # Important: We're using this key name to match the file path expected in the container
   # It will be mounted into a separate directory for pricing schedules
   pricing-schedules.yaml: |
+    # Time-of-use pricing schedules.
+    # NOTE: Node-specific schedule assignment is not yet implemented — the FIRST
+    # schedule below is currently applied to all nodes. Additional entries are
+    # parsed but unused; they are reserved for a future per-node assignment feature.
     schedules:
       {{- range .Values.priceAware.schedules }}
       - name: "{{ .name }}"

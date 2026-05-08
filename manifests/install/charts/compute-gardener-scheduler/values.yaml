@@ -108,7 +108,9 @@ carbonAware:
   carbonIntensityThreshold: 200.0
   electricityMap:
     apiKey: "YOUR_ELECTRICITY_MAP_API_KEY" # Change this or use --set-string
-    # Additional electricity map settings can be added here
+    # Electricity Maps region (zone) identifier; default below matches the scheduler's
+    # built-in default. Override for non-California deployments, e.g. "US-NY-NYIS".
+    region: "US-CAL-CISO"
 
 # Price-aware scheduling configuration
 priceAware:

@@ -53,10 +53,8 @@ spec:
             secretKeyRef:
               name: {{ .Values.scheduler.name }}-secrets
               key: electricity-map-api-key
-        {{- if ne (.Values.carbonAware.carbonIntensityThreshold | toString) "200.0" }}
         - name: CARBON_INTENSITY_THRESHOLD
           value: "{{ .Values.carbonAware.carbonIntensityThreshold }}"
-        {{- end }}
         {{- end }}
         {{- if .Values.priceAware.enabled }}
         - name: PRICING_ENABLED

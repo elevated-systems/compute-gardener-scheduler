@@ -24,11 +24,17 @@ spec:
     tlsConfig:
       insecureSkipVerify: {{ .Values.metrics.serviceMonitor.insecureSkipVerify }}
 {{- else }}
-# Standard Prometheus Operator
+# Standard Prometheus Operator.
+# Prerequisite: the Prometheus Operator CRDs (specifically ServiceMonitor) must already
+# be installed in the cluster, e.g.:
+#   kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+# If you don't have Prometheus Operator, set metrics.serviceMonitor.enabled=false (or use
+# the *-no-metrics raw manifest) to skip this resource.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ .Values.scheduler.name }}-monitor
+  # Default Prometheus namespace; change to match your setup (e.g. cattle-monitoring-system on Rancher).
   namespace: {{ .Values.metrics.serviceMonitor.namespace }}
 spec:
   selector:

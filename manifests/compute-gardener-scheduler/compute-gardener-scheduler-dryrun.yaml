@@ -1,0 +1,255 @@
+# Generated from manifests/install/charts/compute-gardener-scheduler.
+# DO NOT EDIT — rerun `make manifests` after changing the chart.
+# Variant: dry-run
+# Render command: helm template compute-gardener manifests/install/charts/compute-gardener-scheduler --namespace compute-gardener --set-string carbonAware.electricityMap.apiKey=YOUR_ELECTRICITY_MAP_API_KEY --set samplePod.enabled=false --set dryRun.enabled=true
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: compute-gardener
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compute-gardener-dryrun
+  namespace: compute-gardener
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: compute-gardener-scheduler-secrets
+  namespace: compute-gardener
+type: Opaque
+data:
+  electricity-map-api-key: WU9VUl9FTEVDVFJJQ0lUWV9NQVBfQVBJX0tFWQ==
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compute-gardener-dryrun
+rules:
+# Watch pods for completion tracking
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+# Read config maps for pricing and hardware profiles
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compute-gardener-dryrun
+subjects:
+- kind: ServiceAccount
+  name: compute-gardener-dryrun
+  namespace: compute-gardener
+roleRef:
+  kind: ClusterRole
+  name: compute-gardener-dryrun
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-dryrun-webhook
+  namespace: compute-gardener
+  labels:
+    app: compute-gardener-dryrun
+    component: webhook
+spec:
+  ports:
+  - name: webhook
+    port: 443
+    targetPort: webhook
+    protocol: TCP
+  selector:
+    app: compute-gardener-dryrun
+    component: webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compute-gardener-dryrun-metrics
+  namespace: compute-gardener
+  labels:
+    app: compute-gardener-dryrun
+    component: metrics
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: compute-gardener-dryrun
+    component: webhook
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: compute-gardener-dryrun
+    component: webhook
+  name: compute-gardener-dryrun
+  namespace: compute-gardener
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dryrun
+      component: webhook
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: compute-gardener-dryrun
+        component: webhook
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '8080'
+        prometheus.io/path: '/metrics'
+    spec:
+      serviceAccountName: compute-gardener-dryrun
+      containers:
+      - name: dryrun
+        image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.4-alpha-030ed84
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/dryrun
+        args:
+        - --webhook-port=8443
+        - --metrics-port=8080
+        - --mode=metrics
+        - --filter-mode=schedulerName
+        - --webhook-timeout=10
+        - --tls-cert=/tmp/k8s-webhook-server/serving-certs/tls.crt
+        - --tls-key=/tmp/k8s-webhook-server/serving-certs/tls.key
+        - --v=3
+        env:
+        - name: ELECTRICITY_MAPS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: compute-gardener-scheduler-secrets
+              key: electricity-map-api-key
+        - name: CARBON_INTENSITY_THRESHOLD
+          value: "200"
+        - name: HARDWARE_PROFILES_PATH
+          value: "/etc/kubernetes/compute-gardener-scheduler/hardware-profiles/hardware-profiles.yaml"
+        ports:
+        - containerPort: 8443
+          name: webhook
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+        - name: hardware-profiles
+          mountPath: /etc/kubernetes/compute-gardener-scheduler/hardware-profiles
+          readOnly: true
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: compute-gardener-dryrun-webhook-cert
+      - name: hardware-profiles
+        configMap:
+          name: compute-gardener-scheduler-hw-profiles
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: compute-gardener-dryrun-webhook-cert
+  namespace: compute-gardener
+spec:
+  secretName: compute-gardener-dryrun-webhook-cert
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  subject:
+    organizations:
+    - compute-gardener
+  commonName: compute-gardener-dryrun-webhook.compute-gardener.svc
+  dnsNames:
+  - compute-gardener-dryrun-webhook
+  - compute-gardener-dryrun-webhook.compute-gardener
+  - compute-gardener-dryrun-webhook.compute-gardener.svc
+  - compute-gardener-dryrun-webhook.compute-gardener.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: compute-gardener-dryrun-selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: compute-gardener-dryrun-selfsigned
+  namespace: compute-gardener
+spec:
+  selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: compute-gardener-dryrun
+  annotations:
+    cert-manager.io/inject-ca-from: compute-gardener/compute-gardener-dryrun-webhook-cert
+webhooks:
+- name: dryrun.compute-gardener-scheduler.kubernetes.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: compute-gardener-dryrun-webhook
+      namespace: compute-gardener
+      path: /mutate
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+    scope: "Namespaced"
+  sideEffects: None
+  # In metrics mode, webhook is read-only (no mutations)
+  # If it fails, allow pod creation to proceed
+  failurePolicy: Ignore
+  timeoutSeconds: 10
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: compute-gardener-dryrun
+  namespace: monitoring
+  labels:
+    app: compute-gardener-dryrun
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: compute-gardener-dryrun
+      component: metrics
+  namespaceSelector:
+    matchNames:
+    - compute-gardener
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /metrics
+    scheme: http

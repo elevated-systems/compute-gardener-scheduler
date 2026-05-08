@@ -19,13 +19,13 @@ spec:
         component: scheduler
         tier: control-plane
         version: second
+      {{- if .Values.metrics.enabled }}
       annotations:
-        {{- if .Values.metrics.enabled }}
         prometheus.io/scrape: 'true'
         prometheus.io/port: '{{ .Values.metrics.port }}'
         prometheus.io/scheme: 'https'
         prometheus.io/path: '/metrics'
-        {{- end }}
+      {{- end }}
     spec:
       serviceAccountName: {{ .Values.scheduler.name }}
       containers:
@@ -42,27 +42,17 @@ spec:
         imagePullPolicy: {{ .Values.scheduler.imagePullPolicy }}
         env:
         {{- if .Values.carbonAware.enabled }}
-        # API key is always needed when carbon awareness is enabled
         - name: ELECTRICITY_MAP_API_KEY
           valueFrom:
             secretKeyRef:
               name: {{ .Values.scheduler.name }}-secrets
               key: electricity-map-api-key
-        # Only set threshold if it's not the default value (200)
-        {{- if ne (.Values.carbonAware.carbonIntensityThreshold | toString) "200.0" }}
         - name: CARBON_INTENSITY_THRESHOLD
           value: "{{ .Values.carbonAware.carbonIntensityThreshold }}"
-        {{- end }}
-        # Only set region if it's not the default (US-CAL-CISO)
-        {{- if ne .Values.carbonAware.electricityMap.region "US-CAL-CISO" }}
         - name: ELECTRICITY_MAP_API_REGION
           value: "{{ .Values.carbonAware.electricityMap.region }}"
-        {{- end }}
-        # Only set max delay if it's not the default (24h)
-        {{- if ne .Values.scheduler.maxSchedulingDelay "24h" }}
         - name: MAX_SCHEDULING_DELAY
           value: "{{ .Values.scheduler.maxSchedulingDelay }}"
-        {{- end }}
         {{- end }}
         {{- if .Values.priceAware.enabled }}
         - name: PRICING_ENABLED

@@ -78,6 +78,13 @@ build-push-images: build-push-scheduler-image build-push-dryrun-image
 update-gomod:
 	hack/update-gomod.sh
 
+# Render raw kubectl-apply manifests from the Helm chart. The chart is the
+# single source of truth; rerun this after any change under
+# manifests/install/charts/compute-gardener-scheduler/.
+.PHONY: manifests
+manifests:
+	hack/render-manifests.sh
+
 .PHONY: unit-test
 unit-test: install-envtest
 	hack/unit-test.sh $(ARGS)
