@@ -11,7 +11,7 @@ scheduler:
   # - primary: acts as the default scheduler for all pods (not recommended for general use)
   mode: "secondary"
   name: compute-gardener-scheduler
-  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.3-57ae4e1
+  image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.4-6743772
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   leaderElect: false
@@ -44,7 +44,7 @@ scheduler:
 dryRun:
   # Enable dry-run mode (webhook admission controller)
   enabled: false
-  image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.4-alpha-030ed84
+  image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.4-6743772
   imagePullPolicy: IfNotPresent
   replicaCount: 1
 
