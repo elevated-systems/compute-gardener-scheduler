@@ -62,6 +62,10 @@ func LoadFromEnv() (*Config, error) {
 			DefaultCarbonWeight: getFloatOrDefault("ALMANAC_DEFAULT_CARBON_WEIGHT", 0.6),
 			DefaultPriceWeight:  getFloatOrDefault("ALMANAC_DEFAULT_PRICE_WEIGHT", 0.4),
 			FailOpen:            getBoolOrDefault("ALMANAC_FAIL_OPEN", true),
+			DefaultScoreThreshold: getFloatOrDefault("ALMANAC_DEFAULT_SCORE_THRESHOLD", 0.7),
+			DefaultProvider:       getEnvOrDefault("ALMANAC_DEFAULT_PROVIDER", ""),
+			DefaultRegion:         getEnvOrDefault("ALMANAC_DEFAULT_REGION", ""),
+			DefaultInstanceType:   getEnvOrDefault("ALMANAC_DEFAULT_INSTANCE_TYPE", ""),
 		},
 	}
 
