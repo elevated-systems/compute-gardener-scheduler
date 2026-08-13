@@ -54,6 +54,20 @@ spec:
         - name: MAX_SCHEDULING_DELAY
           value: "{{ .Values.scheduler.maxSchedulingDelay }}"
         {{- end }}
+        {{- if .Values.almanac.enabled }}
+        - name: ALMANAC_ENABLED
+          value: "true"
+        - name: ALMANAC_URL
+          value: "{{ .Values.almanac.url }}"
+        - name: ALMANAC_TIMEOUT
+          value: "{{ .Values.almanac.timeout }}"
+        - name: ALMANAC_DEFAULT_CARBON_WEIGHT
+          value: "{{ .Values.almanac.defaultCarbonWeight }}"
+        - name: ALMANAC_DEFAULT_PRICE_WEIGHT
+          value: "{{ .Values.almanac.defaultPriceWeight }}"
+        - name: ALMANAC_FAIL_OPEN
+          value: "{{ .Values.almanac.failOpen }}"
+        {{- end }}
         {{- if .Values.priceAware.enabled }}
         - name: PRICING_ENABLED
           value: "true"

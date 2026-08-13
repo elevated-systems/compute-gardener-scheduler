@@ -55,6 +55,14 @@ func LoadFromEnv() (*Config, error) {
 			DownsamplingStrategy: getEnvOrDefault("DOWNSAMPLING_STRATEGY", "timeBased"),
 			Prometheus:           loadPrometheusConfig(),
 		},
+		Almanac: AlmanacConfig{
+			Enabled:             getBoolOrDefault("ALMANAC_ENABLED", false),
+			URL:                 getEnvOrDefault("ALMANAC_URL", ""),
+			Timeout:             getEnvOrDefault("ALMANAC_TIMEOUT", "10s"),
+			DefaultCarbonWeight: getFloatOrDefault("ALMANAC_DEFAULT_CARBON_WEIGHT", 0.6),
+			DefaultPriceWeight:  getFloatOrDefault("ALMANAC_DEFAULT_PRICE_WEIGHT", 0.4),
+			FailOpen:            getBoolOrDefault("ALMANAC_FAIL_OPEN", true),
+		},
 	}
 
 	// Try to load hardware profiles if path is provided
