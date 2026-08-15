@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -68,6 +69,14 @@ type ComputeGardenerScheduler struct {
 	// Delay tracking - track which pods were delayed and why (for metrics deduplication and savings calculation)
 	carbonDelayedPods map[string]bool // Pods delayed by carbon constraints
 	priceDelayedPods  map[string]bool // Pods delayed by price constraints
+
+	// Carbon cache refresh bookkeeping. Used by the health check to distinguish a
+	// transient blip (refresh worker is healthy and the cache is merely a few
+	// seconds stale between refreshes) from a stuck cache (refreshes have failed
+	// repeatedly, so on-demand fetches are likely failing too). Guarded by
+	// refreshMu.
+	refreshMu             sync.Mutex
+	carbonRefreshFailures int
 }
 
 var (
@@ -1065,34 +1074,15 @@ func (cs *ComputeGardenerScheduler) healthCheckWorker(ctx context.Context) {
 }
 
 func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
-	// Check cache health
-	regions := cs.cache.GetRegions()
-
-	// Evaluate cache state
-	emptyCache := len(regions) == 0
-	hasFreshData := false
-
-	if !emptyCache {
-		// Check if any region has fresh data
-		for _, region := range regions {
-			if _, fresh := cs.cache.Get(region); fresh {
-				hasFreshData = true
-				break
-			}
+	if cs.config.Carbon.Enabled {
+		if err := cs.checkCarbonCacheHealth(); err != nil {
+			return err
 		}
-	}
-
-	// Only enforce cache health checks if carbon is enabled and cache should be initialized
-	// An empty cache is allowed and normal during initial startup or when carbon features aren't being used
-	if cs.config.Carbon.Enabled && !emptyCache && !hasFreshData {
-		// If we have regions but no fresh data, that's a problem
-		return fmt.Errorf("cache health check failed: no fresh data available")
 	}
 
 	// If carbon awareness enabled, verify API health
 	if cs.config.Carbon.Enabled && cs.carbonImpl != nil {
-		_, err := cs.carbonImpl.GetCurrentIntensity(ctx)
-		if err != nil {
+		if _, err := cs.carbonImpl.GetCurrentIntensity(ctx); err != nil {
 			return fmt.Errorf("carbon API health check failed: %v", err)
 		}
 	}
@@ -1108,6 +1098,91 @@ func (cs *ComputeGardenerScheduler) healthCheck(ctx context.Context) error {
 	return nil
 }
 
+// checkCarbonCacheHealth inspects the carbon intensity cache and returns an
+// error only when the cache is in a genuinely unhealthy state. It deliberately
+// keeps three situations distinct (see issue #50, where the previous version
+// logged "no fresh data available" as an error on every health-check tick on
+// EKS even though scheduling itself was working fine):
+//
+//  1. Empty cache: no entries at all. Normal at startup (the refresh worker
+//     performs its first fetch asynchronously) or when carbon data has simply
+//     never been requested. Not an error by itself - the API reachability is
+//     verified separately, and a fresh fetch happens on demand. It becomes an
+//     error only if the refresh worker is demonstrably failing.
+//
+//  2. Transient staleness: the cache has data but it is past its TTL because
+//     the periodic refresh has not yet run. The refresh worker refreshes at
+//     ~1/3 of the TTL, so a little staleness is expected. As long as the
+//     refresh worker is not failing we only log at info level, because a
+//     scheduling request will transparently trigger a fresh API fetch.
+//
+//  3. Stuck cache: the data is fully stale (older than 2x the TTL) AND the
+//     refresh worker has failed repeatedly. This means on-demand fetches are
+//     likely failing too (e.g. no network egress to the EM API), which does
+//     affect scheduling - so this is a real error.
+func (cs *ComputeGardenerScheduler) checkCarbonCacheHealth() error {
+	oldestAge, oldestRegion, hasData := cs.cache.OldestEntryAge()
+	ttl := cs.config.Cache.CacheTTL
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+
+	cs.refreshMu.Lock()
+	failures := cs.carbonRefreshFailures
+	cs.refreshMu.Unlock()
+
+	if !hasData {
+		// Situation 1: cache has never been populated. Only a problem if we
+		// have evidence the refresh worker is failing - otherwise it is just
+		// startup (or the first on-demand fetch hasn't happened yet) and the
+		// API reachability check below covers that.
+		if failures > 0 {
+			return fmt.Errorf("carbon cache is empty and the refresh worker has had %d consecutive failure(s): carbon data is not reaching the cache",
+				failures)
+		}
+		klog.V(2).InfoS("Carbon cache is empty (no data written yet); this is normal at startup or before the first fetch")
+		return nil
+	}
+
+	if oldestAge <= 2*ttl {
+		// Situation 2 (normal side): data is reasonably fresh. Nothing to do.
+		return nil
+	}
+
+	// The oldest entry is more than 2x the TTL old.
+	if failures == 0 {
+		// Transient: the cache is stale but the refresh worker has not been
+		// failing, so the next refresh (or any scheduling request, which
+		// triggers an on-demand fetch) will bring it back. Informational only.
+		klog.InfoS("Carbon cache is stale but the refresh worker is healthy; a fresh fetch will occur on the next refresh or scheduling request",
+			"oldestRegion", oldestRegion,
+			"oldestAge", oldestAge.Round(time.Second),
+			"cacheTTL", ttl)
+		return nil
+	}
+
+	// Situation 3: the cache has gone fully stale and the refresh worker has
+	// failed repeatedly, so on-demand fetches are likely failing as well. This
+	// is a real problem for carbon-aware scheduling.
+	return fmt.Errorf("carbon cache has no fresh data: oldest entry (%s) is %s old (ttl %s) after %d consecutive refresh failure(s) - the carbon data source may be unreachable",
+		oldestRegion,
+		oldestAge.Round(time.Second),
+		ttl,
+		failures)
+}
+
+// carbonCacheRefreshInterval returns the interval used by the carbon cache
+// refresh worker, mirroring the clamping applied in carbonCacheRefreshWorker.
+func (cs *ComputeGardenerScheduler) carbonCacheRefreshInterval() time.Duration {
+	refreshInterval := cs.config.Cache.CacheTTL / 3
+	if refreshInterval < 10*time.Second {
+		refreshInterval = 10 * time.Second
+	} else if refreshInterval > 5*time.Minute {
+		refreshInterval = 5 * time.Minute
+	}
+	return refreshInterval
+}
+
 // hasGPURequest checks if a pod is requesting GPU resources
 func hasGPURequest(pod *v1.Pod) bool {
 	for _, container := range pod.Spec.Containers {
@@ -1121,15 +1196,8 @@ func hasGPURequest(pod *v1.Pod) bool {
 // carbonCacheRefreshWorker refreshes the carbon intensity cache at regular intervals
 // to ensure that the cache never becomes stale when scheduling decisions are made
 func (cs *ComputeGardenerScheduler) carbonCacheRefreshWorker(ctx context.Context) {
-	// Calculate refresh interval as 1/3 of the cache TTL to ensure we always have fresh data
-	refreshInterval := cs.config.Cache.CacheTTL / 3
-
-	// Ensure the interval is not too short or too long
-	if refreshInterval < 10*time.Second {
-		refreshInterval = 10 * time.Second // Minimum 10 seconds
-	} else if refreshInterval > 5*time.Minute {
-		refreshInterval = 5 * time.Minute // Maximum 5 minutes
-	}
+	// Refresh at ~1/3 of the cache TTL (clamped) so we always have fresh data.
+	refreshInterval := cs.carbonCacheRefreshInterval()
 
 	klog.InfoS("Starting carbon intensity cache refresh worker",
 		"refreshInterval", refreshInterval.String(),
@@ -1158,6 +1226,7 @@ func (cs *ComputeGardenerScheduler) carbonCacheRefreshWorker(ctx context.Context
 
 // refreshCarbonCache refreshes the carbon intensity data for given regions
 func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regions []string) {
+	allSucceeded := true
 	for _, region := range regions {
 		// Create a context with timeout for the API request
 		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1169,6 +1238,7 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 		cancel()
 
 		if err != nil {
+			allSucceeded = false
 			klog.ErrorS(err, "Failed to refresh carbon intensity cache",
 				"region", region)
 		} else {
@@ -1180,5 +1250,33 @@ func (cs *ComputeGardenerScheduler) refreshCarbonCache(ctx context.Context, regi
 			// Update metrics
 			metrics.CarbonIntensityGauge.WithLabelValues(region, intensityData.DataStatus).Set(intensityData.Value)
 		}
+	}
+
+	// Record the outcome so the health check can distinguish a transient blip
+	// (refresh worker is healthy) from a stuck cache (refreshes failing
+	// repeatedly, meaning on-demand fetches are likely failing too).
+	cs.recordCarbonRefreshOutcome(allSucceeded)
+}
+
+// recordCarbonRefreshOutcome updates the consecutive carbon-cache refresh
+// failure counter used by the health check. The counter resets to zero as soon
+// as a refresh succeeds, so it reflects only the current failure streak.
+func (cs *ComputeGardenerScheduler) recordCarbonRefreshOutcome(success bool) {
+	cs.refreshMu.Lock()
+	defer cs.refreshMu.Unlock()
+
+	if success {
+		if cs.carbonRefreshFailures > 0 {
+			klog.V(2).InfoS("Carbon cache refresh recovered",
+				"previousConsecutiveFailures", cs.carbonRefreshFailures)
+		}
+		cs.carbonRefreshFailures = 0
+		return
+	}
+
+	cs.carbonRefreshFailures++
+	if cs.carbonRefreshFailures == 1 {
+		klog.V(1).InfoS("Carbon cache refresh is failing",
+			"consecutiveFailures", cs.carbonRefreshFailures)
 	}
 }
