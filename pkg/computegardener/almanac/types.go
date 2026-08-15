@@ -53,7 +53,7 @@ type RawSignals struct {
 	CarbonIntensity     float64 `json:"carbonIntensityGCO2kWh"`
 	SpotPrice           float64 `json:"spotPriceUSDHour,omitempty"`
 	OnDemandPrice       float64 `json:"onDemandPriceUSDHour,omitempty"`
-	OnDemandEstimated   bool    `json:"onDemandEstimated,omitempty"`   // True if on-demand was estimated from spot
+	OnDemandEstimated   bool    `json:"onDemandEstimated,omitempty"` // True if on-demand was estimated from spot
 	InstanceType        string  `json:"instanceType,omitempty"`
 	InstanceTypeDefault bool    `json:"instanceTypeDefault,omitempty"` // True if default was used
 }

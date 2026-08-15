@@ -16,6 +16,7 @@ import (
 
 	"k8s.io/utils/clock"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/almanac"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
@@ -23,7 +24,6 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/metrics/clients"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/almanac"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/price"
 )
 
@@ -499,7 +499,14 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check pricing constraints if enabled
-	if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
+	// Skipped when almanac scoring is active for the pod: the blended
+	// carbon+price score from the almanac API takes precedence over the
+	// local TOU price check (evaluated in Filter).
+	if cs.podAlmanacEnabled(pod) {
+		// Keep delay-edge tracking consistent for when almanac is later
+		// disabled for this pod.
+		cs.priceDelayedPods[string(pod.UID)] = false
+	} else if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
 		klog.V(3).InfoS("Checking price constraints in PreFilter",
 			"pod", klog.KObj(pod),
 			"enabled", cs.config.Pricing.Enabled)
@@ -550,7 +557,10 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check carbon intensity constraints if enabled
-	if cs.config.Carbon.Enabled && cs.carbonImpl != nil && !cs.isOptedOut(pod) {
+	// Skipped when almanac scoring is active for the pod: the blended
+	// carbon+price score from the almanac API takes precedence over the
+	// local carbon intensity check (evaluated in Filter).
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil && !cs.isOptedOut(pod) && !cs.podAlmanacEnabled(pod) {
 		// Check if carbon constraint check is disabled for this pod
 		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok {
 			if enabled, _ := strconv.ParseBool(val); !enabled {

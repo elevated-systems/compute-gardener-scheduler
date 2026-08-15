@@ -101,8 +101,8 @@ func TestExtractNodeInfo(t *testing.T) {
 			wantRegion: "us-west-1",
 		},
 		{
-			name:     "nil node",
-			node:     nil,
+			name:             "nil node",
+			node:             nil,
 			wantProvider:     "",
 			wantRegion:       "",
 			wantZone:         "",

@@ -13,25 +13,26 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 )
 
+// podAlmanacEnabled reports whether almanac scoring is active for the pod:
+// the scheduler-level feature must be enabled and the pod must opt in via the
+// almanac-enabled annotation. Used to make the blended score take precedence
+// over the local carbon/price checks (see PreFilter).
+func (cs *ComputeGardenerScheduler) podAlmanacEnabled(pod *v1.Pod) bool {
+	if !cs.config.Almanac.Enabled || cs.almanacClient == nil {
+		return false
+	}
+	if val, ok := pod.Annotations[common.AnnotationAlmanacEnabled]; ok {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			return parsed
+		}
+	}
+	return false
+}
+
 // checkAlmanacScore checks if the pod should be scheduled based on almanac scoring
 // Returns nil status if scheduling should proceed, otherwise returns an Unschedulable status
 func (cs *ComputeGardenerScheduler) checkAlmanacScore(ctx context.Context, pod *v1.Pod, node *v1.Node) *framework.Status {
-	// Only proceed if almanac is enabled
-	if !cs.config.Almanac.Enabled || cs.almanacClient == nil {
-		return nil
-	}
-
-	// Check if pod has almanac enabled (opt-in via annotation)
-	enabled := false
-	if val, ok := pod.Annotations[common.AnnotationAlmanacEnabled]; ok {
-		if parsed, err := strconv.ParseBool(val); err == nil {
-			enabled = parsed
-		}
-	}
-
-	if !enabled {
-		klog.V(3).InfoS("Almanac scoring not enabled for pod",
-			"pod", klog.KObj(pod))
+	if !cs.podAlmanacEnabled(pod) {
 		return nil
 	}
 

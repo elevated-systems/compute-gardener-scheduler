@@ -123,10 +123,10 @@ const (
 	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
 
 	// Cloud provider standard labels
-	LabelTopologyRegion   = "topology.kubernetes.io/region"        // Standard K8s region label
-	LabelTopologyZone     = "topology.kubernetes.io/zone"          // Standard K8s zone label
-	LabelNodeInstanceType = "node.kubernetes.io/instance-type"     // Standard instance type label
-	LabelBetaInstanceType = "beta.kubernetes.io/instance-type"     // Legacy instance type label
+	LabelTopologyRegion   = "topology.kubernetes.io/region"    // Standard K8s region label
+	LabelTopologyZone     = "topology.kubernetes.io/zone"      // Standard K8s zone label
+	LabelNodeInstanceType = "node.kubernetes.io/instance-type" // Standard instance type label
+	LabelBetaInstanceType = "beta.kubernetes.io/instance-type" // Legacy instance type label
 )
 
 // Scheduler names

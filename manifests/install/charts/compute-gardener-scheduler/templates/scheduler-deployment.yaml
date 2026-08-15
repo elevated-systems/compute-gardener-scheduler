@@ -66,6 +66,7 @@ spec:
         - name: ALMANAC_DEFAULT_PRICE_WEIGHT
           value: "{{ .Values.almanac.defaultPriceWeight }}"
         - name: ALMANAC_FAIL_OPEN
+          value: "{{ .Values.almanac.failOpen }}"
         - name: ALMANAC_DEFAULT_SCORE_THRESHOLD
           value: "{{ .Values.almanac.defaultScoreThreshold }}"
         - name: ALMANAC_DEFAULT_PROVIDER
@@ -74,7 +75,6 @@ spec:
           value: "{{ .Values.almanac.defaultRegion }}"
         - name: ALMANAC_DEFAULT_INSTANCE_TYPE
           value: "{{ .Values.almanac.defaultInstanceType }}"
-          value: "{{ .Values.almanac.failOpen }}"
         {{- end }}
         {{- if .Values.priceAware.enabled }}
         - name: PRICING_ENABLED
