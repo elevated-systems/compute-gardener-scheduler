@@ -159,13 +159,16 @@ spec:
    - If score < threshold: node is filtered out (Unschedulable)
    - If score >= threshold: node passes filter
    - Threshold can be overridden per-pod via annotation
+   - The local carbon-intensity and time-of-use price checks are skipped for
+     this pod: the blended score replaces them, so they are not applied on
+     top of the almanac decision
 
 2. **When Almanac API is unavailable**:
    - If `failOpen: true`: Allow scheduling (default)
    - If `failOpen: false`: Block scheduling (fail-closed)
 
-3. **When pod doesn't opt in**:
-   - Falls back to existing carbon/price checks if enabled
+3. **When pod doesn't opt in** (or almanac is disabled):
+   - Existing carbon/price checks apply normally if enabled
    - Otherwise, no special scheduling constraints
 
 ## Deployment Example
@@ -188,9 +191,19 @@ spec:
 EOF
 ```
 
-2. **Update Scheduler ConfigMap**:
+2. **Update Scheduler Configuration**:
 
-Add Almanac configuration to the scheduler's plugin args ConfigMap.
+Almanac settings are read from `ALMANAC_*` environment variables on the
+scheduler pod. With the Helm chart, set the `almanac.*` values:
+
+```bash
+helm upgrade compute-gardener-scheduler compute-gardener/compute-gardener-scheduler \
+  --set almanac.enabled=true \
+  --set almanac.url="http://almanac-service.default.svc.cluster.local:8080"
+```
+
+(When deploying without Helm, add the `ALMANAC_*` env vars to the scheduler
+Deployment — see the env var table in the values file comments.)
 
 3. **Deploy Test Pod**:
 
@@ -254,11 +267,15 @@ curl -X POST http://almanac-service:8080/v1/score \
 
 If you're currently using separate carbon and price checks:
 
-1. **Keep existing configuration** - Almanac is opt-in per pod
-2. **Test with a few pods first** - Add almanac annotations to test workloads
-3. **Compare behavior** - Monitor scheduling decisions
+1. **Keep existing configuration** - Almanac is opt-in per pod; pods without
+   the annotation continue to use the local carbon/price checks unchanged
+2. **Test with a few pods first** - Add almanac annotations to test workloads;
+   opted-in pods use the blended score in place of the local checks
+3. **Compare behavior** - Monitor scheduling decisions for opted-in vs.
+   opted-out pods
 4. **Gradual rollout** - Incrementally add annotations to more workloads
-5. **Eventually disable** - Once validated, can disable separate checks
+5. **Optional cleanup** - Once fully migrated, you may disable the separate
+   checks cluster-wide; they have no effect on opted-in pods either way
 
 ## Troubleshooting
 
