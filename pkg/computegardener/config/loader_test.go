@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestLoadFromEnv(t *testing.T) {
@@ -1114,5 +1117,73 @@ func TestLoadFromEnvWithInvalidPowerConfig(t *testing.T) {
 	_, err := LoadFromEnv()
 	if err == nil {
 		t.Error("Expected error when max power is less than idle power")
+	}
+}
+
+// testConfigHolder wraps a Config so Load's reflection branch can be exercised.
+// It satisfies runtime.Object minimally; Load only reflects over its fields,
+// so ObjectMeta is not needed.
+type testConfigHolder struct {
+	Config Config
+}
+
+func (testConfigHolder) DeepCopyObject() runtime.Object   { return nil }
+func (testConfigHolder) GetObjectKind() schema.ObjectKind { return nil }
+
+// testEmptyHolder is a runtime.Object with no Config field, used to exercise
+// Load's "no field found" -> LoadFromEnv fallback branch.
+type testEmptyHolder struct{}
+
+func (testEmptyHolder) DeepCopyObject() runtime.Object   { return nil }
+func (testEmptyHolder) GetObjectKind() schema.ObjectKind { return nil }
+
+// TestLoadWithRuntimeObject exercises Load's reflection path: passing a
+// non-nil runtime.Object whose struct carries a Config field, for both valid
+// and invalid embedded configs, plus an object with no Config field (env
+// fallback).
+func TestLoadWithRuntimeObject(t *testing.T) {
+	// Fallback env so the no-Config-field branch has something to load.
+	os.Setenv("CARBON_ENABLED", "false")
+	defer os.Unsetenv("CARBON_ENABLED")
+
+	// 1) Valid embedded config returned by reference after Validate.
+	valid := testConfigHolder{
+		Config: Config{
+			Carbon: CarbonConfig{Enabled: false},
+			Power:  PowerConfig{DefaultIdlePower: 100, DefaultMaxPower: 400},
+		},
+	}
+	cfg, err := Load(&valid)
+	if err != nil {
+		t.Fatalf("Load(valid holder) error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("Load(valid holder) returned nil config")
+	}
+	if cfg.Power.DefaultIdlePower != 100 || cfg.Power.DefaultMaxPower != 400 {
+		t.Errorf("Expected embedded config values, got idle=%v max=%v",
+			cfg.Power.DefaultIdlePower, cfg.Power.DefaultMaxPower)
+	}
+
+	// 2) Invalid embedded config -> error.
+	invalid := testConfigHolder{
+		Config: Config{
+			Carbon: CarbonConfig{Enabled: false},
+			Power:  PowerConfig{DefaultIdlePower: 100, DefaultMaxPower: 50},
+		},
+	}
+	if _, err := Load(&invalid); err == nil {
+		t.Error("Expected error for invalid embedded config")
+	}
+
+	// 3) Object with no Config field -> reflection finds nothing ->
+	// LoadFromEnv fallback.
+	empty := testEmptyHolder{}
+	cfg, err = Load(&empty)
+	if err != nil {
+		t.Fatalf("Load(empty holder) error: %v", err)
+	}
+	if cfg == nil {
+		t.Error("Load(empty holder) should fall back to env config")
 	}
 }
