@@ -266,3 +266,48 @@ func TestEnsurePositiveDuration(t *testing.T) {
 		t.Errorf("Expected 1m, got %v for negative duration", result)
 	}
 }
+
+func TestOldestEntryAgeEmpty(t *testing.T) {
+	c := New(time.Minute, time.Hour)
+	defer c.Close()
+
+	_, _, ok := c.OldestEntryAge()
+	if ok {
+		t.Error("OldestEntryAge() reported data present on an empty cache")
+	}
+}
+
+func TestOldestEntryAge(t *testing.T) {
+	c := New(time.Minute, time.Hour)
+	defer c.Close()
+
+	// One fresh entry and one backdated entry. OldestEntryAge should report
+	// the backdated one and an age close to how far back it was pushed.
+	fresh := time.Now()
+	old := time.Now().Add(-3 * time.Minute)
+
+	c.Set("fresh-region", &api.ElectricityData{CarbonIntensity: 100, Timestamp: fresh})
+	c.Set("stale-region", &api.ElectricityData{CarbonIntensity: 200, Timestamp: old})
+
+	// Backdate the stale entry's internal timestamp (Set records its own wall
+	// clock, so we override to make the age deterministic).
+	c.mutex.Lock()
+	if e, exists := c.data["stale-region"]; exists {
+		e.timestamp = old
+	}
+	if e, exists := c.data["fresh-region"]; exists {
+		e.timestamp = fresh
+	}
+	c.mutex.Unlock()
+
+	age, region, ok := c.OldestEntryAge()
+	if !ok {
+		t.Fatal("OldestEntryAge() reported no data on a populated cache")
+	}
+	if region != "stale-region" {
+		t.Errorf("Expected oldest region 'stale-region', got %q", region)
+	}
+	if age < 2*time.Minute || age > 4*time.Minute {
+		t.Errorf("Expected oldest age ~3m, got %v", age)
+	}
+}
