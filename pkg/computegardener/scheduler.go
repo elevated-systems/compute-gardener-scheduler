@@ -16,6 +16,7 @@ import (
 
 	"k8s.io/utils/clock"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/almanac"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	schedulercache "github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/cache"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
@@ -53,6 +54,7 @@ type ComputeGardenerScheduler struct {
 	cache            *schedulercache.Cache
 	priceImpl        price.Implementation
 	carbonImpl       carbon.Implementation
+	almanacClient    *almanac.Client
 	clock            clock.Clock
 	hardwareProfiler *metrics.HardwareProfiler
 
@@ -145,6 +147,31 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 	var carbonImpl carbon.Implementation
 	if cfg.Carbon.Enabled {
 		carbonImpl = carbon.New(&cfg.Carbon, apiClient)
+	}
+
+	// Initialize almanac client if enabled
+	var almanacClient *almanac.Client
+	if cfg.Almanac.Enabled {
+		timeout := 10 * time.Second
+		if cfg.Almanac.Timeout != "" {
+			if parsed, err := time.ParseDuration(cfg.Almanac.Timeout); err == nil {
+				timeout = parsed
+			}
+		}
+
+		almanacClient = almanac.NewClient(
+			cfg.Almanac.URL,
+			almanac.WithTimeout(timeout),
+		)
+
+		klog.InfoS("Almanac scoring enabled",
+			"url", cfg.Almanac.URL,
+			"defaultCarbonWeight", cfg.Almanac.DefaultCarbonWeight,
+			"defaultPriceWeight", cfg.Almanac.DefaultPriceWeight,
+			"defaultScoreThreshold", cfg.Almanac.DefaultScoreThreshold,
+			"timeout", timeout)
+	} else {
+		klog.V(2).InfoS("Almanac scoring disabled")
 	}
 
 	// Setup metrics clients - if metrics server is not available, they'll be nil
@@ -241,6 +268,7 @@ func New(ctx context.Context, obj runtime.Object, h framework.Handle) (framework
 		cache:            dataCache,
 		priceImpl:        priceImpl,
 		carbonImpl:       carbonImpl,
+		almanacClient:    almanacClient,
 		clock:            clock.RealClock{},
 		hardwareProfiler: hardwareProfiler,
 
@@ -471,7 +499,14 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check pricing constraints if enabled
-	if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
+	// Skipped when almanac scoring is active for the pod: the blended
+	// carbon+price score from the almanac API takes precedence over the
+	// local TOU price check (evaluated in Filter).
+	if cs.podAlmanacEnabled(pod) {
+		// Keep delay-edge tracking consistent for when almanac is later
+		// disabled for this pod.
+		cs.priceDelayedPods[string(pod.UID)] = false
+	} else if cs.config.Pricing.Enabled && cs.priceImpl != nil && !cs.isOptedOut(pod) {
 		klog.V(3).InfoS("Checking price constraints in PreFilter",
 			"pod", klog.KObj(pod),
 			"enabled", cs.config.Pricing.Enabled)
@@ -522,7 +557,10 @@ func (cs *ComputeGardenerScheduler) PreFilter(ctx context.Context, state *framew
 	}
 
 	// Check carbon intensity constraints if enabled
-	if cs.config.Carbon.Enabled && cs.carbonImpl != nil && !cs.isOptedOut(pod) {
+	// Skipped when almanac scoring is active for the pod: the blended
+	// carbon+price score from the almanac API takes precedence over the
+	// local carbon intensity check (evaluated in Filter).
+	if cs.config.Carbon.Enabled && cs.carbonImpl != nil && !cs.isOptedOut(pod) && !cs.podAlmanacEnabled(pod) {
 		// Check if carbon constraint check is disabled for this pod
 		if val, ok := pod.Annotations[common.AnnotationCarbonEnabled]; ok {
 			if enabled, _ := strconv.ParseBool(val); !enabled {
@@ -614,6 +652,13 @@ func (cs *ComputeGardenerScheduler) Filter(ctx context.Context, state *framework
 	node := nodeInfo.Node()
 	if node == nil {
 		return framework.NewStatus(framework.Error, "node not found")
+	}
+
+	// Check almanac scoring if enabled
+	// This takes precedence over individual carbon/price checks when enabled
+	if status := cs.checkAlmanacScore(ctx, pod, node); status != nil && !status.IsSuccess() {
+		returnStatus = status
+		return status
 	}
 
 	// Check hardware profile energy efficiency if available

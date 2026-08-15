@@ -755,3 +755,759 @@ func TestValidateHardwareProfiles(t *testing.T) {
 func contains(s, substr string) bool {
 	return s != "" && substr != "" && len(s) >= len(substr) && strings.Contains(s, substr)
 }
+
+func TestValidateAlmanac(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     *Config
+		expectErr  bool
+		errMessage string
+	}{
+		{
+			name: "valid almanac config",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					Timeout:             "10s",
+					DefaultCarbonWeight: 0.6,
+					DefaultPriceWeight:  0.4,
+					FailOpen:            true,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "missing URL when enabled",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "", // Missing
+					DefaultCarbonWeight: 0.6,
+					DefaultPriceWeight:  0.4,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "almanac URL is required when almanac is enabled",
+		},
+		{
+			name: "invalid timeout",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					Timeout:             "not-a-duration",
+					DefaultCarbonWeight: 0.6,
+					DefaultPriceWeight:  0.4,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "invalid almanac timeout",
+		},
+		{
+			name: "weights don't sum to 1.0",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					DefaultCarbonWeight: 0.5,
+					DefaultPriceWeight:  0.2, // Sum = 0.7
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "default weights must sum to 1.0",
+		},
+		{
+			name: "carbon weight out of range",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					DefaultCarbonWeight: 1.5, // > 1
+					DefaultPriceWeight:  -0.5,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "default carbon weight must be between 0 and 1",
+		},
+		{
+			name: "invalid score threshold",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:               true,
+					URL:                   "http://almanac.svc:8080",
+					DefaultCarbonWeight:   0.6,
+					DefaultPriceWeight:    0.4,
+					DefaultScoreThreshold: 1.5, // > 1
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "default score threshold must be between 0 and 1",
+		},
+		{
+			name: "negative score threshold",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:               true,
+					URL:                   "http://almanac.svc:8080",
+					DefaultCarbonWeight:   0.6,
+					DefaultPriceWeight:    0.4,
+					DefaultScoreThreshold: -0.1,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr:  true,
+			errMessage: "default score threshold must be between 0 and 1",
+		},
+		{
+			name: "default score threshold applied",
+			config: &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					DefaultCarbonWeight: 0.6,
+					DefaultPriceWeight:  0.4,
+					// DefaultScoreThreshold not set
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			},
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.validateAlmanac()
+
+			if (err != nil) != tt.expectErr {
+				t.Errorf("validateAlmanac() error = %v, expectErr %v", err, tt.expectErr)
+				return
+			}
+
+			if err != nil && tt.errMessage != "" && !contains(err.Error(), tt.errMessage) {
+				t.Errorf("validateAlmanac() error = %v, expected to contain %v", err, tt.errMessage)
+			}
+
+			// Check default threshold was applied
+			if !tt.expectErr && tt.name == "default score threshold applied" {
+				if tt.config.Almanac.DefaultScoreThreshold != 0.7 {
+					t.Errorf("Expected default score threshold 0.7, got %f", tt.config.Almanac.DefaultScoreThreshold)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateAlmanacWithCloudDefaults(t *testing.T) {
+	config := &Config{
+		Almanac: AlmanacConfig{
+			Enabled:             true,
+			URL:                 "http://almanac.svc:8080",
+			DefaultCarbonWeight: 0.5,
+			DefaultPriceWeight:  0.5,
+			DefaultProvider:     "aws",
+			DefaultRegion:       "us-west-2",
+			DefaultInstanceType: "m5.xlarge",
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.validateAlmanac()
+	if err != nil {
+		t.Errorf("validateAlmanac() unexpected error with cloud defaults: %v", err)
+	}
+}
+
+func TestValidateWithAlmanacEnabledViaValidate(t *testing.T) {
+	// Test that Validate() properly calls validateAlmanac()
+	config := &Config{
+		Almanac: AlmanacConfig{
+			Enabled:             true,
+			URL:                 "", // Missing URL
+			DefaultCarbonWeight: 0.6,
+			DefaultPriceWeight:  0.4,
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Validate() expected error for missing almanac URL")
+	}
+	if !strings.Contains(err.Error(), "invalid almanac config") {
+		t.Errorf("Expected error to contain 'invalid almanac config', got: %v", err)
+	}
+}
+
+func TestValidateWithAlmanacWeightsEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		carbonW     float64
+		priceW      float64
+		expectError bool
+	}{
+		{"exact sum 1.0", 0.5, 0.5, false},
+		{"slight float tolerance", 0.333, 0.667, false},
+		{"too low sum", 0.3, 0.3, true},
+		{"too high sum", 0.6, 0.6, true},
+		{"zero weights", 0.0, 1.0, false},
+		{"inverted weights", 1.0, 0.0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				Almanac: AlmanacConfig{
+					Enabled:             true,
+					URL:                 "http://almanac.svc:8080",
+					DefaultCarbonWeight: tt.carbonW,
+					DefaultPriceWeight:  tt.priceW,
+				},
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+			}
+
+			err := config.Validate()
+			if (err != nil) != tt.expectError {
+				t.Errorf("Validate() error = %v, expectError %v", err, tt.expectError)
+			}
+		})
+	}
+}
+
+func TestValidateHardwareProfilesMissingGPUProfile(t *testing.T) {
+	profiles := &HardwareProfiles{
+		CPUProfiles: map[string]PowerProfile{
+			"test-cpu": {IdlePower: 50, MaxPower: 200},
+		},
+		// No GPU profiles defined
+		CloudInstanceMapping: map[string]map[string]HardwareComponents{
+			"aws": {
+				"g4dn.xlarge": {
+					CPUModel: "test-cpu",
+					GPUModel: "nvidia-t4", // References non-existent GPU profile
+				},
+			},
+		},
+	}
+
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			HardwareProfiles: profiles,
+		},
+	}
+
+	err := config.validateHardwareProfiles()
+	if err == nil {
+		t.Error("Expected error for non-existent GPU model")
+	}
+	if !strings.Contains(err.Error(), "not found in GPU profiles") {
+		t.Errorf("Expected error about GPU profiles, got: %v", err)
+	}
+}
+
+func TestValidateHardwareProfilesMissingMemoryProfile(t *testing.T) {
+	profiles := &HardwareProfiles{
+		CPUProfiles: map[string]PowerProfile{
+			"test-cpu": {IdlePower: 50, MaxPower: 200},
+		},
+		// No memory profiles defined
+		CloudInstanceMapping: map[string]map[string]HardwareComponents{
+			"aws": {
+				"c5.large": {
+					CPUModel:   "test-cpu",
+					MemoryType: "ddr5", // References non-existent memory profile
+				},
+			},
+		},
+	}
+
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			HardwareProfiles: profiles,
+		},
+	}
+
+	err := config.validateHardwareProfiles()
+	if err == nil {
+		t.Error("Expected error for non-existent memory type")
+	}
+	if !strings.Contains(err.Error(), "not found in memory profiles") {
+		t.Errorf("Expected error about memory profiles, got: %v", err)
+	}
+}
+
+func TestValidateHardwareProfilesNegativeMemoryPower(t *testing.T) {
+	profiles := &HardwareProfiles{
+		CPUProfiles: map[string]PowerProfile{
+			"test-cpu": {IdlePower: 50, MaxPower: 200},
+		},
+		MemProfiles: map[string]MemoryPowerProfile{
+			"bad-mem": {
+				IdlePowerPerGB: -0.1, // Negative idle power
+				MaxPowerPerGB:  0.3,
+			},
+		},
+	}
+
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			HardwareProfiles: profiles,
+		},
+	}
+
+	err := config.validateHardwareProfiles()
+	if err == nil {
+		t.Error("Expected error for negative memory idle power")
+	}
+	if !strings.Contains(err.Error(), "cannot be negative") {
+		t.Errorf("Expected error about negative power, got: %v", err)
+	}
+}
+
+func TestValidateHardwareProfilesZeroMemoryMaxPower(t *testing.T) {
+	profiles := &HardwareProfiles{
+		CPUProfiles: map[string]PowerProfile{
+			"test-cpu": {IdlePower: 50, MaxPower: 200},
+		},
+		MemProfiles: map[string]MemoryPowerProfile{
+			"bad-mem": {
+				IdlePowerPerGB: 0.1,
+				MaxPowerPerGB:  0, // Zero max power
+			},
+		},
+	}
+
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			HardwareProfiles: profiles,
+		},
+	}
+
+	err := config.validateHardwareProfiles()
+	if err == nil {
+		t.Error("Expected error for zero memory max power")
+	}
+	if !strings.Contains(err.Error(), "must be positive") {
+		t.Errorf("Expected error about positive power, got: %v", err)
+	}
+}
+
+func TestValidateWithHardwareProfilesEnabled(t *testing.T) {
+	profiles := &HardwareProfiles{
+		CPUProfiles: map[string]PowerProfile{
+			"test-cpu": {IdlePower: 50, MaxPower: 200},
+		},
+	}
+
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			HardwareProfiles: profiles,
+		},
+	}
+
+	// Should pass - valid hardware profiles
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with valid hardware profiles: %v", err)
+	}
+
+	// Now test with invalid hardware profiles
+	profiles.CPUProfiles["test-cpu"] = PowerProfile{IdlePower: 0, MaxPower: 200}
+	err = config.Validate()
+	if err == nil {
+		t.Error("Validate() expected error for invalid hardware profiles")
+	}
+	if !strings.Contains(err.Error(), "invalid hardware profiles") {
+		t.Errorf("Expected error about hardware profiles, got: %v", err)
+	}
+}
+
+func TestValidateWithNegativeNodePower(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			NodePowerConfig: map[string]NodePower{
+				"bad-node": {
+					IdlePower: -50, // Negative idle power
+					MaxPower:  400,
+				},
+			},
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Expected error for negative node idle power")
+	}
+	if !strings.Contains(err.Error(), "idle power for node") {
+		t.Errorf("Expected error about node idle power, got: %v", err)
+	}
+}
+
+func TestValidateWithGPUWorkloadTypes(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			NodePowerConfig: map[string]NodePower{
+				"gpu-node": {
+					IdlePower:    100,
+					MaxPower:     500,
+					IdleGPUPower: 50,
+					MaxGPUPower:  300,
+					GPUWorkloadTypes: map[string]float64{
+						"inference": 0.8,
+						"training":  1.2,
+					},
+				},
+			},
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with GPU workload types: %v", err)
+	}
+}
+
+func TestValidateWithNodePUEValues(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+			NodePowerConfig: map[string]NodePower{
+				"node1": {
+					IdlePower: 100,
+					MaxPower:  400,
+					PUE:       1.2,
+					GPUPUE:    1.15,
+				},
+			},
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with node PUE values: %v", err)
+	}
+}
+
+func TestValidateWithPricingNoRates(t *testing.T) {
+	config := &Config{
+		Pricing: PriceConfig{
+			Enabled:  true,
+			Provider: "tou",
+			Schedules: []Schedule{
+				{
+					Name:      "no-rates",
+					DayOfWeek: "1-5",
+					StartTime: "14:00",
+					EndTime:   "19:00",
+					// No rates specified - should be valid
+				},
+			},
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with pricing schedules without rates: %v", err)
+	}
+}
+
+func TestValidateWithPricingOnlyPeakRate(t *testing.T) {
+	config := &Config{
+		Pricing: PriceConfig{
+			Enabled:  true,
+			Provider: "tou",
+			Schedules: []Schedule{
+				{
+					Name:      "peak-only",
+					DayOfWeek: "1-5",
+					StartTime: "14:00",
+					EndTime:   "19:00",
+					PeakRate:  0.30,
+					// OffPeakRate is zero - should fail when PeakRate is non-zero
+				},
+			},
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Validate() expected error when only peak rate is provided")
+	}
+}
+
+func TestValidateWithCarbonDisabled(t *testing.T) {
+	config := &Config{
+		Carbon: CarbonConfig{
+			Enabled: false,
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with carbon disabled: %v", err)
+	}
+}
+
+func TestValidateWithCarbonEnabledNoAPIKey(t *testing.T) {
+	config := &Config{
+		Carbon: CarbonConfig{
+			Enabled:            true,
+			Provider:           "electricity-maps-api",
+			IntensityThreshold: 200,
+			APIConfig: ElectricityMapsAPIConfig{
+				APIKey: "", // Missing
+			},
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Validate() expected error for missing API key")
+	}
+}
+
+func TestValidateWithNegativeCarbonThreshold(t *testing.T) {
+	config := &Config{
+		Carbon: CarbonConfig{
+			Enabled:            true,
+			Provider:           "electricity-maps-api",
+			IntensityThreshold: -50, // Negative
+			APIConfig: ElectricityMapsAPIConfig{
+				APIKey: "test-key",
+			},
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err == nil {
+		t.Error("Validate() expected error for negative carbon threshold")
+	}
+}
+
+func TestValidateWithPricingEnabledNoSchedules(t *testing.T) {
+	config := &Config{
+		Pricing: PriceConfig{
+			Enabled:   true,
+			Provider:  "tou",
+			Schedules: []Schedule{}, // Empty
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with empty pricing schedules: %v", err)
+	}
+}
+
+func TestValidateWithMultiplePricingSchedules(t *testing.T) {
+	config := &Config{
+		Pricing: PriceConfig{
+			Enabled:  true,
+			Provider: "tou",
+			Schedules: []Schedule{
+				{
+					Name:        "weekday",
+					DayOfWeek:   "1-5",
+					StartTime:   "14:00",
+					EndTime:     "19:00",
+					PeakRate:    0.30,
+					OffPeakRate: 0.15,
+				},
+				{
+					Name:        "weekend",
+					DayOfWeek:   "0,6",
+					StartTime:   "10:00",
+					EndTime:     "16:00",
+					PeakRate:    0.25,
+					OffPeakRate: 0.15,
+				},
+			},
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with multiple pricing schedules: %v", err)
+	}
+}
+
+func TestValidateWithAlmanacDisabled(t *testing.T) {
+	config := &Config{
+		Almanac: AlmanacConfig{
+			Enabled: false,
+			URL:     "", // Should not matter when disabled
+		},
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with almanac disabled: %v", err)
+	}
+}
+
+func TestValidateWithMetricsDefaults(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+		Metrics: MetricsConfig{
+			// Empty metrics config - should use defaults
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with empty metrics config: %v", err)
+	}
+}
+
+func TestValidateWithPrometheusCompletionDelay(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+		Metrics: MetricsConfig{
+			SamplingInterval: "30s",
+			Prometheus: &PrometheusConfig{
+				URL:             "http://prometheus:9090",
+				QueryTimeout:    "30s",
+				CompletionDelay: "45s",
+			},
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with Prometheus completion delay: %v", err)
+	}
+}
+
+func TestValidateWithAllValidDownsamplingStrategies(t *testing.T) {
+	strategies := []string{"lttb", "timeBased", "minMax"}
+
+	for _, strategy := range strategies {
+		t.Run(strategy, func(t *testing.T) {
+			config := &Config{
+				Power: PowerConfig{
+					DefaultIdlePower: 100,
+					DefaultMaxPower:  400,
+				},
+				Metrics: MetricsConfig{
+					SamplingInterval:     "30s",
+					DownsamplingStrategy: strategy,
+				},
+			}
+
+			err := config.Validate()
+			if err != nil {
+				t.Errorf("Validate() unexpected error with strategy %s: %v", strategy, err)
+			}
+		})
+	}
+}
+
+func TestValidateWithEmptyDownsamplingStrategy(t *testing.T) {
+	config := &Config{
+		Power: PowerConfig{
+			DefaultIdlePower: 100,
+			DefaultMaxPower:  400,
+		},
+		Metrics: MetricsConfig{
+			SamplingInterval:     "30s",
+			DownsamplingStrategy: "", // Empty - should be valid
+		},
+	}
+
+	err := config.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error with empty downsampling strategy: %v", err)
+	}
+}

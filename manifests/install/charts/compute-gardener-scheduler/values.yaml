@@ -112,6 +112,32 @@ carbonAware:
     # built-in default. Override for non-California deployments, e.g. "US-NY-NYIS".
     region: "US-CAL-CISO"
 
+# Almanac scoring API configuration
+# Blends carbon intensity and pricing signals for multi-dimensional optimization.
+# When enabled and a pod opts in via annotation, the scheduler calls the almanac API
+# instead of using direct carbon/price checks.
+almanac:
+  enabled: false
+  # Base URL for the almanac scoring API (e.g., "http://almanac-api.almanac.svc:8080")
+  url: ""
+  # Request timeout (default: "10s")
+  timeout: "10s"
+  # Default optimization weights (can be overridden per-pod via annotations)
+  # Must sum to 1.0
+  defaultCarbonWeight: 0.6
+  defaultPriceWeight: 0.4
+  # Fail-open: allow scheduling when almanac API is unreachable (default: true)
+  failOpen: true
+  # Default score threshold for proceeding (can be overridden per-pod via annotation)
+  # Range: 0.0-1.0, higher = stricter (default: 0.7)
+  defaultScoreThreshold: 0.7
+  # Cloud provider defaults (used when node labels are not available)
+  # These allow scoring to work even when the almanac API cannot determine
+  # the node location from Kubernetes labels
+  defaultProvider: ""
+  defaultRegion: ""
+  defaultInstanceType: ""
+
 # Price-aware scheduling configuration
 priceAware:
   enabled: false

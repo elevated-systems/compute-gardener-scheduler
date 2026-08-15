@@ -61,6 +61,12 @@ const (
 	AnnotationDryRunEstimatedCostSavings   = AnnotationBase + "/dry-run-estimated-cost-savings-usd"
 	AnnotationDryRunTrackingID             = AnnotationBase + "/dry-run-tracking-id"
 
+	// Almanac scoring API annotations (pod-level optimization preferences)
+	AnnotationAlmanacEnabled        = AnnotationBase + "/almanac-enabled"         // Enable almanac-based scoring (default: false)
+	AnnotationAlmanacCarbonWeight   = AnnotationBase + "/almanac-carbon-weight"   // Carbon weight for scoring (0.0-1.0)
+	AnnotationAlmanacPriceWeight    = AnnotationBase + "/almanac-price-weight"    // Price weight for scoring (0.0-1.0)
+	AnnotationAlmanacScoreThreshold = AnnotationBase + "/almanac-score-threshold" // Minimum score to proceed (0.0-1.0, overrides API recommendation)
+
 	// ----------------------------------------
 	// Namespace policy annotations
 	// ----------------------------------------
@@ -115,6 +121,12 @@ const (
 
 	// CPU frequency dynamic check enabled
 	AnnotationCPUDynamicFrequencyEnabled = AnnotationBase + "/cpu-dynamic-frequency-enabled" // Whether to dynamically check CPU frequency
+
+	// Cloud provider standard labels
+	LabelTopologyRegion   = "topology.kubernetes.io/region"    // Standard K8s region label
+	LabelTopologyZone     = "topology.kubernetes.io/zone"      // Standard K8s zone label
+	LabelNodeInstanceType = "node.kubernetes.io/instance-type" // Standard instance type label
+	LabelBetaInstanceType = "beta.kubernetes.io/instance-type" // Legacy instance type label
 )
 
 // Scheduler names
