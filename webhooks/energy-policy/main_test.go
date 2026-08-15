@@ -2,11 +2,24 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -319,6 +332,116 @@ func TestNewEnergyPolicyWebhookOutOfCluster(t *testing.T) {
 	if _, err := NewEnergyPolicyWebhook(); err == nil {
 		t.Fatal("expected an error when not running in a cluster")
 	}
+}
+
+// TestNewEnergyPolicyWebhookInClusterSimulated drives the constructor's
+// success path without a real cluster: rest.InClusterConfig only needs the
+// KUBERNETES_SERVICE_HOST/PORT env vars plus a readable service-account
+// token at the well-known path, and kubernetes.NewForConfig makes no
+// network calls. client-go hard-codes the token path, so the test writes
+// there and skips if it cannot (e.g. unprivileged CI).
+func TestNewEnergyPolicyWebhookInClusterSimulated(t *testing.T) {
+	const tokenDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+	if _, err := os.Stat(tokenDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(tokenDir, 0o755); err != nil {
+			t.Skipf("cannot simulate in-cluster env (cannot create %s): %v", tokenDir, err)
+		}
+	}
+	tokenFile := filepath.Join(tokenDir, "token")
+	if err := os.WriteFile(tokenFile, []byte("test-token"), 0o600); err != nil {
+		t.Skipf("cannot simulate in-cluster env (cannot write %s): %v", tokenFile, err)
+	}
+
+	t.Setenv("KUBERNETES_SERVICE_HOST", "127.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+
+	w, err := NewEnergyPolicyWebhook()
+	if err != nil {
+		t.Fatalf("expected success with simulated in-cluster env, got: %v", err)
+	}
+	if w == nil || w.kubeClient == nil {
+		t.Fatal("expected webhook with a non-nil kube client")
+	}
+}
+
+// TestMainSimulated drives main()'s startup path: simulated in-cluster env,
+// a self-signed cert pair at the relative "tls.crt"/"tls.key" paths main()
+// expects, and -port 0 replaced with a free port so ListenAndServeTLS never
+// collides. main() blocks in the listener once it has started, so the test
+// runs it in a goroutine and waits for the port to accept connections.
+func TestMainSimulated(t *testing.T) {
+	const tokenDir = "/var/run/secrets/kubernetes.io/serviceaccount"
+	if err := os.MkdirAll(tokenDir, 0o755); err != nil {
+		t.Skipf("cannot simulate in-cluster env (cannot create %s): %v", tokenDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(tokenDir, "token"), []byte("test-token"), 0o600); err != nil {
+		t.Skipf("cannot simulate in-cluster env (cannot write token): %v", err)
+	}
+	t.Setenv("KUBERNETES_SERVICE_HOST", "127.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+
+	// Free port so the server never collides with a live one.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+
+	// Self-signed cert pair for ListenAndServeTLS.
+	dir := t.TempDir()
+	t.Chdir(dir) // main() loads "tls.crt"/"tls.key" relative to the cwd
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "energy-policy-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	if err := os.WriteFile("tls.crt", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("write tls.crt: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	if err := os.WriteFile("tls.key", pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatalf("write tls.key: %v", err)
+	}
+
+	// main() parses process args and then blocks in ListenAndServeTLS.
+	oldArgs := os.Args
+	os.Args = []string{"energy-policy", "-port", strconv.Itoa(port)}
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	done := make(chan struct{})
+	go func() {
+		main()
+		close(done) // reached only if the server fails to start
+	}()
+
+	// Wait until the TLS listener accepts connections.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			conn.Close()
+			return
+		}
+		select {
+		case <-done:
+			t.Fatal("main() exited before the server was serving")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	t.Fatal("server did not start within 10s")
 }
 
 func TestServeHTTP(t *testing.T) {
