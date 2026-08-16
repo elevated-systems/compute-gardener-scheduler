@@ -108,6 +108,9 @@ func (p *AnnotationPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *conf
 	if pueStr, ok := node.Annotations[common.AnnotationPUE]; ok {
 		if pue, err := strconv.ParseFloat(pueStr, 64); err == nil && pue >= 1.0 {
 			nodePower.PUE = pue
+		} else {
+			// Annotation present but invalid; fall back to the default PUE
+			nodePower.PUE = common.DefaultPUE
 		}
 	} else {
 		// Apply default PUE
@@ -118,6 +121,9 @@ func (p *AnnotationPowerProvider) GetNodePowerInfo(node *v1.Node, hwConfig *conf
 	if gpuPueStr, ok := node.Annotations[common.AnnotationGPUPUE]; ok {
 		if gpuPue, err := strconv.ParseFloat(gpuPueStr, 64); err == nil && gpuPue >= 1.0 {
 			nodePower.GPUPUE = gpuPue
+		} else if nodePower.MaxGPUPower > 0 {
+			// Annotation present but invalid; fall back to the default GPU PUE
+			nodePower.GPUPUE = common.DefaultGPUPUE
 		}
 	} else if nodePower.MaxGPUPower > 0 {
 		// Apply default GPU PUE if we have GPUs
