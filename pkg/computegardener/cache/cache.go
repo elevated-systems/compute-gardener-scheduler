@@ -190,6 +190,19 @@ func (c *Cache) Close() {
 	close(c.stopCh)
 }
 
+// TestBackdate ages an existing cache entry by the given duration. This is a
+// test-only helper that lets tests backdate an entry's internal timestamp so
+// that OldestEntryAge reports a deterministic age. It is a no-op if the region
+// is not present.
+func (c *Cache) TestBackdate(region string, age time.Duration) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if entry, exists := c.data[region]; exists {
+		entry.timestamp = time.Now().Add(-age)
+	}
+}
+
 // Clear removes all entries from the cache
 func (c *Cache) Clear() {
 	c.mutex.Lock()
@@ -216,4 +229,30 @@ func (c *Cache) GetRegions() []string {
 		regions = append(regions, region)
 	}
 	return regions
+}
+
+// OldestEntryAge returns the age of the oldest entry currently in the cache,
+// along with the region it belongs to. It returns (0, "", false) when the
+// cache is empty. Callers use this to tell a cache that is merely a few
+// seconds stale (normal between refreshes) apart from one that has gone
+// fully stale (refresh worker failing).
+func (c *Cache) OldestEntryAge() (time.Duration, string, bool) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+
+	if len(c.data) == 0 {
+		return 0, "", false
+	}
+
+	now := time.Now()
+	var oldestAge time.Duration
+	oldestRegion := ""
+	for region, entry := range c.data {
+		age := now.Sub(entry.timestamp)
+		if oldestRegion == "" || age > oldestAge {
+			oldestAge = age
+			oldestRegion = region
+		}
+	}
+	return oldestAge, oldestRegion, true
 }
