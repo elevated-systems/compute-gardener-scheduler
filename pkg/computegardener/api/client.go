@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
@@ -45,6 +47,19 @@ func (e *ElectricityData) GetDataStatus() string {
 		return "estimated"
 	}
 	return "real"
+}
+
+// ForecastData represents a single forecast data point
+type ForecastData struct {
+	Datetime        time.Time `json:"datetime"`
+	CarbonIntensity float64   `json:"carbonIntensity"`
+}
+
+// ElectricityForecast represents the forecast response from the API
+type ElectricityForecast struct {
+	Zone                string         `json:"zone"`
+	Data                []ForecastData `json:"data"`
+	TemporalGranularity string         `json:"temporalGranularity"`
 }
 
 // ClientOption allows customizing the client
@@ -150,14 +165,184 @@ func (c *Client) GetCarbonIntensity(ctx context.Context, region string) (*Electr
 	return nil, fmt.Errorf("all retries failed: %v", lastErr)
 }
 
+// GetCarbonIntensityForecast fetches carbon intensity forecast data with retries and error handling.
+// horizonHours must be between 1 and 72.
+func (c *Client) GetCarbonIntensityForecast(ctx context.Context, region string, horizonHours int) (*ElectricityForecast, error) {
+	// Validate inputs
+	if region == "" {
+		return nil, fmt.Errorf("region cannot be empty")
+	}
+	if horizonHours <= 0 || horizonHours > 72 {
+		return nil, fmt.Errorf("horizonHours must be between 1 and 72, got %d", horizonHours)
+	}
+
+	// Forecast data is not cached - it changes frequently and has a short window of usefulness
+	var lastErr error
+	for attempt := 0; attempt <= c.cacheConfig.MaxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled: %v", ctx.Err())
+		case <-c.rateLimiter.C:
+			data, err := c.doForecastRequest(ctx, region, horizonHours)
+			if err == nil {
+				klog.V(2).InfoS("Successfully fetched carbon intensity forecast",
+					"region", region,
+					"horizonHours", horizonHours,
+					"dataPoints", len(data.Data))
+				return data, nil
+			}
+			lastErr = err
+			klog.V(2).InfoS("Forecast API request failed, retrying",
+				"attempt", attempt+1,
+				"maxRetries", c.cacheConfig.MaxRetries,
+				"error", err)
+
+			// Calculate backoff duration
+			backoff := c.getBackoffDuration(attempt)
+
+			// Wait with context awareness
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, fmt.Errorf("context cancelled during backoff: %v", ctx.Err())
+			case <-timer.C:
+				continue
+			}
+		}
+	}
+	return nil, fmt.Errorf("all forecast retries failed: %v", lastErr)
+}
+
+// doForecastRequest makes a single HTTP request to the forecast endpoint and decodes the response.
+func (c *Client) doForecastRequest(ctx context.Context, region string, horizonHours int) (*ElectricityForecast, error) {
+	// Build URL for forecast endpoint
+	// The forecast endpoint uses the same base URL as the latest endpoint
+	// https://api.electricitymap.org/v3/carbon-intensity/forecast?zone=REGION
+	url := c.buildURL("forecast", region)
+
+	// Create request with context
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create forecast request: %v", err)
+	}
+
+	// Log the exact URL being used for debugging
+	klog.V(2).InfoS("Making carbon forecast API request",
+		"url", req.URL.String(),
+		"region", region,
+		"horizonHours", horizonHours,
+		"hasApiKey", c.apiConfig.APIKey != "")
+
+	// Add headers
+	req.Header.Set("auth-token", c.apiConfig.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("forecast request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Handle response status
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Continue processing
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("rate limit exceeded")
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("invalid API key")
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("region not found: %s", region)
+	default:
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	// Decode response
+	var forecast ElectricityForecast
+	if err := json.NewDecoder(resp.Body).Decode(&forecast); err != nil {
+		return nil, fmt.Errorf("failed to decode forecast response: %v", err)
+	}
+
+	// Validate response data
+	if len(forecast.Data) == 0 {
+		return nil, fmt.Errorf("no forecast data returned")
+	}
+
+	// Validate individual data points
+	for i, point := range forecast.Data {
+		if point.CarbonIntensity < 0 {
+			return nil, fmt.Errorf("invalid carbon intensity value at index %d: %f", i, point.CarbonIntensity)
+		}
+	}
+
+	return &forecast, nil
+}
+
+// buildURL constructs the appropriate URL for the given endpoint.
+// The config URL may be either:
+//   - A base URL like "https://api.electricitymap.org/v3/carbon-intensity/" (preferred)
+//   - A full latest URL like "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=" (legacy)
+//
+// For the latest endpoint, it appends the zone as a query parameter.
+// For the forecast endpoint, it appends the forecast path and zone as a query parameter.
+func (c *Client) buildURL(endpoint, region string) string {
+	baseURL := c.apiConfig.URL
+
+	// If the URL already contains the latest endpoint with zone param,
+	// we need to extract the base URL before "latest"
+	if strings.Contains(baseURL, "latest?zone=") || strings.Contains(baseURL, "latest?zone%3D") {
+		// Remove the "latest?zone=" part to get base URL
+		if idx := strings.Index(baseURL, "latest"); idx != -1 {
+			baseURL = baseURL[:idx]
+		}
+	} else if strings.HasSuffix(baseURL, "latest") {
+		// Remove the "latest" part
+		baseURL = strings.TrimSuffix(baseURL, "latest")
+	} else if strings.HasSuffix(baseURL, "latest/") {
+		// Remove the "latest/" part
+		baseURL = strings.TrimSuffix(baseURL, "latest/")
+	}
+
+	// Ensure baseURL ends with "/"
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+
+	// Build URL based on endpoint
+	var fullURL string
+	if endpoint == "forecast" {
+		fullURL = baseURL + "forecast"
+	} else {
+		// Default to latest
+		fullURL = baseURL + "latest"
+	}
+
+	// Add zone query parameter
+	u, err := url.Parse(fullURL)
+	if err == nil {
+		q := u.Query()
+		q.Set("zone", region)
+		u.RawQuery = q.Encode()
+		fullURL = u.String()
+	}
+
+	return fullURL
+}
+
 func (c *Client) doRequest(ctx context.Context, region string) (*ElectricityData, error) {
 	// Validate inputs
 	if region == "" {
 		return nil, fmt.Errorf("region cannot be empty")
 	}
 
+	// Build URL for latest endpoint (handles both base and legacy full latest URLs)
+	url := c.buildURL("latest", region)
+
 	// Create request with context
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiConfig.URL+region, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}

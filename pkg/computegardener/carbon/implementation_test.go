@@ -2,7 +2,10 @@ package carbon
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,9 +20,22 @@ type MockHTTPClient struct {
 	shouldFail   bool
 	statusCode   int
 	responseBody string
+	forecastBody string
+	forecastFail bool
 }
 
 func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	// Forecast endpoint takes precedence when it's a forecast request
+	if strings.Contains(req.URL.String(), "forecast") {
+		if m.forecastFail {
+			return nil, errors.New("simulated forecast network error")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(m.forecastBody)),
+		}, nil
+	}
+
 	if m.shouldFail {
 		return &http.Response{
 			StatusCode: m.statusCode,
@@ -158,6 +174,83 @@ func TestGetCurrentIntensity(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetForecast(t *testing.T) {
+	validForecast := `{
+		"zone": "test-region",
+		"data": [
+			{"datetime": "2023-01-01T12:00:00Z", "carbonIntensity": 150.5},
+			{"datetime": "2023-01-01T13:00:00Z", "carbonIntensity": 120.3}
+		],
+		"temporalGranularity": "hourly"
+	}`
+
+	invalidForecast := "not-json"
+
+	newImpl := func(httpClient *MockHTTPClient) Implementation {
+		cfg := &config.CarbonConfig{
+			APIConfig: config.ElectricityMapsAPIConfig{
+				Region: "test-region",
+				APIKey: "test-key",
+			},
+		}
+		apiConfig := config.ElectricityMapsAPIConfig{
+			URL:    "https://test-api.example.com/v3/carbon-intensity/",
+			APIKey: "test-key",
+			Region: "test-region",
+		}
+		cacheConfig := config.APICacheConfig{
+			CacheTTL:    time.Minute,
+			MaxCacheAge: time.Minute * 10,
+			Timeout:     time.Second * 5,
+			MaxRetries:  1,
+			RetryDelay:  time.Millisecond,
+			RateLimit:   10,
+		}
+		client := api.NewClient(apiConfig, cacheConfig,
+			api.WithHTTPClient(httpClient),
+		)
+		return New(cfg, client)
+	}
+
+	t.Run("successful forecast", func(t *testing.T) {
+		impl := newImpl(&MockHTTPClient{forecastBody: validForecast})
+		forecast, err := impl.GetForecast(context.Background(), 2)
+		if err != nil {
+			t.Fatalf("GetForecast() unexpected error: %v", err)
+		}
+		if forecast.Zone != "test-region" {
+			t.Errorf("GetForecast() zone = %q, want %q", forecast.Zone, "test-region")
+		}
+		if len(forecast.Data) != 2 {
+			t.Errorf("GetForecast() data length = %d, want 2", len(forecast.Data))
+		}
+	})
+
+	t.Run("API error", func(t *testing.T) {
+		impl := newImpl(&MockHTTPClient{forecastFail: true})
+		_, err := impl.GetForecast(context.Background(), 2)
+		if err == nil {
+			t.Fatal("GetForecast() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to get carbon intensity forecast") {
+			t.Errorf("GetForecast() error = %q, want it to contain %q",
+				err.Error(), "failed to get carbon intensity forecast")
+		}
+	})
+
+	t.Run("invalid forecast data", func(t *testing.T) {
+		impl := newImpl(&MockHTTPClient{forecastBody: invalidForecast})
+		_, err := impl.GetForecast(context.Background(), 2)
+		if err == nil {
+			t.Fatal("GetForecast() expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "failed to decode forecast response") {
+			t.Errorf("GetForecast() error = %q, want it to contain %q",
+				err.Error(), "failed to decode forecast response")
+		}
+	})
 }
 
 func TestCheckIntensityConstraints(t *testing.T) {
