@@ -832,27 +832,106 @@ func (cs *ComputeGardenerScheduler) applyNamespaceEnergyBudget(ctx context.Conte
 	return nil
 }
 
+// getMaxSchedulingDelay returns the effective max scheduling delay for a pod,
+// applying the pod-level annotation override on top of the global config.
+func (cs *ComputeGardenerScheduler) getMaxSchedulingDelay(pod *v1.Pod) time.Duration {
+	maxDelay := cs.config.Scheduling.MaxSchedulingDelay
+	if val, ok := pod.Annotations[common.AnnotationMaxSchedulingDelay]; ok {
+		if d, err := time.ParseDuration(val); err == nil {
+			maxDelay = d
+		} else {
+			klog.ErrorS(err, "Invalid max scheduling delay annotation",
+				"pod", pod.Name,
+				"namespace", pod.Namespace,
+				"value", val)
+		}
+	}
+	return maxDelay
+}
+
 func (cs *ComputeGardenerScheduler) hasExceededMaxDelay(pod *v1.Pod) bool {
 	if creationTime := pod.CreationTimestamp; !creationTime.IsZero() {
-		// Check for pod-level max delay annotation
-		maxDelay := cs.config.Scheduling.MaxSchedulingDelay
-		if val, ok := pod.Annotations[common.AnnotationMaxSchedulingDelay]; ok {
-			if d, err := time.ParseDuration(val); err == nil {
-				maxDelay = d
-			} else {
-				klog.ErrorS(err, "Invalid max scheduling delay annotation",
-					"pod", pod.Name,
-					"namespace", pod.Namespace,
-					"value", val)
-			}
-		}
-		return cs.clock.Since(creationTime.Time) > maxDelay
+		return cs.clock.Since(creationTime.Time) > cs.getMaxSchedulingDelay(pod)
 	}
 	return false
 }
 
 func (cs *ComputeGardenerScheduler) isOptedOut(pod *v1.Pod) bool {
 	return pod.Annotations[common.AnnotationSkip] == "true"
+}
+
+// getCarbonIntensityMode returns the carbon intensity scheduling mode for a pod.
+// It reads the pod annotation and defaults to "threshold" mode if not set or invalid.
+func (cs *ComputeGardenerScheduler) getCarbonIntensityMode(pod *v1.Pod) string {
+	if pod.Annotations == nil {
+		return "threshold"
+	}
+	if mode, ok := pod.Annotations[common.AnnotationCarbonIntensityMode]; ok {
+		switch mode {
+		case "threshold", "forecast":
+			return mode
+		default:
+			klog.V(2).InfoS("Invalid carbon intensity mode annotation, using default",
+				"pod", klog.KObj(pod),
+				"invalidMode", mode,
+				"defaultMode", "threshold")
+			return "threshold"
+		}
+	}
+	return "threshold" // default mode
+}
+
+// findForecastWindow queries the carbon intensity forecast and determines whether the pod
+// should wait for a cleaner window within its maximum scheduling delay.
+// Returns (wait, reason, optimalTime, ok) where:
+//   - wait: true if we should delay the pod
+//   - reason: human-readable reason for the status
+//   - optimalTime: the time of the best forecast window
+//   - ok: false if forecast API failed and we should fall back to threshold behaviour
+func (cs *ComputeGardenerScheduler) findForecastWindow(ctx context.Context, pod *v1.Pod, currentIntensity, threshold float64) (bool, string, time.Time, bool) {
+	// The EM API provides forecast data; we ask for a 2-hour window which is a
+	// common horizon. The forecast is only consulted when above threshold.
+	forecast, err := cs.carbonImpl.GetForecast(ctx, 2)
+	if err != nil {
+		klog.V(2).InfoS("Failed to get forecast, falling back to threshold mode",
+			"pod", klog.KObj(pod),
+			"error", err)
+		return false, "", time.Time{}, false
+	}
+
+	if forecast == nil || len(forecast.Data) == 0 {
+		return false, "", time.Time{}, false
+	}
+
+	maxDelay := cs.getMaxSchedulingDelay(pod)
+
+	// Find the best (lowest intensity) forecast point within the max delay window
+	var optimal api.ForecastData
+	foundOptimal := false
+	for _, point := range forecast.Data {
+		timeUntil := time.Until(point.Datetime)
+		if timeUntil <= maxDelay && timeUntil > 0 && point.CarbonIntensity <= threshold {
+			if !foundOptimal || point.CarbonIntensity < optimal.CarbonIntensity {
+				optimal = point
+				foundOptimal = true
+			}
+		}
+	}
+
+	// No acceptable window in the forecast, check if we've exceeded max delay
+	if !foundOptimal {
+		if cs.hasExceededMaxDelay(pod) {
+			return false, "", time.Time{}, true // don't wait, proceed anyway
+		}
+		return true,
+			fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f), no acceptable forecast windows found",
+				currentIntensity, threshold),
+			time.Time{}, true
+	}
+
+	waitMsg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f), forecast shows acceptable window at %v (%.2f)",
+		currentIntensity, threshold, optimal.Datetime.Format("15:04"), optimal.CarbonIntensity)
+	return true, waitMsg, optimal.Datetime, true
 }
 
 // applyCarbonIntensityCheck performs carbon intensity threshold checks and returns appropriate status
@@ -887,6 +966,36 @@ func (cs *ComputeGardenerScheduler) applyCarbonIntensityCheck(ctx context.Contex
 
 	podUID := string(pod.UID)
 	wasDelayed := cs.carbonDelayedPods[podUID]
+
+	// If we've exceeded the max scheduling delay, proceed with scheduling
+	// regardless of current or forecast carbon intensity
+	if cs.hasExceededMaxDelay(pod) {
+		klog.V(2).InfoS("Maximum scheduling delay exceeded - proceeding with pod scheduling",
+			"pod", klog.KObj(pod))
+		return nil, framework.NewStatus(framework.Success, "maximum scheduling delay exceeded")
+	}
+
+	// In forecast mode and above the threshold, see whether the forecast offers a
+	// cleaner window to schedule within this pod's max delay. On any forecast API
+	// failure we fall through to the standard threshold behaviour below (graceful fallback).
+	if cs.getCarbonIntensityMode(pod) == "forecast" && currentIntensity > threshold {
+		if wait, reason, ts, ok := cs.findForecastWindow(ctx, pod, currentIntensity, threshold); ok && wait {
+			klog.V(2).InfoS("Forecast mode: delaying pod for cleaner forecast window",
+				"pod", klog.KObj(pod),
+				"currentIntensity", currentIntensity,
+				"threshold", threshold,
+				"optimalTime", ts,
+				"reason", reason)
+			if !wasDelayed {
+				metrics.CarbonBasedDelays.WithLabelValues(cs.config.Carbon.APIConfig.Region).Inc()
+			}
+			cs.carbonDelayedPods[podUID] = true
+			if !wasDelayed {
+				cs.recordInitialCarbonMetric(ctx, pod)
+			}
+			return nil, framework.NewStatus(framework.Unschedulable, reason)
+		}
+	}
 
 	if currentIntensity > threshold {
 		msg := fmt.Sprintf("Current carbon intensity (%.2f) exceeds threshold (%.2f)",

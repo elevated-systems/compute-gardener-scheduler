@@ -576,3 +576,419 @@ func TestGetBackoffDuration(t *testing.T) {
 		t.Errorf("Expected max backoff near 1 minute, got %v", maxBackoff)
 	}
 }
+
+func TestGetCarbonIntensityForecast_Success(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	mockHTTP := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			// Check request headers
+			if req.Header.Get("auth-token") != "test-key" {
+				t.Errorf("Expected auth-token header to be test-key, got %s", req.Header.Get("auth-token"))
+			}
+
+			// Verify forecast URL
+			if !strings.Contains(req.URL.String(), "forecast") {
+				t.Errorf("Expected forecast URL, got %s", req.URL.String())
+			}
+			if !strings.Contains(req.URL.String(), "test-region") {
+				t.Errorf("Expected region in URL, got %s", req.URL.String())
+			}
+
+			// Create a response with valid forecast JSON
+			jsonResponse := `{
+				"zone": "test-region",
+				"data": [
+					{"datetime": "2023-01-01T12:00:00Z", "carbonIntensity": 150.5},
+					{"datetime": "2023-01-01T13:00:00Z", "carbonIntensity": 120.3},
+					{"datetime": "2023-01-01T14:00:00Z", "carbonIntensity": 180.7}
+				],
+				"temporalGranularity": "hourly"
+			}`
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+			}, nil
+		},
+	}
+
+	client := NewClient(apiCfg, cacheCfg,
+		WithHTTPClient(mockHTTP),
+	)
+
+	forecast, err := client.GetCarbonIntensityForecast(context.Background(), "test-region", 2)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if forecast.Zone != "test-region" {
+		t.Errorf("Expected zone test-region, got %s", forecast.Zone)
+	}
+
+	if len(forecast.Data) != 3 {
+		t.Errorf("Expected 3 forecast points, got %d", len(forecast.Data))
+	}
+
+	if forecast.TemporalGranularity != "hourly" {
+		t.Errorf("Expected hourly granularity, got %s", forecast.TemporalGranularity)
+	}
+
+	if forecast.Data[0].CarbonIntensity != 150.5 {
+		t.Errorf("Expected first intensity 150.5, got %f", forecast.Data[0].CarbonIntensity)
+	}
+}
+
+func TestGetCarbonIntensityForecast_APIError(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	// Simulate HTTP error
+	mockHTTP := &MockHTTPClient{
+		DoFunc: func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("simulated network error")
+		},
+	}
+
+	client := NewClient(apiCfg, cacheCfg,
+		WithHTTPClient(mockHTTP),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	_, err := client.GetCarbonIntensityForecast(ctx, "test-region", 2)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "all forecast retries failed") {
+		t.Errorf("Expected 'all forecast retries failed' error, got %v", err)
+	}
+}
+
+func TestGetCarbonIntensityForecast_HTTPStatusCodes(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	tests := []struct {
+		name       string
+		statusCode int
+		errorMsg   string
+	}{
+		{
+			name:       "unauthorized",
+			statusCode: http.StatusUnauthorized,
+			errorMsg:   "invalid API key",
+		},
+		{
+			name:       "not found",
+			statusCode: http.StatusNotFound,
+			errorMsg:   "region not found",
+		},
+		{
+			name:       "rate limited",
+			statusCode: http.StatusTooManyRequests,
+			errorMsg:   "rate limit exceeded",
+		},
+		{
+			name:       "server error",
+			statusCode: http.StatusInternalServerError,
+			errorMsg:   "unexpected status code",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHTTP := &MockHTTPClient{
+				DoFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: tt.statusCode,
+						Body:       io.NopCloser(strings.NewReader("")),
+					}, nil
+				},
+			}
+
+			client := NewClient(apiCfg, cacheCfg,
+				WithHTTPClient(mockHTTP),
+			)
+
+			_, err := client.GetCarbonIntensityForecast(context.Background(), "test-region", 2)
+			if err == nil {
+				t.Fatal("Expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("Expected error containing '%s', got %v", tt.errorMsg, err)
+			}
+		})
+	}
+}
+
+func TestGetCarbonIntensityForecast_InvalidData(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	tests := []struct {
+		name     string
+		jsonBody string
+		errorMsg string
+	}{
+		{
+			name:     "invalid JSON",
+			jsonBody: "not json",
+			errorMsg: "failed to decode forecast response",
+		},
+		{
+			name:     "empty data array",
+			jsonBody: `{"zone": "test-region", "data": [], "temporalGranularity": "hourly"}`,
+			errorMsg: "no forecast data returned",
+		},
+		{
+			name:     "negative carbon intensity",
+			jsonBody: `{"zone": "test-region", "data": [{"datetime": "2023-01-01T12:00:00Z", "carbonIntensity": -50.5}], "temporalGranularity": "hourly"}`,
+			errorMsg: "invalid carbon intensity value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHTTP := &MockHTTPClient{
+				DoFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(strings.NewReader(tt.jsonBody)),
+					}, nil
+				},
+			}
+
+			client := NewClient(apiCfg, cacheCfg,
+				WithHTTPClient(mockHTTP),
+			)
+
+			_, err := client.GetCarbonIntensityForecast(context.Background(), "test-region", 2)
+			if err == nil {
+				t.Fatal("Expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("Expected error containing '%s', got %v", tt.errorMsg, err)
+			}
+		})
+	}
+}
+
+func TestGetCarbonIntensityForecast_InvalidRegion(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	client := NewClient(apiCfg, cacheCfg)
+
+	_, err := client.GetCarbonIntensityForecast(context.Background(), "", 2)
+	if err == nil {
+		t.Fatal("Expected error for empty region, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "region cannot be empty") {
+		t.Errorf("Expected 'region cannot be empty' error, got %v", err)
+	}
+}
+
+func TestGetCarbonIntensityForecast_InvalidHorizon(t *testing.T) {
+	apiCfg := config.ElectricityMapsAPIConfig{
+		APIKey: "test-key",
+		URL:    "https://api.electricitymap.org/v3/carbon-intensity/",
+		Region: "test-region",
+	}
+
+	cacheCfg := config.APICacheConfig{
+		Timeout:     10 * time.Second,
+		MaxRetries:  1,
+		RetryDelay:  time.Microsecond,
+		RateLimit:   10,
+		CacheTTL:    30 * time.Minute,
+		MaxCacheAge: 24 * time.Hour,
+	}
+
+	client := NewClient(apiCfg, cacheCfg)
+
+	tests := []struct {
+		name    string
+		horizon int
+	}{
+		{
+			name:    "zero horizon",
+			horizon: 0,
+		},
+		{
+			name:    "negative horizon",
+			horizon: -1,
+		},
+		{
+			name:    "excessive horizon",
+			horizon: 100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.GetCarbonIntensityForecast(context.Background(), "test-region", tt.horizon)
+			if err == nil {
+				t.Fatal("Expected error for invalid horizon, got nil")
+			}
+
+			if !strings.Contains(err.Error(), "horizonHours must be between 1 and 72") {
+				t.Errorf("Expected 'horizonHours' validation error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestBuildURL_Forecast(t *testing.T) {
+	tests := []struct {
+		name      string
+		configURL string
+		endpoint  string
+		region    string
+		expected  string
+	}{
+		{
+			name:      "base URL with trailing slash",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity/",
+			endpoint:  "forecast",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/forecast?zone=US-CAL-CISO",
+		},
+		{
+			name:      "base URL without trailing slash",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity",
+			endpoint:  "forecast",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/forecast?zone=US-CAL-CISO",
+		},
+		{
+			name:      "legacy full latest URL with query param",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=",
+			endpoint:  "forecast",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/forecast?zone=US-CAL-CISO",
+		},
+		{
+			name:      "legacy full latest URL with trailing slash",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity/latest/",
+			endpoint:  "forecast",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/forecast?zone=US-CAL-CISO",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(config.ElectricityMapsAPIConfig{
+				URL: tt.configURL,
+			}, config.APICacheConfig{})
+
+			url := client.buildURL(tt.endpoint, tt.region)
+
+			if url != tt.expected {
+				t.Errorf("buildURL() = %q, want %q", url, tt.expected)
+			}
+		})
+	}
+}
+
+func TestBuildURL_Latest(t *testing.T) {
+	tests := []struct {
+		name      string
+		configURL string
+		region    string
+		expected  string
+	}{
+		{
+			name:      "base URL with trailing slash",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity/",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=US-CAL-CISO",
+		},
+		{
+			name:      "legacy full latest URL",
+			configURL: "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=",
+			region:    "US-CAL-CISO",
+			expected:  "https://api.electricitymap.org/v3/carbon-intensity/latest?zone=US-CAL-CISO",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(config.ElectricityMapsAPIConfig{
+				URL: tt.configURL,
+			}, config.APICacheConfig{})
+
+			url := client.buildURL("latest", tt.region)
+
+			if url != tt.expected {
+				t.Errorf("buildURL() = %q, want %q", url, tt.expected)
+			}
+		})
+	}
+}

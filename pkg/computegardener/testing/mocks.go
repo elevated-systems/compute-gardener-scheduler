@@ -10,6 +10,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/api"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/carbon"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
@@ -27,6 +28,7 @@ type MockCarbonImplementation struct {
 	// Advanced mode function overrides (when set, these take precedence)
 	GetCurrentIntensityFunc           func(ctx context.Context) (float64, error)
 	GetCurrentIntensityWithStatusFunc func(ctx context.Context) (*carbon.IntensityData, error)
+	GetForecastFunc                   func(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error)
 	CheckIntensityConstraintsFunc     func(ctx context.Context, threshold float64) *framework.Status
 }
 
@@ -73,6 +75,33 @@ func (m *MockCarbonImplementation) GetCurrentIntensityWithStatus(ctx context.Con
 	return &carbon.IntensityData{
 		Value:      m.intensity,
 		DataStatus: status,
+	}, nil
+}
+
+func (m *MockCarbonImplementation) GetForecast(ctx context.Context, horizonHours int) (*api.ElectricityForecast, error) {
+	// Function override takes precedence
+	if m.GetForecastFunc != nil {
+		return m.GetForecastFunc(ctx, horizonHours)
+	}
+
+	// Simple mode behavior - returns a basic forecast using the fixed intensity
+	if m.errorMode {
+		return nil, fmt.Errorf("carbon forecast API error (mock)")
+	}
+
+	now := time.Now().UTC()
+	// Generate hourly forecast points for the requested horizon
+	data := make([]api.ForecastData, 0, horizonHours)
+	for i := 0; i < horizonHours; i++ {
+		data = append(data, api.ForecastData{
+			Datetime:        now.Add(time.Duration(i) * time.Hour),
+			CarbonIntensity: m.intensity,
+		})
+	}
+
+	return &api.ElectricityForecast{
+		Zone: "mock-zone",
+		Data: data,
 	}, nil
 }
 
