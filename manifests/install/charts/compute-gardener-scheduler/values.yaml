@@ -68,11 +68,15 @@ dryRun:
   # Log verbosity level (0-5)
   logLevel: 3
 
-  # Webhook configuration
+  # How long a pod admitted by the webhook may take to reach the completion
+  # controller before its tracking claim expires
+  pendingTTL: "2m"
+
+  # Webhook configuration. Only installed when filterMode is "schedulerName",
+  # and its only mutation is rewriting spec.schedulerName to default-scheduler.
   webhook:
     port: 8443
-    # Admission webhook timeout in seconds (Kubernetes max: 30).
-    # The internal evaluation deadline runs 1s under this, enforced in code.
+    # Admission webhook timeout in seconds (Kubernetes max: 30)
     timeoutSeconds: 10
     # Certificate configuration (required for admission webhooks)
     # By default, uses cert-manager to generate certificates

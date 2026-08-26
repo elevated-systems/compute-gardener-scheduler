@@ -28,7 +28,7 @@ kind: ClusterRole
 metadata:
   name: compute-gardener-dryrun
 rules:
-# Watch pods for completion tracking
+# Watch pods to evaluate them and track completion
 - apiGroups:
   - ""
   resources:
@@ -122,7 +122,7 @@ spec:
       serviceAccountName: compute-gardener-dryrun
       containers:
       - name: dryrun
-        image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.4-alpha-030ed84
+        image: docker.io/dmasselink/compute-gardener-dryrun:v0.2.4-6743772
         imagePullPolicy: IfNotPresent
         command:
         - /bin/dryrun
@@ -131,7 +131,7 @@ spec:
         - --metrics-port=8080
         - --mode=metrics
         - --filter-mode=schedulerName
-        - --webhook-timeout=10
+        - --pending-ttl=2m
         - --tls-cert=/tmp/k8s-webhook-server/serving-certs/tls.crt
         - --tls-key=/tmp/k8s-webhook-server/serving-certs/tls.key
         - --v=3
@@ -206,6 +206,9 @@ metadata:
 spec:
   selfSigned: {}
 ---
+# The webhook exists only to hand pods that opted in via schedulerName back to
+# the default scheduler. Namespace filter mode watches pods through the
+# completion controller instead and installs no webhook at all.
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
@@ -226,11 +229,16 @@ webhooks:
     apiVersions: ["v1"]
     resources: ["pods"]
     scope: "Namespaced"
+  # The only field this webhook writes is spec.schedulerName
   sideEffects: None
-  # In metrics mode, webhook is read-only (no mutations)
-  # If it fails, allow pod creation to proceed
+  # Dry-run is an observation feature and must never block pod creation
   failurePolicy: Ignore
   timeoutSeconds: 10
+  # Evaluated by the apiserver before the webhook is called, so pods that did
+  # not opt in never reach it
+  matchConditions:
+  - name: targets-compute-gardener
+    expression: "object.spec.schedulerName == 'compute-gardener-scheduler'"
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

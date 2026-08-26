@@ -2,10 +2,13 @@ package dryrun
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -15,25 +18,44 @@ import (
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/eval"
 )
 
-// CompletionController watches for pod completions and calculates actual savings
+// pendingSweepInterval is how often unclaimed admissions are discarded
+const pendingSweepInterval = time.Minute
+
+// CompletionController evaluates pods once they are persisted, then watches for
+// their completion and calculates actual savings.
+//
+// Evaluation runs here rather than in the webhook so that it stays off the pod
+// creation path, and so tracking can key on the real pod UID instead of state
+// written onto the user's pod.
 type CompletionController struct {
-	kubeClient kubernetes.Interface
-	config     *Config
-	podStore   *PodEvaluationStore
+	kubeClient   kubernetes.Interface
+	config       *Config
+	podStore     *PodEvaluationStore
+	pendingStore *PendingStore
+	evaluator    *eval.Evaluator
 }
 
 // NewCompletionController creates a new completion controller
-func NewCompletionController(kubeClient kubernetes.Interface, config *Config, podStore *PodEvaluationStore) *CompletionController {
+func NewCompletionController(
+	kubeClient kubernetes.Interface,
+	config *Config,
+	podStore *PodEvaluationStore,
+	pendingStore *PendingStore,
+	evaluator *eval.Evaluator,
+) *CompletionController {
 	return &CompletionController{
-		kubeClient: kubeClient,
-		config:     config,
-		podStore:   podStore,
+		kubeClient:   kubeClient,
+		config:       config,
+		podStore:     podStore,
+		pendingStore: pendingStore,
+		evaluator:    evaluator,
 	}
 }
 
 // Run starts the completion controller
 func (c *CompletionController) Run(ctx context.Context) error {
 	klog.InfoS("Starting dry-run completion controller",
+		"filterMode", c.config.FilterMode,
 		"watchNamespaces", c.config.WatchNamespaces)
 
 	// Create informer factory
@@ -43,33 +65,32 @@ func (c *CompletionController) Run(ctx context.Context) error {
 	podInformer := informerFactory.Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: func(obj interface{}) bool {
-			pod, ok := obj.(*corev1.Pod)
-			if !ok {
-				// Handle tombstone objects
-				tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-				if !ok {
-					return false
-				}
-				pod, ok = tombstone.Obj.(*corev1.Pod)
-				if !ok {
-					return false
-				}
+			pod := extractPod(obj)
+			if pod == nil {
+				return false
 			}
-
-			// Only track pods that were evaluated by dry-run webhook
-			return c.wasEvaluated(pod) && c.isNamespaceWatched(pod.Namespace)
+			return c.isNamespaceWatched(pod.Namespace)
 		},
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				pod := obj.(*corev1.Pod)
-				// Record pod start time when it gets scheduled and starts running
-				if pod.Status.StartTime != nil {
-					c.handlePodStart(pod)
+				pod, ok := obj.(*corev1.Pod)
+				if !ok {
+					return
 				}
+				c.handlePodAdd(ctx, pod)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				oldPod := oldObj.(*corev1.Pod)
-				newPod := newObj.(*corev1.Pod)
+				oldPod, ok := oldObj.(*corev1.Pod)
+				if !ok {
+					return
+				}
+				newPod, ok := newObj.(*corev1.Pod)
+				if !ok {
+					return
+				}
+				if !c.isTracked(newPod) {
+					return
+				}
 
 				// Check if pod just got a start time
 				if oldPod.Status.StartTime == nil && newPod.Status.StartTime != nil {
@@ -83,7 +104,7 @@ func (c *CompletionController) Run(ctx context.Context) error {
 			},
 			DeleteFunc: func(obj interface{}) {
 				pod := extractPod(obj)
-				if pod != nil && pod.Spec.NodeName != "" {
+				if pod != nil && pod.Spec.NodeName != "" && c.isTracked(pod) {
 					c.handlePodCompletion(pod)
 				}
 			},
@@ -100,22 +121,138 @@ func (c *CompletionController) Run(ctx context.Context) error {
 
 	klog.InfoS("Dry-run completion controller cache synced")
 
+	go c.runPendingSweep(ctx)
+
 	// Wait for context cancellation
 	<-ctx.Done()
 	klog.InfoS("Dry-run completion controller stopped")
 	return nil
 }
 
-// wasEvaluated checks if the pod was evaluated by the dry-run webhook.
-// Checks both in-memory store (metrics mode) and annotations (annotate mode).
-func (c *CompletionController) wasEvaluated(pod *corev1.Pod) bool {
-	// Check in-memory store first (works in both modes)
-	if _, ok := c.podStore.GetStart(string(pod.UID)); ok {
+// runPendingSweep periodically discards admissions no pod ever claimed
+func (c *CompletionController) runPendingSweep(ctx context.Context) {
+	ticker := time.NewTicker(pendingSweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.pendingStore.Sweep(time.Now())
+		}
+	}
+}
+
+// isTracked reports whether the pod has been evaluated and is being tracked
+func (c *CompletionController) isTracked(pod *corev1.Pod) bool {
+	_, ok := c.podStore.GetStart(string(pod.UID))
+	return ok
+}
+
+// shouldEvaluate reports whether a newly observed pod belongs to this dry-run.
+//
+// In schedulerName mode the pod's opt-in was consumed by the webhook's
+// schedulerName rewrite, so the claim on the pending store is the only evidence
+// it targeted us. In namespace mode nothing mutates the pod at all and every
+// pod in a watched namespace is evaluated.
+func (c *CompletionController) shouldEvaluate(pod *corev1.Pod) bool {
+	if pod.Annotations[common.AnnotationSkip] == "true" {
+		return false
+	}
+
+	if c.config.FilterMode == FilterModeNamespace {
 		return true
 	}
-	// Fall back to annotation check (annotate mode)
-	_, ok := pod.Annotations[common.AnnotationDryRunEvaluated]
-	return ok
+
+	return c.pendingStore.Claim(pod, time.Now())
+}
+
+// handlePodAdd evaluates a pod the first time it is observed
+func (c *CompletionController) handlePodAdd(ctx context.Context, pod *corev1.Pod) {
+	if c.isTracked(pod) {
+		// Relist of a pod already evaluated
+		return
+	}
+	if !c.shouldEvaluate(pod) {
+		return
+	}
+
+	result, err := c.evaluator.EvaluateAll(ctx, pod, time.Now())
+	if err != nil {
+		klog.ErrorS(err, "Evaluation failed", "pod", klog.KObj(pod))
+		return
+	}
+
+	klog.V(2).InfoS("Evaluated pod",
+		"pod", klog.KObj(pod),
+		"wouldDelay", result.ShouldDelay,
+		"delayType", result.DelayType)
+
+	// Track every evaluated pod, not just delayed ones, so runtime and energy
+	// are recorded for all workloads
+	c.storeInitialEvaluation(pod, result)
+
+	if c.config.Mode == "metrics" {
+		recordMetrics(result, pod)
+	}
+
+	if c.config.Mode == "annotate" {
+		c.annotatePod(ctx, pod, result)
+	}
+
+	// A pod that was already running when we observed it still needs its start
+	// time recorded, which the update handler would otherwise have missed
+	if pod.Status.StartTime != nil {
+		c.handlePodStart(pod)
+	}
+}
+
+// storeInitialEvaluation stores evaluation data for later completion tracking
+func (c *CompletionController) storeInitialEvaluation(pod *corev1.Pod, result *eval.EvaluationResult) {
+	startData := &eval.PodStartData{
+		Namespace:         pod.Namespace,
+		Name:              pod.Name,
+		UID:               string(pod.UID),
+		StartTime:         time.Now(), // Updated once the pod actually starts
+		InitialCarbon:     result.CurrentCarbon,
+		InitialPrice:      result.CurrentPrice,
+		CarbonThreshold:   result.CarbonThreshold,
+		PriceThreshold:    result.PriceThreshold,
+		WouldHaveDelayed:  result.ShouldDelay,
+		DelayType:         result.DelayType,
+		EstimatedPowerW:   result.EstimatedPowerW,
+		EstimatedRuntimeH: result.EstimatedRuntimeHours,
+	}
+
+	c.podStore.RecordStart(string(pod.UID), startData)
+	klog.V(3).InfoS("Stored initial evaluation for tracking",
+		"pod", klog.KObj(pod),
+		"wouldDelay", result.ShouldDelay)
+}
+
+// annotatePod writes the evaluation result onto the pod in annotate mode
+func (c *CompletionController) annotatePod(ctx context.Context, pod *corev1.Pod, result *eval.EvaluationResult) {
+	patch := map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": createDryRunAnnotations(result),
+		},
+	}
+
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		klog.ErrorS(err, "Failed to marshal annotation patch", "pod", klog.KObj(pod))
+		return
+	}
+
+	_, err = c.kubeClient.CoreV1().Pods(pod.Namespace).Patch(
+		ctx, pod.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+	if err != nil {
+		klog.ErrorS(err, "Failed to annotate pod", "pod", klog.KObj(pod))
+		return
+	}
+
+	klog.V(3).InfoS("Annotated pod with dry-run result", "pod", klog.KObj(pod))
 }
 
 // isNamespaceWatched checks if the namespace is in the watch list
@@ -133,24 +270,14 @@ func (c *CompletionController) isNamespaceWatched(namespace string) bool {
 	return false
 }
 
-// getTrackingID returns the dry-run tracking ID from pod annotations
-func (c *CompletionController) getTrackingID(pod *corev1.Pod) string {
-	return pod.Annotations[common.AnnotationDryRunTrackingID]
-}
-
 // handlePodStart records when a pod actually starts running
 func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
-	trackingID := c.getTrackingID(pod)
-	if trackingID == "" {
+	startData, found := c.podStore.GetStart(string(pod.UID))
+	if !found {
+		klog.V(3).InfoS("No initial evaluation found for pod start", "pod", klog.KObj(pod))
 		return
 	}
-
-	// Check if we have initial evaluation data for this pod
-	startData, found := c.podStore.GetStart(trackingID)
-	if !found {
-		klog.V(3).InfoS("No initial evaluation found for pod start",
-			"pod", klog.KObj(pod),
-			"trackingID", trackingID)
+	if pod.Status.StartTime == nil {
 		return
 	}
 
@@ -158,7 +285,7 @@ func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
 	startData.StartTime = pod.Status.StartTime.Time
 
 	// Store the updated data
-	c.podStore.RecordStart(trackingID, startData)
+	c.podStore.RecordStart(string(pod.UID), startData)
 
 	klog.V(2).InfoS("Recorded actual pod start time",
 		"pod", klog.KObj(pod),
@@ -167,17 +294,12 @@ func (c *CompletionController) handlePodStart(pod *corev1.Pod) {
 
 // handlePodCompletion calculates savings using actual runtime
 func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
-	trackingID := c.getTrackingID(pod)
-	if trackingID == "" {
-		return
-	}
+	uid := string(pod.UID)
 
 	// Retrieve start data
-	startData, found := c.podStore.GetStart(trackingID)
+	startData, found := c.podStore.GetStart(uid)
 	if !found {
-		klog.V(3).InfoS("No start data found for completed pod",
-			"pod", klog.KObj(pod),
-			"trackingID", trackingID)
+		klog.V(3).InfoS("No start data found for completed pod", "pod", klog.KObj(pod))
 		return
 	}
 
@@ -199,7 +321,7 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 			"pod", klog.KObj(pod),
 			"startTime", startData.StartTime,
 			"completionTime", completionTime)
-		c.podStore.Remove(trackingID)
+		c.podStore.Remove(uid)
 		return
 	}
 
@@ -217,7 +339,7 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 			"pod", klog.KObj(pod),
 			"runtime", fmt.Sprintf("%.2fh", actualRuntimeHours),
 			"energy", fmt.Sprintf("%.3f kWh", actualEnergyKWh))
-		c.podStore.Remove(trackingID)
+		c.podStore.Remove(uid)
 		return
 	}
 
@@ -240,7 +362,7 @@ func (c *CompletionController) handlePodCompletion(pod *corev1.Pod) {
 	}
 
 	// Clean up from store
-	c.podStore.Remove(trackingID)
+	c.podStore.Remove(uid)
 }
 
 // calculateEstimatedSavings calculates conservative savings estimates
@@ -316,4 +438,69 @@ func extractPod(obj interface{}) *corev1.Pod {
 	}
 
 	return pod
+}
+
+// createDryRunAnnotations creates annotations describing the evaluation result
+func createDryRunAnnotations(result *eval.EvaluationResult) map[string]string {
+	annotations := map[string]string{
+		common.AnnotationDryRunEvaluated: "true",
+		common.AnnotationDryRunTimestamp: time.Now().Format(time.RFC3339),
+	}
+
+	if !result.ShouldDelay {
+		annotations[common.AnnotationDryRunWouldDelay] = "false"
+		return annotations
+	}
+
+	annotations[common.AnnotationDryRunWouldDelay] = "true"
+	annotations[common.AnnotationDryRunDelayType] = result.DelayType
+	annotations[common.AnnotationDryRunReason] = result.ReasonDescription
+
+	// Add current conditions
+	if result.CurrentCarbon > 0 {
+		annotations[common.AnnotationDryRunCarbonIntensity] = fmt.Sprintf("%.2f", result.CurrentCarbon)
+		annotations[common.AnnotationDryRunCarbonThreshold] = fmt.Sprintf("%.2f", result.CarbonThreshold)
+	}
+
+	if result.CurrentPrice > 0 {
+		annotations[common.AnnotationDryRunPrice] = fmt.Sprintf("%.4f", result.CurrentPrice)
+		annotations[common.AnnotationDryRunPriceThreshold] = fmt.Sprintf("%.4f", result.PriceThreshold)
+	}
+
+	// Add estimated savings
+	if result.EstimatedCarbonSavingsGCO2 > 0 {
+		annotations[common.AnnotationDryRunEstimatedCarbonSavings] = fmt.Sprintf("%.2f", result.EstimatedCarbonSavingsGCO2)
+	}
+	if result.EstimatedCostSavingsUSD > 0 {
+		annotations[common.AnnotationDryRunEstimatedCostSavings] = fmt.Sprintf("%.4f", result.EstimatedCostSavingsUSD)
+	}
+
+	return annotations
+}
+
+// recordMetrics records dry-run metrics
+func recordMetrics(result *eval.EvaluationResult, pod *corev1.Pod) {
+	// Count all evaluated pods
+	PodsEvaluatedTotal.WithLabelValues(pod.Namespace).Inc()
+
+	// Record pods that would be delayed
+	if result.ShouldDelay {
+		PodsWouldDelayTotal.WithLabelValues(pod.Namespace, result.DelayType).Inc()
+
+		// Record estimated savings
+		if result.EstimatedCarbonSavingsGCO2 > 0 {
+			EstimatedCarbonSavingsTotal.WithLabelValues(pod.Namespace).Add(result.EstimatedCarbonSavingsGCO2)
+		}
+		if result.EstimatedCostSavingsUSD > 0 {
+			EstimatedCostSavingsTotal.WithLabelValues(pod.Namespace).Add(result.EstimatedCostSavingsUSD)
+		}
+	}
+
+	// Record current conditions as gauges
+	if result.CurrentCarbon > 0 {
+		CurrentCarbonIntensity.WithLabelValues(pod.Namespace).Set(result.CurrentCarbon)
+	}
+	if result.CurrentPrice > 0 {
+		CurrentElectricityPrice.WithLabelValues(pod.Namespace).Set(result.CurrentPrice)
+	}
 }

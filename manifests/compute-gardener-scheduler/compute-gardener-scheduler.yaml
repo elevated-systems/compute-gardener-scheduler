@@ -160,10 +160,10 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    helm.sh/chart: compute-gardener-scheduler-0.2.3
+    helm.sh/chart: compute-gardener-scheduler-0.2.4
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: compute-gardener
-    app.kubernetes.io/version: v0.2.3-57ae4e1
+    app.kubernetes.io/version: v0.2.4-6743772
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9400"
@@ -205,10 +205,10 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    helm.sh/chart: compute-gardener-scheduler-0.2.3
+    helm.sh/chart: compute-gardener-scheduler-0.2.4
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: compute-gardener
-    app.kubernetes.io/version: v0.2.3-57ae4e1
+    app.kubernetes.io/version: v0.2.4-6743772
 spec:
   selector:
     matchLabels:
@@ -305,7 +305,7 @@ spec:
         - --authentication-tolerate-lookup-failure=true
         - --authorization-always-allow-paths=/metrics
         - --v=3
-        image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.3-57ae4e1
+        image: docker.io/dmasselink/compute-gardener-scheduler:v0.2.4-6743772
         imagePullPolicy: IfNotPresent
         env:
         - name: ELECTRICITY_MAP_API_KEY
@@ -383,10 +383,10 @@ metadata:
     app: compute-gardener-dcgm-exporter
     component: gpu-metrics
     part-of: compute-gardener-scheduler
-    helm.sh/chart: compute-gardener-scheduler-0.2.3
+    helm.sh/chart: compute-gardener-scheduler-0.2.4
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: compute-gardener
-    app.kubernetes.io/version: v0.2.3-57ae4e1
+    app.kubernetes.io/version: v0.2.4-6743772
 spec:
   selector:
     matchLabels:

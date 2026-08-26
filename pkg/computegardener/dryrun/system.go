@@ -20,18 +20,20 @@ import (
 
 // System coordinates the webhook and completion controller
 type System struct {
-	kubeClient kubernetes.Interface
-	config     *Config
-	webhook    *Webhook
-	controller *CompletionController
-	podStore   *PodEvaluationStore
-	evaluator  *eval.Evaluator
+	kubeClient   kubernetes.Interface
+	config       *Config
+	webhook      *Webhook
+	controller   *CompletionController
+	podStore     *PodEvaluationStore
+	pendingStore *PendingStore
+	evaluator    *eval.Evaluator
 }
 
 // NewSystem creates a new dry-run system
 func NewSystem(kubeClient kubernetes.Interface, cfg *Config) (*System, error) {
-	// Initialize shared pod store
+	// Initialize shared stores
 	podStore := NewPodEvaluationStore()
+	pendingStore := NewPendingStore(cfg.PendingTTL)
 
 	// Create cache for API calls
 	dataCache := schedulercache.New(5*time.Minute, 30*time.Minute)
@@ -92,18 +94,19 @@ func NewSystem(kubeClient kubernetes.Interface, cfg *Config) (*System, error) {
 	evaluator := eval.NewEvaluator(carbonImpl, priceImpl, evalConfig)
 
 	// Create webhook
-	webhook := NewWebhook(cfg, evaluator, podStore)
+	webhook := NewWebhook(cfg, pendingStore)
 
 	// Create completion controller
-	controller := NewCompletionController(kubeClient, cfg, podStore)
+	controller := NewCompletionController(kubeClient, cfg, podStore, pendingStore, evaluator)
 
 	system := &System{
-		kubeClient: kubeClient,
-		config:     cfg,
-		webhook:    webhook,
-		controller: controller,
-		podStore:   podStore,
-		evaluator:  evaluator,
+		kubeClient:   kubeClient,
+		config:       cfg,
+		webhook:      webhook,
+		controller:   controller,
+		podStore:     podStore,
+		pendingStore: pendingStore,
+		evaluator:    evaluator,
 	}
 
 	return system, nil

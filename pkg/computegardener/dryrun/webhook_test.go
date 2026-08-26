@@ -3,10 +3,9 @@ package dryrun
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/eval"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,188 +13,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-func setupTestWebhook(t *testing.T) (*Webhook, *PodEvaluationStore) {
+func setupTestWebhook(t *testing.T) (*Webhook, *PendingStore) {
 	t.Helper()
 
 	cfg := &Config{
 		Mode:       "annotate",
 		FilterMode: FilterModeSchedulerName,
 	}
+	pendingStore := NewPendingStore(0)
 
-	// Create evaluator with minimal config (no carbon/price implementations)
-	evalCfg := &config.Config{}
-	evaluator := eval.NewEvaluator(nil, nil, evalCfg)
-	podStore := NewPodEvaluationStore()
-
-	webhook := NewWebhook(cfg, evaluator, podStore)
-
-	return webhook, podStore
+	return NewWebhook(cfg, pendingStore), pendingStore
 }
-
-func TestWebhook_CreateDryRunAnnotations_WouldDelay(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-
-	result := &eval.EvaluationResult{
-		ShouldDelay:                true,
-		DelayType:                  "carbon",
-		ReasonDescription:          "High carbon intensity",
-		CurrentCarbon:              1.2,
-		CarbonThreshold:            0.8,
-		CurrentPrice:               0.05,
-		PriceThreshold:             0.04,
-		EstimatedCarbonSavingsGCO2: 50.0,
-		EstimatedCostSavingsUSD:    2.5,
-	}
-
-	annotations := webhook.createDryRunAnnotations(result)
-
-	if annotations[common.AnnotationDryRunEvaluated] != "true" {
-		t.Errorf("Expected evaluated annotation to be true")
-	}
-
-	if annotations[common.AnnotationDryRunWouldDelay] != "true" {
-		t.Errorf("Expected would-delay annotation to be true")
-	}
-
-	if annotations[common.AnnotationDryRunDelayType] != "carbon" {
-		t.Errorf("Expected delay type to be 'carbon', got %s", annotations[common.AnnotationDryRunDelayType])
-	}
-
-	if annotations[common.AnnotationDryRunReason] != "High carbon intensity" {
-		t.Errorf("Expected reason to be 'High carbon intensity'")
-	}
-
-	if annotations[common.AnnotationDryRunCarbonIntensity] != "1.20" {
-		t.Errorf("Expected carbon intensity '1.20', got %s", annotations[common.AnnotationDryRunCarbonIntensity])
-	}
-
-	if annotations[common.AnnotationDryRunPrice] != "0.0500" {
-		t.Errorf("Expected price '0.0500', got %s", annotations[common.AnnotationDryRunPrice])
-	}
-
-	if annotations[common.AnnotationDryRunEstimatedCarbonSavings] != "50.00" {
-		t.Errorf("Expected savings '50.00', got %s", annotations[common.AnnotationDryRunEstimatedCarbonSavings])
-	}
-}
-
-func TestWebhook_CreateDryRunAnnotations_WouldNotDelay(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-
-	result := &eval.EvaluationResult{
-		ShouldDelay:       false,
-		DelayType:         "",
-		ReasonDescription: "Conditions acceptable",
-		CurrentCarbon:     0.5,
-		CarbonThreshold:   0.8,
-	}
-
-	annotations := webhook.createDryRunAnnotations(result)
-
-	if annotations[common.AnnotationDryRunWouldDelay] != "false" {
-		t.Errorf("Expected would-delay annotation to be false")
-	}
-
-	if _, exists := annotations[common.AnnotationDryRunDelayType]; exists {
-		t.Errorf("Expected delay type annotation not to exist")
-	}
-}
-
-func TestWebhook_StoreInitialEvaluation(t *testing.T) {
-	webhook, podStore := setupTestWebhook(t)
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-			UID:       "test-uid",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{Name: "test-container"},
-			},
-		},
-	}
-
-	result := &eval.EvaluationResult{
-		ShouldDelay:           true,
-		DelayType:             "carbon",
-		CurrentCarbon:         1.2,
-		CurrentPrice:          0.05,
-		CarbonThreshold:       0.8,
-		PriceThreshold:        0.04,
-		EstimatedPowerW:       100.0,
-		EstimatedRuntimeHours: 2.0,
-	}
-
-	webhook.storeInitialEvaluation(pod, result, "test-tracking-id")
-
-	// Verify storage
-	startData, found := podStore.GetStart("test-tracking-id")
-	if !found {
-		t.Fatal("Expected start data to be stored")
-	}
-
-	if startData.Namespace != "default" {
-		t.Errorf("Expected namespace 'default', got %s", startData.Namespace)
-	}
-
-	if !startData.WouldHaveDelayed {
-		t.Errorf("Expected WouldHaveDelayed to be true")
-	}
-
-	if startData.DelayType != "carbon" {
-		t.Errorf("Expected DelayType 'carbon', got %s", startData.DelayType)
-	}
-
-	if startData.InitialCarbon != 1.2 {
-		t.Errorf("Expected InitialCarbon 1.2, got %f", startData.InitialCarbon)
-	}
-
-	if startData.EstimatedPowerW != 100.0 {
-		t.Errorf("Expected EstimatedPowerW 100.0, got %f", startData.EstimatedPowerW)
-	}
-
-	if startData.EstimatedRuntimeH != 2.0 {
-		t.Errorf("Expected EstimatedRuntimeH 2.0, got %f", startData.EstimatedRuntimeH)
-	}
-}
-
-// --- Namespace filtering tests ---
-
-func TestWebhook_IsNamespaceWatched_EmptyList(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-	webhook.config.WatchNamespaces = []string{}
-
-	// Empty list = watch nothing
-	if webhook.isNamespaceWatched("any-namespace") {
-		t.Error("Expected empty namespace list to watch nothing")
-	}
-}
-
-func TestWebhook_IsNamespaceWatched_SpecificNamespaces(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-
-	webhook.config.WatchNamespaces = []string{"production", "staging"}
-
-	tests := []struct {
-		namespace     string
-		expectedWatch bool
-	}{
-		{"production", true},
-		{"staging", true},
-		{"default", false},
-		{"dev", false},
-	}
-
-	for _, tt := range tests {
-		result := webhook.isNamespaceWatched(tt.namespace)
-		if result != tt.expectedWatch {
-			t.Errorf("isNamespaceWatched(%q) = %v, want %v", tt.namespace, result, tt.expectedWatch)
-		}
-	}
-}
-
-// --- Filter mode tests ---
 
 func makeAdmissionRequest(t *testing.T, pod *corev1.Pod) *admissionv1.AdmissionRequest {
 	t.Helper()
@@ -211,239 +39,173 @@ func makeAdmissionRequest(t *testing.T, pod *corev1.Pod) *admissionv1.AdmissionR
 	}
 }
 
-func TestWebhook_SchedulerNameMode_MatchingPod(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeSchedulerName
-
-	pod := &corev1.Pod{
+func targetedPod(name, namespace string) *corev1.Pod {
+	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
+			Name:      name,
+			Namespace: namespace,
 		},
 		Spec: corev1.PodSpec{
 			SchedulerName: common.SchedulerName,
 			Containers:    []corev1.Container{{Name: "test"}},
 		},
 	}
+}
 
-	req := makeAdmissionRequest(t, pod)
-	resp := webhook.handleAdmission(req)
+// decodePatch unmarshals the JSON patch carried by an admission response
+func decodePatch(t *testing.T, resp *admissionv1.AdmissionResponse) []map[string]interface{} {
+	t.Helper()
+	var patches []map[string]interface{}
+	if err := json.Unmarshal(resp.Patch, &patches); err != nil {
+		t.Fatalf("Failed to unmarshal patch: %v", err)
+	}
+	return patches
+}
 
-	if !resp.Allowed {
-		t.Error("Expected pod to be allowed")
+// TestWebhook_MutatesSchedulerNameOnly guards the contract the webhook exists
+// to keep: spec.schedulerName is the only field it ever writes.
+func TestWebhook_MutatesSchedulerNameOnly(t *testing.T) {
+	for _, mode := range []string{"metrics", "annotate"} {
+		t.Run(mode, func(t *testing.T) {
+			webhook, _ := setupTestWebhook(t)
+			webhook.config.Mode = mode
+
+			resp := webhook.handleAdmission(makeAdmissionRequest(t, targetedPod("test-pod", "default")))
+
+			if !resp.Allowed {
+				t.Error("Expected pod to be allowed")
+			}
+
+			patches := decodePatch(t, resp)
+			if len(patches) != 1 {
+				t.Fatalf("Expected exactly 1 patch operation, got %d: %v", len(patches), patches)
+			}
+
+			patch := patches[0]
+			if patch["path"] != "/spec/schedulerName" {
+				t.Errorf("Expected path '/spec/schedulerName', got %v", patch["path"])
+			}
+			if patch["op"] != "replace" {
+				t.Errorf("Expected op 'replace', got %v", patch["op"])
+			}
+			if patch["value"] != common.DefaultSchedulerName {
+				t.Errorf("Expected value %q, got %v", common.DefaultSchedulerName, patch["value"])
+			}
+		})
+	}
+}
+
+func TestWebhook_RecordsPendingForTargetedPod(t *testing.T) {
+	webhook, pendingStore := setupTestWebhook(t)
+
+	pod := targetedPod("test-pod", "default")
+	webhook.handleAdmission(makeAdmissionRequest(t, pod))
+
+	if pendingStore.Count() != 1 {
+		t.Fatalf("Expected 1 pending admission, got %d", pendingStore.Count())
 	}
 
-	// Should have a patch (at minimum the schedulerName mutation)
-	if resp.Patch == nil {
-		t.Error("Expected patch for matching pod in schedulerName mode")
+	// The persisted pod carries a UID the webhook never saw, so the claim has to
+	// succeed on identity alone
+	persisted := pod.DeepCopy()
+	persisted.UID = "assigned-after-admission"
+	persisted.Spec.SchedulerName = common.DefaultSchedulerName
+
+	if !pendingStore.Claim(persisted, time.Now()) {
+		t.Error("Expected the persisted pod to claim its admission")
 	}
 }
 
 func TestWebhook_SchedulerNameMode_NonMatchingPod(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeSchedulerName
+	webhook, pendingStore := setupTestWebhook(t)
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "other-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			SchedulerName: "default-scheduler",
-			Containers:    []corev1.Container{{Name: "test"}},
-		},
-	}
+	pod := targetedPod("other-pod", "default")
+	pod.Spec.SchedulerName = common.DefaultSchedulerName
 
-	req := makeAdmissionRequest(t, pod)
-	resp := webhook.handleAdmission(req)
+	resp := webhook.handleAdmission(makeAdmissionRequest(t, pod))
 
 	if !resp.Allowed {
 		t.Error("Expected non-matching pod to be allowed")
 	}
-
-	// Should NOT have a patch — skipped entirely
 	if resp.Patch != nil {
 		t.Error("Expected no patch for non-matching pod")
+	}
+	if pendingStore.Count() != 0 {
+		t.Error("Expected non-matching pod not to be recorded")
 	}
 }
 
 func TestWebhook_SchedulerNameMode_EmptySchedulerName(t *testing.T) {
 	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeSchedulerName
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-pod",
-			Namespace: "kube-system",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "test"}},
-		},
-	}
+	pod := targetedPod("default-pod", "kube-system")
+	pod.Spec.SchedulerName = ""
 
-	req := makeAdmissionRequest(t, pod)
-	resp := webhook.handleAdmission(req)
+	resp := webhook.handleAdmission(makeAdmissionRequest(t, pod))
 
 	if !resp.Allowed {
 		t.Error("Expected pod to be allowed")
 	}
-
 	if resp.Patch != nil {
 		t.Error("Expected no patch for pod without schedulerName")
 	}
 }
 
-func TestWebhook_SchedulerNameMutation(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeSchedulerName
-	webhook.config.Mode = "metrics" // Even in metrics mode, schedulerName should be mutated
+// TestWebhook_OptedOutPod checks that a skipped pod is still handed back to the
+// default scheduler, since it has to remain schedulable, but is not tracked.
+func TestWebhook_OptedOutPod(t *testing.T) {
+	webhook, pendingStore := setupTestWebhook(t)
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			SchedulerName: common.SchedulerName,
-			Containers:    []corev1.Container{{Name: "test"}},
-		},
+	pod := targetedPod("skipped-pod", "default")
+	pod.Annotations = map[string]string{common.AnnotationSkip: "true"}
+
+	resp := webhook.handleAdmission(makeAdmissionRequest(t, pod))
+
+	patches := decodePatch(t, resp)
+	if len(patches) != 1 || patches[0]["path"] != "/spec/schedulerName" {
+		t.Errorf("Expected only the schedulerName patch, got %v", patches)
 	}
-
-	req := makeAdmissionRequest(t, pod)
-	resp := webhook.handleAdmission(req)
-
-	if resp.Patch == nil {
-		t.Fatal("Expected patch with schedulerName mutation")
-	}
-
-	var patches []map[string]interface{}
-	if err := json.Unmarshal(resp.Patch, &patches); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	// Find the schedulerName patch
-	found := false
-	for _, p := range patches {
-		if p["path"] == "/spec/schedulerName" {
-			found = true
-			if p["op"] != "replace" {
-				t.Errorf("Expected op 'replace', got %v", p["op"])
-			}
-			if p["value"] != common.DefaultSchedulerName {
-				t.Errorf("Expected value %q, got %v", common.DefaultSchedulerName, p["value"])
-			}
-		}
-	}
-
-	if !found {
-		t.Error("Expected /spec/schedulerName patch operation")
+	if pendingStore.Count() != 0 {
+		t.Error("Expected opted-out pod not to be recorded for tracking")
 	}
 }
 
-func TestWebhook_NamespaceMode_EmptyList(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeNamespace
-	webhook.config.WatchNamespaces = []string{}
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "test"}},
-		},
-	}
-
-	req := makeAdmissionRequest(t, pod)
-	resp := webhook.handleAdmission(req)
-
-	if !resp.Allowed {
-		t.Error("Expected pod to be allowed")
-	}
-
-	// Should skip — no namespaces configured
-	if resp.Patch != nil {
-		t.Error("Expected no patch when namespace list is empty")
-	}
-}
-
-func TestWebhook_NamespaceMode_ExplicitList(t *testing.T) {
-	webhook, _ := setupTestWebhook(t)
+// TestWebhook_NamespaceMode_NeverMutates covers the mode where the webhook has
+// nothing to do: the controller watches those namespaces directly.
+func TestWebhook_NamespaceMode_NeverMutates(t *testing.T) {
+	webhook, pendingStore := setupTestWebhook(t)
 	webhook.config.FilterMode = FilterModeNamespace
 	webhook.config.WatchNamespaces = []string{"production"}
 
-	// Pod in watched namespace — should be evaluated
-	watchedPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "prod-pod",
-			Namespace: "production",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "test"}},
-		},
+	for _, namespace := range []string{"production", "development"} {
+		resp := webhook.handleAdmission(makeAdmissionRequest(t, targetedPod("test-pod", namespace)))
+
+		if !resp.Allowed {
+			t.Errorf("Expected pod in %s to be allowed", namespace)
+		}
+		if resp.Patch != nil {
+			t.Errorf("Expected no patch for pod in %s", namespace)
+		}
 	}
 
-	req := makeAdmissionRequest(t, watchedPod)
-	resp := webhook.handleAdmission(req)
-	if !resp.Allowed {
-		t.Error("Expected watched pod to be allowed")
-	}
-
-	// Pod NOT in watched namespace — should be skipped
-	unwatchedPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dev-pod",
-			Namespace: "development",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "test"}},
-		},
-	}
-
-	req = makeAdmissionRequest(t, unwatchedPod)
-	resp = webhook.handleAdmission(req)
-	if !resp.Allowed {
-		t.Error("Expected unwatched pod to be allowed")
-	}
-	if resp.Patch != nil {
-		t.Error("Expected no patch for pod outside watched namespace")
+	if pendingStore.Count() != 0 {
+		t.Error("Expected no pending admissions in namespace mode")
 	}
 }
 
-func TestWebhook_NamespaceMode_NoSchedulerNameMutation(t *testing.T) {
+func TestWebhook_MalformedPodIsAllowed(t *testing.T) {
 	webhook, _ := setupTestWebhook(t)
-	webhook.config.FilterMode = FilterModeNamespace
-	webhook.config.Mode = "annotate"
-	webhook.config.WatchNamespaces = []string{"default"}
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
-			Namespace: "default",
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "test"}},
-		},
+	req := &admissionv1.AdmissionRequest{
+		Namespace: "default",
+		Object:    runtime.RawExtension{Raw: []byte("not a pod")},
 	}
 
-	req := makeAdmissionRequest(t, pod)
 	resp := webhook.handleAdmission(req)
-
-	if resp.Patch == nil {
-		// In annotate mode with a watched namespace, there should be annotation patches
-		// but no schedulerName mutation
-		return
+	if !resp.Allowed {
+		t.Error("Expected malformed pod to be allowed rather than blocked")
 	}
-
-	var patches []map[string]interface{}
-	if err := json.Unmarshal(resp.Patch, &patches); err != nil {
-		t.Fatalf("Failed to unmarshal patch: %v", err)
-	}
-
-	for _, p := range patches {
-		if p["path"] == "/spec/schedulerName" {
-			t.Error("Should NOT have schedulerName mutation in namespace mode")
-		}
+	if resp.Patch != nil {
+		t.Error("Expected no patch for malformed pod")
 	}
 }
