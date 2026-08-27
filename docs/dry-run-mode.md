@@ -34,6 +34,8 @@ In `namespace` filter mode nothing is written at all, and no `MutatingWebhookCon
 
 The webhook runs with `failurePolicy: Ignore`, so an outage cannot block pod creation. Combined with `matchConditions`, pods that did not opt in never reach the webhook at all.
 
+> **cert-manager and `matchConditions`**: cainjector rewrites the whole `MutatingWebhookConfiguration` when it injects the CA bundle, decoding it through its own typed structs first. Versions whose structs predate Kubernetes 1.27 do not know the `matchConditions` field and silently drop it, leaving the object without it even though the apiserver accepted it. Check with `kubectl get mutatingwebhookconfiguration compute-gardener-dryrun -o jsonpath='{.webhooks[0].matchConditions}'`; if it is empty, upgrade cert-manager or set `dryRun.webhook.certManager.enabled=false` and supply your own certificate. Filtering still happens in the webhook itself either way, so only the apiserver-side pre-filter is lost.
+
 ### Pod Filter Modes
 
 The webhook supports two filter modes that control which pods get evaluated:
