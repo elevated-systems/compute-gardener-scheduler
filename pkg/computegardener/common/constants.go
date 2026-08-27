@@ -48,7 +48,7 @@ const (
 	AnnotationMaxSchedulingDelay    = AnnotationBase + "/max-scheduling-delay"
 	AnnotationEstimatedRuntimeHours = AnnotationBase + "/estimated-runtime-hours" // Optional hint for savings estimation
 
-	// Dry-run mode annotations
+	// Dry-run mode annotations, written only in annotate output mode
 	AnnotationDryRunEvaluated              = AnnotationBase + "/dry-run-evaluated"
 	AnnotationDryRunTimestamp              = AnnotationBase + "/dry-run-timestamp"
 	AnnotationDryRunWouldDelay             = AnnotationBase + "/dry-run-would-delay"
@@ -60,7 +60,6 @@ const (
 	AnnotationDryRunPriceThreshold         = AnnotationBase + "/dry-run-price-threshold"
 	AnnotationDryRunEstimatedCarbonSavings = AnnotationBase + "/dry-run-estimated-carbon-savings-gco2"
 	AnnotationDryRunEstimatedCostSavings   = AnnotationBase + "/dry-run-estimated-cost-savings-usd"
-	AnnotationDryRunTrackingID             = AnnotationBase + "/dry-run-tracking-id"
 
 	// ----------------------------------------
 	// Namespace policy annotations

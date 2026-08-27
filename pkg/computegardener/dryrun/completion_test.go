@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
-	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/common"
+	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/config"
 	"github.com/elevated-systems/compute-gardener-scheduler/pkg/computegardener/eval"
 )
 
@@ -20,13 +20,17 @@ import (
 func setupTestCompletionController(t *testing.T) (*CompletionController, *PodEvaluationStore) {
 	t.Helper()
 
-	config := &Config{
+	cfg := &Config{
+		Mode:            "metrics",
+		FilterMode:      FilterModeSchedulerName,
 		WatchNamespaces: []string{"default"},
 	}
 
 	podStore := NewPodEvaluationStore()
+	pendingStore := NewPendingStore(0)
+	evaluator := eval.NewEvaluator(nil, nil, &config.Config{})
 	fakeClient := fake.NewSimpleClientset()
-	controller := NewCompletionController(fakeClient, config, podStore)
+	controller := NewCompletionController(fakeClient, cfg, podStore, pendingStore, evaluator)
 
 	return controller, podStore
 }
@@ -181,16 +185,12 @@ func TestCompletionController_UnwatchedNamespaceIgnored(t *testing.T) {
 // --- Pod lifecycle tracking tests ---
 
 func TestCompletionController_PodStartTimeTracking(t *testing.T) {
-	trackingID := "tracking-start-test"
+	const trackingID = "test-uid" // the controller keys tracking on the pod UID
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       "test-uid",
-			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated:  "true",
-				common.AnnotationDryRunTrackingID: trackingID,
-			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{Name: "test-container"}},
@@ -235,16 +235,12 @@ func TestCompletionController_PodStartTimeTracking(t *testing.T) {
 }
 
 func TestCompletionController_CompletedPodSavings(t *testing.T) {
-	trackingID := "tracking-completion-test"
+	const trackingID = "test-uid"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-pod",
 			Namespace: "default",
 			UID:       "test-uid",
-			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated:  "true",
-				common.AnnotationDryRunTrackingID: trackingID,
-			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{Name: "test-container"}},
@@ -291,16 +287,12 @@ func TestCompletionController_CompletedPodSavings(t *testing.T) {
 }
 
 func TestCompletionController_DidNotDelayPodNoSavings(t *testing.T) {
-	trackingID := "tracking-no-delay-test"
+	const trackingID = "non-delayed-uid"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "non-delayed-pod",
 			Namespace: "default",
 			UID:       "non-delayed-uid",
-			Annotations: map[string]string{
-				common.AnnotationDryRunEvaluated:  "true",
-				common.AnnotationDryRunTrackingID: trackingID,
-			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{Name: "test-container"}},

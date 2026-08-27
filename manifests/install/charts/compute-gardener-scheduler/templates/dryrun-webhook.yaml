@@ -1,5 +1,8 @@
-{{- if .Values.dryRun.enabled }}
+{{- if and .Values.dryRun.enabled (eq .Values.dryRun.filterMode "schedulerName") }}
 ---
+# The webhook exists only to hand pods that opted in via schedulerName back to
+# the default scheduler. Namespace filter mode watches pods through the
+# completion controller instead and installs no webhook at all.
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
@@ -25,24 +28,14 @@ webhooks:
     apiVersions: ["v1"]
     resources: ["pods"]
     scope: "Namespaced"
+  # The only field this webhook writes is spec.schedulerName
   sideEffects: None
-  {{- if .Values.dryRun.mode | eq "annotate" }}
-  # In annotate mode, webhook mutates pods by adding annotations
+  # Dry-run is an observation feature and must never block pod creation
   failurePolicy: Ignore
-  {{- else }}
-  # In metrics mode, webhook is read-only (no mutations)
-  # If it fails, allow pod creation to proceed
-  failurePolicy: Ignore
-  {{- end }}
   timeoutSeconds: {{ .Values.dryRun.webhook.timeoutSeconds | default 10 }}
-  {{- if and (eq .Values.dryRun.filterMode "namespace") .Values.dryRun.watchNamespaces }}
-  namespaceSelector:
-    matchExpressions:
-    - key: kubernetes.io/metadata.name
-      operator: In
-      values:
-      {{- range .Values.dryRun.watchNamespaces }}
-      - {{ . }}
-      {{- end }}
-  {{- end }}
+  # Evaluated by the apiserver before the webhook is called, so pods that did
+  # not opt in never reach it
+  matchConditions:
+  - name: targets-compute-gardener
+    expression: "object.spec.schedulerName == 'compute-gardener-scheduler'"
 {{- end }}

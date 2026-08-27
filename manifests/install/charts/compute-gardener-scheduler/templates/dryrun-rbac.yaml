@@ -11,7 +11,7 @@ kind: ClusterRole
 metadata:
   name: compute-gardener-dryrun
 rules:
-# Watch pods for completion tracking
+# Watch pods to evaluate them and track completion
 - apiGroups:
   - ""
   resources:
@@ -20,6 +20,15 @@ rules:
   - get
   - list
   - watch
+{{- if eq .Values.dryRun.mode "annotate" }}
+# Annotate mode writes the evaluation result back onto the pod
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - patch
+{{- end }}
 # Read config maps for pricing and hardware profiles
 - apiGroups:
   - ""

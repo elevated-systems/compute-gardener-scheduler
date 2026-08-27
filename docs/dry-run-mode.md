@@ -18,28 +18,38 @@ This lets you build confidence in the scheduler's behavior and quantify potentia
 
 ## How It Works
 
-Dry-run mode uses a Kubernetes [MutatingWebhook](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#mutatingadmissionwebhook) that intercepts pod creation events:
+Dry-run splits its work between an admission webhook and a controller, both running in a single deployment:
 
-1. **Pod filtering**: Determines which pods to evaluate based on the configured filter mode
-2. **Webhook evaluation**: Evaluates carbon intensity and electricity prices using the same logic as the scheduler
-3. **Decision recording**: Records whether the scheduler would delay the pod, and why
+1. **Pod filtering**: The apiserver evaluates a CEL `matchConditions` expression and only calls the webhook for pods that opted in via `schedulerName`
+2. **Handoff**: The webhook rewrites `spec.schedulerName` to `default-scheduler` and records the pod for the controller to pick up
+3. **Evaluation**: The controller evaluates carbon intensity and electricity prices once the pod is persisted, using the same logic as the scheduler
 4. **Completion tracking**: Watches for pod completion to calculate actual runtime and energy consumption
 5. **Savings estimation**: Calculates conservative savings estimates based on actual runtime
+
+### What Gets Written to Your Pods
+
+`spec.schedulerName` is the only field the webhook writes, in either output mode. Evaluation happens in the controller rather than in admission, so no tracking state is stored on your pods: analysis cannot be broken by an annotation being edited or stripped, and evaluation never sits on the critical path of pod creation.
+
+In `namespace` filter mode nothing is written at all, and no `MutatingWebhookConfiguration` is installed. `annotate` output mode is the one exception, and writes only what you asked it to (see below).
+
+The webhook runs with `failurePolicy: Ignore`, so an outage cannot block pod creation. Combined with `matchConditions`, pods that did not opt in never reach the webhook at all.
+
+> **cert-manager and `matchConditions`**: cainjector rewrites the whole `MutatingWebhookConfiguration` when it injects the CA bundle, decoding it through its own typed structs first. Versions whose structs predate Kubernetes 1.27 do not know the `matchConditions` field and silently drop it, leaving the object without it even though the apiserver accepted it. Check with `kubectl get mutatingwebhookconfiguration compute-gardener-dryrun -o jsonpath='{.webhooks[0].matchConditions}'`; if it is empty, upgrade cert-manager or set `dryRun.webhook.certManager.enabled=false` and supply your own certificate. Filtering still happens in the webhook itself either way, so only the apiserver-side pre-filter is lost.
 
 ### Pod Filter Modes
 
 The webhook supports two filter modes that control which pods get evaluated:
 
-**`schedulerName` mode (default)**: Only evaluates pods with `schedulerName: compute-gardener-scheduler`. After evaluation, the webhook mutates the `schedulerName` back to `default-scheduler` so the pod gets scheduled normally by the standard Kubernetes scheduler. **No additional scheduler is running in the cluster** — the mutation simply ensures the default scheduler picks up the pod as usual. This is the recommended mode when running the webhook without the full scheduler plugin.
+**`schedulerName` mode (default)**: Only evaluates pods with `schedulerName: compute-gardener-scheduler`. The webhook mutates the `schedulerName` back to `default-scheduler` so the pod gets scheduled normally by the standard Kubernetes scheduler. **No additional scheduler is running in the cluster**: the mutation simply ensures the default scheduler picks up the pod as usual. This is the recommended mode when running the webhook without the full scheduler plugin, and it keeps your manifests identical to what you would deploy for real.
 
-**`namespace` mode**: Evaluates all pods in explicitly listed namespaces, regardless of `schedulerName`. No `schedulerName` mutation is performed. Use this when you want to evaluate every pod in specific namespaces without requiring any pod-level configuration.
+**`namespace` mode**: Evaluates all pods in explicitly listed namespaces, regardless of `schedulerName`. Pods are never mutated and no webhook is installed. Use this when you want to evaluate every pod in specific namespaces without requiring any pod-level configuration.
 
 ### Output Modes
 
 The webhook operates in one of two output modes:
 
 ### Metrics Mode (Default)
-Records evaluation data as Prometheus metrics only. No modifications to pods.
+Records evaluation data as Prometheus metrics only. Beyond the `schedulerName` rewrite, pods are not modified.
 
 **Available metrics:**
 - `compute_gardener_dryrun_pods_evaluated_total` - Total pods evaluated
@@ -55,7 +65,7 @@ Records evaluation data as Prometheus metrics only. No modifications to pods.
 - `compute_gardener_dryrun_current_electricity_price_usd_per_kwh` - Current electricity price
 
 ### Annotate Mode
-Adds evaluation results as annotations to pods. Useful for inspecting individual pod decisions with `kubectl describe`.
+Adds evaluation results as annotations to pods. Useful for inspecting individual pod decisions with `kubectl describe`. The controller applies these once the pod is persisted, so they appear shortly after creation rather than at admission, and the deployment is granted `patch` on pods only in this mode.
 
 **Added annotations:**
 - `compute-gardener-scheduler.kubernetes.io/dry-run-evaluated: "true"`

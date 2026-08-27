@@ -6,10 +6,10 @@ metadata:
   namespace: compute-gardener
   labels:
     app: compute-gardener-scheduler
-    helm.sh/chart: compute-gardener-scheduler-0.2.3
+    helm.sh/chart: compute-gardener-scheduler-0.2.4
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/instance: compute-gardener
-    app.kubernetes.io/version: v0.2.3-57ae4e1
+    app.kubernetes.io/version: v0.2.4-6743772
 data:
   hardware-profiles.yaml: |
     # CPU model mappings from NFD labels to specific CPU models
